@@ -1,0 +1,27 @@
+appId: com.local.voiceflow
+productName: VoiceFlow
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!node_modules/**/{test,tests,__tests__}/**"
+  - "!node_modules/**/*.{md,ts,map}"
+extraResources:
+  - from: resources/whisper
+    to: whisper
+  - from: resources/icons
+    to: icons
+win:
+  executableName: VoiceFlow
+  target:
+    - nsis
+    - portable
+nsis:
+  artifactName: "VoiceFlow Setup.${ext}"
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+asar: true

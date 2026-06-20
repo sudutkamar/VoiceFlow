@@ -1,0 +1,301 @@
+import BetterSqlite3 from 'better-sqlite3';
+import * as path from 'path';
+import * as fs from 'fs';
+import { app, dialog } from 'electron';
+import { Logger } from './logger';
+
+export class VoiceFlowDatabase {
+  private db: BetterSqlite3.Database | null = null;
+  private logger: Logger;
+  private dbPath: string;
+
+  constructor(logger: Logger) {
+    this.logger = logger;
+    this.dbPath = this.getDbPath();
+  }
+
+  private getDbPath(): string {
+    const userDataPath = app.getPath('userData');
+    const dataDir = path.join(userDataPath, 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    return path.join(dataDir, 'voiceflow.db');
+  }
+
+  initialize(): void {
+    try {
+      this.db = new BetterSqlite3(this.dbPath);
+      this.db.pragma('journal_mode = WAL');
+      this.db.pragma('foreign_keys = ON');
+      this.createTables();
+      this.insertDefaultSettings();
+      this.fixInvalidHotkey();
+      this.ensureVerbatimModeDefaults();
+      this.logger.info('Database initialized');
+    } catch (error) {
+      this.logger.error('Failed to initialize database', error);
+      throw error;
+    }
+  }
+
+  private ensureVerbatimModeDefaults(): void {
+    if (!this.db) return;
+
+    // Current product behavior is dictation/verbatim-first: do not alter user's spoken words.
+    const verbatim = this.getSetting('verbatim_mode');
+    if (verbatim !== 'false') {
+      this.updateSetting('verbatim_mode', 'true');
+      this.updateSetting('cleanup_enabled', 'false');
+      this.updateSetting('remove_fillers', 'false');
+      this.updateSetting('voice_commands', 'false');
+      this.updateSetting('capitalize_first', 'false');
+      this.updateSetting('capitalize_sentences', 'false');
+    }
+  }
+
+  private fixInvalidHotkey(): void {
+    if (!this.db) return;
+    
+    const hotkey = this.getSetting('hotkey');
+    if (!hotkey) return;
+    
+    // Valid modifiers
+    const validModifiers = ['CommandOrControl', 'Ctrl', 'Alt', 'Shift', 'Super', 'Meta', 'Cmd'];
+    
+    const parts = hotkey.split('+');
+    if (parts.length < 2) {
+      // Too short, reset to default
+      this.updateSetting('hotkey', 'CommandOrControl+Shift+F9');
+      this.logger.warn(`Invalid hotkey '${hotkey}' reset to default`);
+      return;
+    }
+    
+    const lastKey = parts[parts.length - 1].trim();
+    if (validModifiers.includes(lastKey)) {
+      // Last part is a modifier, not a valid key - reset to default
+      this.updateSetting('hotkey', 'CommandOrControl+Shift+F9');
+      this.logger.warn(`Invalid hotkey '${hotkey}' (missing key) reset to default`);
+      return;
+    }
+  }
+
+  private createTables(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS dictation_history (
+        id TEXT PRIMARY KEY,
+        raw_text TEXT NOT NULL,
+        final_text TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        audio_duration_ms INTEGER DEFAULT 0,
+        word_count INTEGER DEFAULT 0,
+        char_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS personal_dictionary (
+        id TEXT PRIMARY KEY,
+        phrase TEXT NOT NULL UNIQUE,
+        replacement TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS snippets (
+        id TEXT PRIMARY KEY,
+        trigger_phrase TEXT NOT NULL UNIQUE,
+        output_text TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+  }
+
+  private insertDefaultSettings(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const defaults: Record<string, string> = {
+      hotkey: 'CommandOrControl+Shift+F9',
+      language: 'auto',
+      model: 'ggml-base.bin',
+      save_history: 'true',
+      auto_paste: 'true',
+      cleanup_enabled: 'false',
+      capitalize_first: 'false',
+      capitalize_sentences: 'false',
+      remove_fillers: 'false',
+      voice_commands: 'false',
+      verbatim_mode: 'true',
+      auto_start: 'false',
+      minimize_to_tray: 'true',
+      show_mini_window: 'true',
+      sound_effects: 'false',
+      selected_mic: '',
+    };
+
+    const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+    for (const [key, value] of Object.entries(defaults)) {
+      stmt.run(key, value);
+    }
+  }
+
+  getSetting(key: string): string | null {
+    if (!this.db) return null;
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any;
+    return row?.value || null;
+  }
+
+  getAllSettings(): Record<string, string> {
+    if (!this.db) return {};
+    const rows = this.db.prepare('SELECT key, value FROM settings').all() as any[];
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.key] = row.value;
+    }
+    return settings;
+  }
+
+  updateSetting(key: string, value: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+  }
+
+  addHistory(id: string, rawText: string, finalText: string, durationMs: number, audioDurationMs: number = 0): void {
+    if (!this.db) throw new Error('Database not initialized');
+    const saveHistory = this.getSetting('save_history');
+    if (saveHistory !== 'true') return;
+
+    const wordCount = finalText.split(/\s+/).filter(w => w.length > 0).length;
+    const charCount = finalText.length;
+
+    this.db.prepare(
+      'INSERT INTO dictation_history (id, raw_text, final_text, duration_ms, audio_duration_ms, word_count, char_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, rawText, finalText, durationMs, audioDurationMs, wordCount, charCount, new Date().toISOString());
+  }
+
+  getHistory(limit: number = 50): any[] {
+    if (!this.db) return [];
+    return this.db.prepare(
+      'SELECT * FROM dictation_history ORDER BY created_at DESC LIMIT ?'
+    ).all(limit);
+  }
+
+  searchHistory(query: string): any[] {
+    if (!this.db) return [];
+    return this.db.prepare(
+      'SELECT * FROM dictation_history WHERE final_text LIKE ? OR raw_text LIKE ? ORDER BY created_at DESC'
+    ).all(`%${query}%`, `%${query}%`);
+  }
+
+  deleteHistoryItem(id: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('DELETE FROM dictation_history WHERE id = ?').run(id);
+  }
+
+  clearHistory(): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('DELETE FROM dictation_history').run();
+  }
+
+  exportHistory(): string | null {
+    if (!this.db) return null;
+
+    const history = this.getHistory(1000);
+    if (history.length === 0) return null;
+
+    const csv = [
+      'ID,Text,Duration,Created At',
+      ...history.map(item => 
+        `"${item.id}","${item.final_text.replace(/"/g, '""')}","${item.duration_ms}","${item.created_at}"`
+      )
+    ].join('\n');
+
+    return csv;
+  }
+
+  getDictionary(): any[] {
+    if (!this.db) return [];
+    return this.db.prepare(
+      'SELECT * FROM personal_dictionary ORDER BY phrase ASC'
+    ).all();
+  }
+
+  getDictionaryMap(): Record<string, string> {
+    if (!this.db) return {};
+    const entries = this.db.prepare(
+      'SELECT phrase, replacement FROM personal_dictionary'
+    ).all() as any[];
+    const map: Record<string, string> = {};
+    for (const entry of entries) {
+      map[entry.phrase.toLowerCase()] = entry.replacement;
+    }
+    return map;
+  }
+
+  addDictionaryEntry(id: string, phrase: string, replacement: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare(
+      'INSERT INTO personal_dictionary (id, phrase, replacement, created_at) VALUES (?, ?, ?, ?)'
+    ).run(id, phrase, replacement, new Date().toISOString());
+  }
+
+  updateDictionaryEntry(id: string, phrase: string, replacement: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare(
+      'UPDATE personal_dictionary SET phrase = ?, replacement = ? WHERE id = ?'
+    ).run(phrase, replacement, id);
+  }
+
+  deleteDictionaryEntry(id: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('DELETE FROM personal_dictionary WHERE id = ?').run(id);
+  }
+
+  getSnippets(): any[] {
+    if (!this.db) return [];
+    return this.db.prepare('SELECT * FROM snippets ORDER BY trigger_phrase ASC').all();
+  }
+
+  getSnippetsMap(): Record<string, string> {
+    if (!this.db) return {};
+    const entries = this.db.prepare(
+      'SELECT trigger_phrase, output_text FROM snippets'
+    ).all() as any[];
+    const map: Record<string, string> = {};
+    for (const entry of entries) {
+      map[entry.trigger_phrase.toLowerCase()] = entry.output_text;
+    }
+    return map;
+  }
+
+  addSnippet(id: string, trigger: string, output: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare(
+      'INSERT INTO snippets (id, trigger_phrase, output_text, created_at) VALUES (?, ?, ?, ?)'
+    ).run(id, trigger, output, new Date().toISOString());
+  }
+
+  updateSnippet(id: string, trigger: string, output: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare(
+      'UPDATE snippets SET trigger_phrase = ?, output_text = ? WHERE id = ?'
+    ).run(trigger, output, id);
+  }
+
+  deleteSnippet(id: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('DELETE FROM snippets WHERE id = ?').run(id);
+  }
+
+  close(): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+  }
+}

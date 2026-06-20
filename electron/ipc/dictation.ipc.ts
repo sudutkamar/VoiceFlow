@@ -1,0 +1,177 @@
+import { ipcMain, BrowserWindow } from 'electron';
+import { v4 as uuidv4 } from 'uuid';
+import * as path from 'path';
+import * as fs from 'fs';
+import { app } from 'electron';
+import { VoiceFlowDatabase as Database } from '../modules/database';
+import { Logger } from '../modules/logger';
+import { AudioConverter } from '../modules/audioConverter';
+import { Transcriber } from '../modules/transcriber';
+import { TextCleaner } from '../modules/textCleaner';
+import { PasteEngine } from '../modules/pasteEngine';
+import { HotkeyManager } from '../modules/hotkeyManager';
+
+let audioConverter: AudioConverter;
+let transcriber: Transcriber;
+let textCleaner: TextCleaner;
+let pasteEngine: PasteEngine;
+let isProcessing = false;
+let lastTranscript = '';
+let lastCleanedText = '';
+
+export function setupDictationIPC(mainWindow: BrowserWindow, database: Database, logger: Logger, hotkeyManager?: HotkeyManager): void {
+  audioConverter = new AudioConverter(logger);
+  transcriber = new Transcriber(logger);
+  transcriber.setMainWindow(mainWindow);
+  textCleaner = new TextCleaner(logger);
+  pasteEngine = new PasteEngine(mainWindow, logger);
+
+  ipcMain.handle('start-recording', async () => {
+    mainWindow.webContents.send('state-change', 'recording');
+    return { success: true };
+  });
+
+  ipcMain.handle('stop-recording', async () => {
+    mainWindow.webContents.send('state-change', 'idle');
+    return { success: true };
+  });
+
+  ipcMain.handle('get-transcript', async () => {
+    return { success: true, raw: lastTranscript, cleaned: lastCleanedText };
+  });
+
+  ipcMain.handle('toggle-dictation', async () => {
+    mainWindow.webContents.send('toggle-dictation');
+  });
+
+  ipcMain.on('audio-recorded', async (event, audioData: { buffer: number[]; mimeType: string; duration: number }) => {
+    if (isProcessing) {
+      logger.warn('Already processing, ignoring');
+      return;
+    }
+
+    isProcessing = true;
+    const startTime = Date.now();
+
+    try {
+      // 1. Save audio (already WAV from browser)
+      hotkeyManager?.setState('converting');
+      logger.info('Processing audio...', { size: audioData.buffer.length, duration: audioData.duration });
+      
+      const tempDir = getTempDir();
+      const wavPath = path.join(tempDir, `recording_${Date.now()}.wav`);
+      const buffer = Buffer.from(audioData.buffer);
+      fs.writeFileSync(wavPath, buffer);
+      logger.info('Audio saved', { path: wavPath });
+
+      // 2. Transcribe
+      const model = getBestAvailableModel(database.getSetting('model') || 'ggml-base.bin');
+      const language = database.getSetting('language') || 'id';
+      
+      hotkeyManager?.setState('transcribing');
+      logger.info('Starting whisper...', { model, language });
+      const transcribeResult = await transcriber.transcribe(wavPath, model, language);
+      
+      // Cleanup temp file
+      try { fs.unlinkSync(wavPath); } catch {}
+
+      if (!transcribeResult.success) {
+        throw new Error(transcribeResult.error || 'Transcription failed');
+      }
+
+      logger.info('Whisper result', { text: transcribeResult.text });
+
+      // 3. Clean text
+      hotkeyManager?.setState('cleaning');
+      const dictionary = database.getDictionaryMap();
+      const snippets = database.getSnippetsMap();
+      const removeFillers = database.getSetting('remove_fillers') !== 'false';
+      const cleanupEnabled = database.getSetting('cleanup_enabled') !== 'false';
+      const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
+
+      let finalText = transcribeResult.text || '';
+      if (!verbatimMode && cleanupEnabled && finalText) {
+        finalText = textCleaner.clean(finalText, {
+          removeFillers,
+          handlePunctuation: true,
+          handleVoiceCommands: database.getSetting('voice_commands') !== 'false',
+          capitalizeFirst: database.getSetting('capitalize_first') !== 'false',
+          capitalizeAfterPeriod: database.getSetting('capitalize_sentences') !== 'false',
+          dictionary,
+          snippets,
+        });
+      }
+
+      logger.info('Final text', { text: finalText });
+      lastTranscript = transcribeResult.text || '';
+      lastCleanedText = finalText;
+
+      // 4. Auto-paste
+      const autoPaste = database.getSetting('auto_paste') !== 'false';
+      if (autoPaste && finalText) {
+        hotkeyManager?.setState('pasting');
+        logger.info('Pasting...');
+        await pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle());
+        logger.info('Paste done');
+      }
+
+      // 5. Save to history
+      const id = uuidv4();
+      const durationMs = Date.now() - startTime;
+      database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
+
+      // 6. Send success to UI
+      mainWindow.webContents.send('transcript-ready', {
+        raw: transcribeResult.text,
+        cleaned: finalText,
+        duration: audioData.duration,
+        wordCount: textCleaner.getWordCount(finalText),
+        charCount: textCleaner.getCharCount(finalText),
+      });
+
+      hotkeyManager?.setState('done');
+      setTimeout(() => hotkeyManager?.setState('idle'), 500);
+      logger.info('Dictation complete', { duration: durationMs, text: finalText });
+    } catch (error: any) {
+      logger.error('Dictation error', error);
+      hotkeyManager?.setState('error');
+      mainWindow.webContents.send('error', error.message || 'Unknown error');
+      setTimeout(() => hotkeyManager?.setState('idle'), 1000);
+    } finally {
+      isProcessing = false;
+    }
+  });
+
+  ipcMain.handle('paste-text', async (event, text: string) => {
+    return await pasteEngine.paste(text, hotkeyManager?.getTargetWindowHandle());
+  });
+
+  ipcMain.handle('copy-text', async (event, text: string) => {
+    return await pasteEngine.copy(text);
+  });
+
+  ipcMain.handle('get-word-count', async (event, text: string) => {
+    return textCleaner.getWordCount(text);
+  });
+
+  function getBestAvailableModel(preferredModel: string): string {
+    const modelsDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'whisper', 'models')
+      : path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+
+    const accuracyOrder = [preferredModel, 'ggml-medium.bin', 'ggml-small.bin', 'ggml-base.bin', 'ggml-tiny.bin'];
+    for (const model of [...new Set(accuracyOrder)]) {
+      if (fs.existsSync(path.join(modelsDir, model))) return model;
+    }
+    return preferredModel;
+  }
+
+  function getTempDir(): string {
+    const userDataPath = app.getPath('userData');
+    const tempDir = path.join(userDataPath, 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    return tempDir;
+  }
+}
