@@ -39,6 +39,7 @@ dist-build/
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # Debug
 npm-debug.log*
