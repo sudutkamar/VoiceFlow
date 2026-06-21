@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNotification } from '../components/Notification';
 
 interface ModelsProps {
   onSuccess: (message: string) => void;
+  onError?: (message: string) => void;
 }
 
 interface ModelInfo {
@@ -11,69 +13,204 @@ interface ModelInfo {
   url: string;
   description: string;
   downloaded: boolean;
+  fileSize?: number;
+  isValid?: boolean;
 }
 
-function Models({ onSuccess }: ModelsProps) {
+type DownloadState = 'idle' | 'downloading' | 'paused' | 'completed' | 'error' | 'finalizing';
+
+function Models({ onSuccess, onError }: ModelsProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [progress, setProgress] = useState(0);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
+  const [totalBytes, setTotalBytes] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [modelsPath, setModelsPath] = useState<string>('');
+  const notif = useNotification();
+  const downloadingRef = useRef<string | null>(null);
 
+  // Keep ref in sync with state
   useEffect(() => {
-    loadModels();
-    loadSettings();
-  }, []);
-
-  useEffect(() => {
-    if (downloading) {
-      const interval = setInterval(async () => {
-        try {
-          const p = await window.electronAPI.getDownloadProgress();
-          setProgress(p);
-          if (p >= 100) {
-            clearInterval(interval);
-            setDownloading(null);
-            loadModels();
-            onSuccess('Model downloaded!');
-          }
-        } catch {}
-      }, 500);
-      return () => clearInterval(interval);
-    }
+    downloadingRef.current = downloading;
   }, [downloading]);
 
-  const loadModels = async () => {
+  const loadModels = useCallback(async (showLoading = false) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const available = await window.electronAPI.getAvailableModels();
       setModels(available);
     } catch (error) {
       console.error('Failed to load models:', error);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  };
+  }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
       const settings = await window.electronAPI.getSettings();
       setSelectedModel(settings.model || 'ggml-base.bin');
     } catch {}
+  }, []);
+
+  const loadModelsPath = useCallback(async () => {
+    try {
+      const path = await window.electronAPI.getModelsPath();
+      setModelsPath(path);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadModels(true);
+    loadSettings();
+    loadModelsPath();
+
+    // Listen for download progress updates
+    const unsub = window.electronAPI.onDownloadProgress((data) => {
+      const { progress: prog, state, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
+      
+      setProgress(prog);
+      setDownloadedBytes(dlBytes);
+      setTotalBytes(tBytes);
+
+      if (state === 'finalizing') {
+        // Download is finishing up, show 100%
+        setProgress(100);
+        setDownloadState('finalizing');
+        return;
+      }
+
+      if (state === 'completed') {
+        // File is ready! Reset download state and refresh models
+        const completedModel = downloadingRef.current;
+        setDownloading(null);
+        setDownloadState('idle');
+        setProgress(100);
+        
+        // Refresh models list (file is guaranteed to be renamed at this point)
+        loadModels(false);
+        
+        // Auto-select the newly downloaded model
+        if (completedModel) {
+          window.electronAPI.updateSetting('model', completedModel).then(() => {
+            setSelectedModel(completedModel);
+            notif.success(`${completedModel} berhasil di-download dan diaktifkan!`);
+          });
+        } else {
+          notif.success('Model berhasil di-download!');
+        }
+        return;
+      }
+
+      if (state === 'error') {
+        setDownloading(null);
+        setDownloadState('idle');
+        return;
+      }
+
+      // Update state for downloading/paused
+      setDownloadState(state as DownloadState);
+    });
+
+    return () => unsub();
+  }, [loadModels, loadSettings, loadModelsPath, notif]);
+
+  const handleChooseFolder = async () => {
+    try {
+      const result = await window.electronAPI.chooseModelsFolder();
+      if (result.success && result.path) {
+        setModelsPath(result.path);
+        loadModels(false);
+        notif.success(`Folder models diubah ke: ${result.path}`);
+      }
+    } catch (error) {
+      console.error('Failed to choose folder:', error);
+    }
+  };
+
+  const handleResetPath = async () => {
+    try {
+      const result = await window.electronAPI.resetModelsPath();
+      if (result.success && result.path) {
+        setModelsPath(result.path);
+        loadModels(false);
+        notif.success('Folder models direset ke default');
+      }
+    } catch (error) {
+      console.error('Failed to reset path:', error);
+    }
   };
 
   const handleDownload = async (modelName: string) => {
     if (downloading) return;
     setDownloading(modelName);
+    setDownloadState('downloading');
     setProgress(0);
+    setDownloadedBytes(0);
+    setTotalBytes(0);
+    
     try {
       const result = await window.electronAPI.downloadModel(modelName);
-      if (!result.success) {
-        alert(result.error);
+      if (!result.success && result.error !== 'Download di-pause') {
+        notif.error(result.error || 'Download gagal');
         setDownloading(null);
+        setDownloadState('idle');
       }
-    } catch (error) {
+    } catch (error: any) {
+      notif.error(error.message || 'Download gagal');
       setDownloading(null);
+      setDownloadState('idle');
+    }
+  };
+
+  const handleForceDownload = async (modelName: string) => {
+    if (downloading) return;
+    setDownloading(modelName);
+    setDownloadState('downloading');
+    setProgress(0);
+    
+    try {
+      const result = await window.electronAPI.forceDownloadModel(modelName);
+      if (!result.success && result.error !== 'Download di-pause') {
+        notif.error(result.error || 'Download gagal');
+        setDownloading(null);
+        setDownloadState('idle');
+      }
+    } catch (error: any) {
+      notif.error(error.message || 'Download gagal');
+      setDownloading(null);
+      setDownloadState('idle');
+    }
+  };
+
+  const handlePause = async () => {
+    try {
+      const result = await window.electronAPI.pauseDownload();
+      if (result.success) {
+        setDownloadState('paused');
+        notif.info('Download di-pause');
+      }
+    } catch (error: any) {
+      notif.error('Gagal pause download');
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      setDownloadState('downloading');
+      const result = await window.electronAPI.resumeDownload();
+      if (!result.success && result.error !== 'Download di-pause') {
+        notif.error(result.error || 'Gagal resume download');
+        setDownloading(null);
+        setDownloadState('idle');
+      }
+    } catch (error: any) {
+      notif.error('Gagal resume download');
+      setDownloading(null);
+      setDownloadState('idle');
     }
   };
 
@@ -81,7 +218,9 @@ function Models({ onSuccess }: ModelsProps) {
     if (downloading) {
       await window.electronAPI.cancelDownload();
       setDownloading(null);
+      setDownloadState('idle');
       setProgress(0);
+      notif.info('Download dibatalkan');
     }
   };
 
@@ -89,10 +228,28 @@ function Models({ onSuccess }: ModelsProps) {
     try {
       await window.electronAPI.updateSetting('model', modelName);
       setSelectedModel(modelName);
-      onSuccess(`Model changed to ${modelName}`);
+      notif.success(`Model changed to ${modelName}`);
     } catch (error) {
       console.error('Failed to select model:', error);
     }
+  };
+
+  const handleDelete = async (modelName: string) => {
+    try {
+      await window.electronAPI.deleteModel(modelName);
+      loadModels(false);
+      notif.success(`Model ${modelName} dihapus`);
+    } catch (error) {
+      notif.error('Gagal menghapus model');
+    }
+  };
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const getIcon = (name: string) => {
@@ -136,6 +293,10 @@ function Models({ onSuccess }: ModelsProps) {
     return '';
   };
 
+  const isModelCorrupt = (model: ModelInfo): boolean => {
+    return model.fileSize !== undefined && model.fileSize > 0 && !model.isValid;
+  };
+
   if (loading) {
     return (
       <div className="page">
@@ -159,39 +320,113 @@ function Models({ onSuccess }: ModelsProps) {
         <span className="info-value">{getIcon(selectedModel)} {getLabel(selectedModel)}</span>
       </div>
 
+      {/* Models Save Location */}
+      <div className="info-card">
+        <div className="info-card-row">
+          <div>
+            <span className="info-label">📂 Lokasi Simpan:</span>
+            <span className="info-value info-path" title={modelsPath}>{modelsPath}</span>
+          </div>
+          <div className="info-card-actions">
+            <button className="btn btn-secondary btn-sm" onClick={handleChooseFolder}>
+              Pilih Folder
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={handleResetPath}>
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Download Progress Card */}
+      {downloading && (
+        <div className={`download-progress-card ${downloadState === 'paused' ? 'paused' : ''} ${downloadState === 'finalizing' ? 'finalizing' : ''}`}>
+          <div className="download-progress-header">
+            <div className="download-progress-info">
+              <span className="download-model-name">
+                {downloadState === 'paused' ? '⏸️' : downloadState === 'finalizing' ? '✅' : '⬇️'} {getLabel(downloading)}
+              </span>
+              <span className="download-progress-percent">{Math.round(progress)}%</span>
+            </div>
+            <div className="download-progress-actions">
+              {downloadState === 'downloading' && (
+                <button className="btn btn-secondary btn-sm" onClick={handlePause}>
+                  ⏸ Pause
+                </button>
+              )}
+              {downloadState === 'paused' && (
+                <button className="btn btn-primary btn-sm" onClick={handleResume}>
+                  ▶ Resume
+                </button>
+              )}
+              {downloadState !== 'finalizing' && (
+                <button className="btn btn-danger btn-sm" onClick={handleCancel}>
+                  ✕ Cancel
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <div className="download-progress-bar-wrap">
+            <div className="download-progress-track">
+              <div 
+                className={`download-progress-bar ${downloadState === 'paused' ? 'paused' : ''} ${downloadState === 'finalizing' ? 'finalizing' : ''}`}
+                style={{ width: `${progress}%` }} 
+              />
+            </div>
+          </div>
+          
+          <div className="download-progress-stats">
+            <span>
+              {formatBytes(downloadedBytes)} / {formatBytes(totalBytes)}
+            </span>
+            <span className="download-state">
+              {downloadState === 'paused' ? 'Paused' : 
+               downloadState === 'finalizing' ? 'Menyimpan...' : 
+               'Downloading...'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Models List */}
       <div className="card-list">
         {models.map((model) => {
           const isActive = selectedModel === model.name;
           const isDownloading = downloading === model.name;
+          const isCorrupt = isModelCorrupt(model);
 
           return (
-            <div key={model.name} className={`card ${isActive ? 'card-active' : ''}`}>
+            <div key={model.name} className={`card ${isActive ? 'card-active' : ''} ${isCorrupt ? 'card-corrupt' : ''}`}>
               <div className="card-left">
                 <div className="card-icon">{getIcon(model.name)}</div>
                 <div className="card-body">
                   <div className="card-title">
                     {getLabel(model.name)}
                     {isActive && <span className="badge">Active</span>}
+                    {isCorrupt && <span className="badge badge-warning">Corrupt</span>}
                   </div>
                   <div className="card-desc">{model.description}</div>
                   <div className="card-meta">
                     <span>📦 {model.size}</span>
                     <span>⚡ {getSpeed(model.name)}</span>
                     <span>🎯 {getAccuracy(model.name)}</span>
+                    {model.fileSize !== undefined && model.fileSize > 0 && (
+                      <span className={isCorrupt ? 'text-warning' : ''}>
+                        💾 {formatBytes(model.fileSize)}
+                        {isCorrupt && ' (incomplete)'}
+                      </span>
+                    )}
                   </div>
-                  {isDownloading && (
-                    <div className="progress-wrap">
-                      <div className="progress-track">
-                        <div className="progress-bar" style={{ width: `${progress}%` }} />
-                      </div>
-                      <span className="progress-text">{Math.round(progress)}%</span>
+                  {isCorrupt && (
+                    <div className="card-warning">
+                      ⚠️ File tidak valid atau tidak lengkap. Silakan download ulang.
                     </div>
                   )}
                 </div>
               </div>
               <div className="card-right">
-                {model.downloaded ? (
+                {model.downloaded && !isCorrupt ? (
                   isActive ? (
                     <span className="status-active">✓ Active</span>
                   ) : (
@@ -200,8 +435,17 @@ function Models({ onSuccess }: ModelsProps) {
                     </button>
                   )
                 ) : isDownloading ? (
-                  <button className="btn btn-secondary" onClick={handleCancel}>
-                    Cancel
+                  <div className="downloading-indicator">
+                    <div className="mini-spinner" />
+                    <span>{Math.round(progress)}%</span>
+                  </div>
+                ) : isCorrupt ? (
+                  <button
+                    className="btn btn-warning"
+                    onClick={() => handleForceDownload(model.name)}
+                    disabled={!!downloading}
+                  >
+                    Re-download
                   </button>
                 ) : (
                   <button
@@ -225,6 +469,8 @@ function Models({ onSuccess }: ModelsProps) {
           <li><strong>Base</strong> is good enough for daily use</li>
           <li><strong>Medium</strong> gives best accuracy but uses more RAM</li>
           <li>Download requires internet connection</li>
+          <li>You can pause and resume downloads at any time</li>
+          <li>If a model shows as "Corrupt", click "Re-download" to fix it</li>
         </ul>
       </div>
     </div>

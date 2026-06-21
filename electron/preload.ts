@@ -42,10 +42,16 @@ export interface ElectronAPI {
   // Models
   getAvailableModels: () => Promise<string[]>;
   downloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
+  forceDownloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
+  pauseDownload: () => Promise<{ success: boolean; error?: string }>;
+  resumeDownload: () => Promise<{ success: boolean; error?: string }>;
   cancelDownload: () => Promise<void>;
-  getDownloadProgress: () => Promise<number>;
+  getDownloadProgress: () => Promise<{ progress: number; state: string }>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   getModelsPath: () => Promise<string>;
+  getCustomModelsPath: () => Promise<string | null>;
+  chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
   
   // Hotkey
   updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
@@ -72,7 +78,7 @@ export interface ElectronAPI {
   onStopRecording: (callback: (duration: number) => void) => () => void;
   onNavigate: (callback: (page: string) => void) => () => void;
   onPartialTranscript: (callback: (text: string) => void) => () => void;
-  onDownloadProgress: (callback: (progress: number) => void) => () => void;
+  onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
   onWpmUpdate: (callback: (wpm: number) => void) => () => void;
   onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
@@ -116,10 +122,16 @@ const api: ElectronAPI = {
   
   getAvailableModels: () => ipcRenderer.invoke('get-available-models'),
   downloadModel: (model) => ipcRenderer.invoke('download-model', model),
+  forceDownloadModel: (model) => ipcRenderer.invoke('force-download-model', model),
+  pauseDownload: () => ipcRenderer.invoke('pause-download'),
+  resumeDownload: () => ipcRenderer.invoke('resume-download'),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   getDownloadProgress: () => ipcRenderer.invoke('get-download-progress'),
   isModelDownloaded: (model) => ipcRenderer.invoke('is-model-downloaded', model),
   getModelsPath: () => ipcRenderer.invoke('get-models-path'),
+  getCustomModelsPath: () => ipcRenderer.invoke('get-custom-models-path'),
+  chooseModelsFolder: () => ipcRenderer.invoke('choose-models-folder'),
+  resetModelsPath: () => ipcRenderer.invoke('reset-models-path'),
   
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
   
@@ -176,7 +188,7 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('partial-transcript', handler);
   },
   onDownloadProgress: (callback) => {
-    const handler = (_: any, progress: number) => callback(progress);
+    const handler = (_: any, data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => callback(data);
     ipcRenderer.on('download-progress', handler);
     return () => ipcRenderer.removeListener('download-progress', handler);
   },

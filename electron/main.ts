@@ -99,8 +99,8 @@ function createMiniWindow(): void {
   const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
 
   miniWindow = new BrowserWindow({
-    width: Math.min(420, sw - 40),
-    height: 56,
+    width: Math.min(400, sw - 40),
+    height: 48,
     x: Math.round((sw - Math.min(420, sw - 40)) / 2),
     y: 20,
     webPreferences: {
