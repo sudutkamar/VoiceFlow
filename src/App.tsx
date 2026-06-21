@@ -59,7 +59,7 @@ declare global {
       addSnippet: (trigger: string, output: string) => Promise<{ success: boolean }>;
       deleteSnippet: (id: string) => Promise<void>;
       setAutoStart: (enable: boolean) => Promise<void>;
-      getHistory: () => Promise<any[]>;
+      getHistory: (limit?: number) => Promise<any[]>;
       deleteHistoryItem: (id: string) => Promise<void>;
       clearHistory: () => Promise<void>;
       exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
@@ -79,11 +79,22 @@ function getConfidenceColor(confidence: number): string {
   return '#f87171';
 }
 
-// Sound feedback
+// Sound feedback — singleton AudioContext to avoid memory leak
+let _soundCtx: AudioContext | null = null;
+function getSoundCtx(): AudioContext {
+  if (!_soundCtx || _soundCtx.state === 'closed') {
+    _soundCtx = new AudioContext();
+  }
+  if (_soundCtx.state === 'suspended') {
+    _soundCtx.resume();
+  }
+  return _soundCtx;
+}
+
 function playSound(type: 'start' | 'stop' | 'done' | 'error') {
   if (window.voiceflowSoundEnabled === false) return;
   try {
-    const ctx = new AudioContext();
+    const ctx = getSoundCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -111,17 +122,19 @@ function playSound(type: 'start' | 'stop' | 'done' | 'error') {
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.1);
         setTimeout(() => {
-          const ctx2 = new AudioContext();
-          const osc2 = ctx2.createOscillator();
-          const gain2 = ctx2.createGain();
-          osc2.connect(gain2);
-          gain2.connect(ctx2.destination);
-          gain2.gain.value = 0.15;
-          osc2.frequency.value = 900;
-          osc2.type = 'sine';
-          gain2.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.15);
-          osc2.start(ctx2.currentTime);
-          osc2.stop(ctx2.currentTime + 0.15);
+          try {
+            const ctx2 = getSoundCtx();
+            const osc2 = ctx2.createOscillator();
+            const gain2 = ctx2.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx2.destination);
+            gain2.gain.value = 0.15;
+            osc2.frequency.value = 900;
+            osc2.type = 'sine';
+            gain2.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.15);
+            osc2.start(ctx2.currentTime);
+            osc2.stop(ctx2.currentTime + 0.15);
+          } catch {}
         }, 100);
         break;
       case 'error':
@@ -198,7 +211,7 @@ function MiniBar() {
   const [text, setText] = useState('');
   const [partial, setPartial] = useState('');
   const [error, setError] = useState('');
-  const [levels, setLevels] = useState<number[]>(Array(20).fill(0));
+  const [levels, setLevels] = useState<number[]>(Array(15).fill(0));
   const [time, setTime] = useState(0);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [targetApp, setTargetApp] = useState('');
@@ -303,7 +316,7 @@ function MiniBar() {
         if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
         const data = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(data);
-        setLevels(Array.from(data).slice(0, 20).map((v) => Math.min(100, v * 1.5)));
+        setLevels(Array.from(data).slice(0, 15).map((v) => Math.min(100, v * 1.8)));
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
         setMicLevel(Math.min(100, avg * 2));
         setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
@@ -336,12 +349,12 @@ function MiniBar() {
   const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
   const langs = [
-    { c: 'auto', f: '🌐', l: 'Auto Detect' },
-    { c: 'id', f: '🇮🇩', l: 'Indonesia' },
-    { c: 'en', f: '🇺🇸', l: 'English' },
-    { c: 'ja', f: '🇯🇵', l: '日本語' },
-    { c: 'ko', f: '🇰🇷', l: '한국어' },
-    { c: 'zh', f: '🇨🇳', l: '中文' },
+    { c: 'auto', f: '🌐', l: 'Auto Detect', s: 'AUTO' },
+    { c: 'id', f: '🇮🇩', l: 'Indonesia', s: 'ID' },
+    { c: 'en', f: '🇺🇸', l: 'English', s: 'EN' },
+    { c: 'ja', f: '🇯🇵', l: '日本語', s: 'JA' },
+    { c: 'ko', f: '🇰🇷', l: '한국어', s: 'KO' },
+    { c: 'zh', f: '🇨🇳', l: '中文', s: 'ZH' },
   ];
   const currentLang = langs.find((l) => l.c === (settings.language || 'id')) || langs[1];
 
@@ -351,8 +364,7 @@ function MiniBar() {
         {/* Language Dropdown */}
         <div className="m-lang-wrap" ref={langRef}>
           <button className={`m-lang ${langOpen ? 'open' : ''}`} onClick={(e) => { e.stopPropagation(); setLangOpen(!langOpen); }} title={`Language: ${currentLang.l}`}>
-            <span className="m-lang-flag">{currentLang.f}</span>
-            <span className="m-lang-current">{currentLang.l}</span>
+            <span className="m-lang-current">{currentLang.s}</span>
             <svg className="m-lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {langOpen && (
@@ -433,7 +445,8 @@ function MiniBar() {
           )}
         </div>
 
-        {/* Utility buttons - always visible on hover */}
+        {/* Divider & Utility buttons */}
+        <div className="m-util-divider" />
         <div className="m-util">
           <button className="m-util-btn" onClick={() => window.electronAPI.showMain()} title="Open VoiceFlow">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
