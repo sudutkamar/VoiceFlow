@@ -51,6 +51,7 @@ export class VoiceFlowDatabase {
       this.updateSetting('voice_commands', 'false');
       this.updateSetting('audio_preprocess', 'false');
       this.updateSetting('fuzzy_match', 'false');
+      this.updateSetting('processing_mode', 'natural');
       this.updateSetting('capitalize_first', 'false');
       this.updateSetting('capitalize_sentences', 'false');
     }
@@ -133,6 +134,10 @@ export class VoiceFlowDatabase {
       remove_fillers: 'false',
       voice_commands: 'false',
       verbatim_mode: 'true',
+      processing_mode: 'natural',
+      initial_prompt: '',
+      vad_enabled: 'true',
+      vad_silence_ms: '1500',
       audio_preprocess: 'false',
       fuzzy_match: 'false',
       auto_start: 'false',

@@ -21,7 +21,7 @@ function Settings({ onSuccess }: SettingsProps) {
   const [dict, setDict] = useState<DictEntry[]>([]);
   const [snippets, setSnippets] = useState<SnippetEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'general' | 'recording' | 'processing' | 'dictionary' | 'snippets'>('general');
+  const [tab, setTab] = useState<'general' | 'recording' | 'processing' | 'presets' | 'dictionary' | 'snippets'>('general');
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [editingHotkey, setEditingHotkey] = useState(false);
   const [newPhrase, setNewPhrase] = useState('');
@@ -171,6 +171,7 @@ function Settings({ onSuccess }: SettingsProps) {
           { id: 'general', label: 'General', icon: '⚙️' },
           { id: 'recording', label: 'Recording', icon: '🎤' },
           { id: 'processing', label: 'Processing', icon: '✨' },
+          { id: 'presets', label: 'Presets', icon: '🎯' },
           { id: 'dictionary', label: 'Dictionary', icon: '📖' },
           { id: 'snippets', label: 'Snippets', icon: '📝' },
         ].map(t => (
@@ -321,70 +322,115 @@ function Settings({ onSuccess }: SettingsProps) {
       {tab === 'processing' && (
         <div className="settings-sections">
           <div className="section">
-            <div className="section-header">Text Cleanup</div>
+            <div className="section-header">Processing Mode</div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-name">Enable Cleanup</span>
-                <span className="setting-hint">Clean filler words and punctuation</span>
+                <span className="setting-name">Output Mode</span>
+                <span className="setting-hint">How text is processed after transcription</span>
               </div>
-              <div className={`toggle ${settings.cleanup_enabled !== 'false' ? 'on' : ''}`} onClick={() => toggle('cleanup_enabled')} />
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">Remove Fillers</span>
-                <span className="setting-hint">Remove filler words (eh, anu, hmm)</span>
-              </div>
-              <div className={`toggle ${settings.remove_fillers !== 'false' ? 'on' : ''}`} onClick={() => toggle('remove_fillers')} />
+              <select value={settings.processing_mode || 'natural'} onChange={(e) => save('processing_mode', e.target.value)}>
+                <option value="raw">🔴 Raw - Whisper output as-is</option>
+                <option value="natural">🟡 Natural - Spoken punctuation only</option>
+                <option value="clean">🟢 Clean - Full cleanup + capitalization</option>
+              </select>
             </div>
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Verbatim Mode</span>
-                <span className="setting-hint">Most accurate for casual speech: do not rewrite, correct, or formalize words</span>
+                <span className="setting-hint">Force Raw mode regardless of Output Mode setting</span>
               </div>
               <div className={`toggle ${settings.verbatim_mode !== 'false' ? 'on' : ''}`} onClick={() => toggle('verbatim_mode')} />
             </div>
             <div className="setting-row">
               <div className="setting-info">
+                <span className="setting-name">Initial Prompt</span>
+                <span className="setting-hint">Hint Whisper with domain words (e.g. coding terms, names). Leave empty for auto.</span>
+              </div>
+              <input type="text" className="setting-input" placeholder="e.g. VoiceFlow, API, React, TypeScript" value={settings.initial_prompt || ''} onChange={(e) => save('initial_prompt', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="section-header">Voice Activity Detection</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Auto-Stop on Silence</span>
+                <span className="setting-hint">Stop recording automatically when you stop speaking</span>
+              </div>
+              <div className={`toggle ${settings.vad_enabled !== 'false' ? 'on' : ''}`} onClick={() => toggle('vad_enabled')} />
+            </div>
+            {settings.vad_enabled !== 'false' && (
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-name">Silence Timeout</span>
+                  <span className="setting-hint">How long to wait before auto-stopping (ms)</span>
+                </div>
+                <select value={settings.vad_silence_ms || '1500'} onChange={(e) => save('vad_silence_ms', e.target.value)}>
+                  <option value="800">Fast (0.8s)</option>
+                  <option value="1200">Medium (1.2s)</option>
+                  <option value="1500">Normal (1.5s)</option>
+                  <option value="2500">Slow (2.5s)</option>
+                  <option value="4000">Very Slow (4s)</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div className="section">
+            <div className="section-header">Advanced</div>
+            <div className="setting-row">
+              <div className="setting-info">
                 <span className="setting-name">Audio Preprocessing</span>
-                <span className="setting-hint">Optional noise gate/normalization. Leave off if words sound cut or inaccurate.</span>
+                <span className="setting-hint">Noise gate/normalization. OFF recommended for best accuracy.</span>
               </div>
               <div className={`toggle ${settings.audio_preprocess === 'true' ? 'on' : ''}`} onClick={() => toggle('audio_preprocess')} />
             </div>
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Fuzzy Auto-Correct</span>
-                <span className="setting-hint">Use dictionary-like correction. Disabled in Verbatim Mode.</span>
+                <span className="setting-hint">Dictionary-based correction. OFF recommended in Raw/Natural mode.</span>
               </div>
               <div className={`toggle ${settings.fuzzy_match === 'true' ? 'on' : ''}`} onClick={() => toggle('fuzzy_match')} />
             </div>
-          </div>
-
-          <div className="section">
-            <div className="section-header">Capitalization</div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-name">Capitalize First</span>
-                <span className="setting-hint">Capitalize first letter</span>
-              </div>
-              <div className={`toggle ${settings.capitalize_first !== 'false' ? 'on' : ''}`} onClick={() => toggle('capitalize_first')} />
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">Capitalize Sentences</span>
-                <span className="setting-hint">Capitalize after period</span>
-              </div>
-              <div className={`toggle ${settings.capitalize_sentences !== 'false' ? 'on' : ''}`} onClick={() => toggle('capitalize_sentences')} />
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="section-header">Voice Commands</div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">Enable Voice Commands</span>
-                <span className="setting-hint">Use voice commands (new paragraph, bold, etc)</span>
+                <span className="setting-name">Voice Commands</span>
+                <span className="setting-hint">"koma" → ",", "titik" → ".", "new paragraph" → enter</span>
               </div>
               <div className={`toggle ${settings.voice_commands !== 'false' ? 'on' : ''}`} onClick={() => toggle('voice_commands')} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Presets */}
+      {tab === 'presets' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Language Presets</div>
+            <div className="section-body">
+              <p className="section-hint">One-click setup for common use cases. Overwrites language, processing mode, and initial prompt.</p>
+              <div className="preset-grid">
+                {[
+                  { id: 'id-casual', name: 'Indonesia Casual', icon: '🇮🇩', desc: 'Natural Indonesian, spoken punctuation, no formalization', language: 'id', mode: 'natural', prompt: '' },
+                  { id: 'id-formal', name: 'Indonesia Formal', icon: '📝', desc: 'Full cleanup, capitalization, proper punctuation', language: 'id', mode: 'clean', prompt: '' },
+                  { id: 'en', name: 'English', icon: '🇺🇸', desc: 'English with natural cleanup', language: 'en', mode: 'natural', prompt: '' },
+                  { id: 'auto', name: 'Auto Detect', icon: '🌐', desc: 'Auto language, raw output, no changes', language: 'auto', mode: 'raw', prompt: '' },
+                  { id: 'mixed', name: 'Mixed ID/EN', icon: '🔀', desc: 'Code-switching Indonesian-English, raw output', language: 'auto', mode: 'raw', prompt: '' },
+                  { id: 'coding', name: 'Coding Dictation', icon: '💻', desc: 'Code terms hint, no cleanup', language: 'en', mode: 'raw', prompt: 'function, const, let, var, return, import, export, async, await, interface, type, class, if, else, for, while, try, catch, throw, null, undefined, true, false, console.log, React, TypeScript, JavaScript, npm, git' },
+                ].map(p => (
+                  <button key={p.id} className="preset-card" onClick={async () => {
+                    await save('language', p.language);
+                    await save('processing_mode', p.mode);
+                    await save('initial_prompt', p.prompt);
+                    onSuccess(`Preset "${p.name}" applied`);
+                  }}>
+                    <div className="preset-icon">{p.icon}</div>
+                    <div className="preset-name">{p.name}</div>
+                    <div className="preset-desc">{p.desc}</div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

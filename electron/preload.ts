@@ -48,6 +48,7 @@ export interface ElectronAPI {
   pauseDownload: () => Promise<{ success: boolean; error?: string }>;
   resumeDownload: () => Promise<{ success: boolean; error?: string }>;
   cancelDownload: () => Promise<void>;
+  runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;
   deleteModel: (model: string) => Promise<boolean>;
   getDownloadProgress: () => Promise<{ progress: number; state: string }>;
   isModelDownloaded: (model: string) => Promise<boolean>;
@@ -86,6 +87,7 @@ export interface ElectronAPI {
   onWpmUpdate: (callback: (wpm: number) => void) => () => void;
   onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
   onTargetAppChanged: (callback: (appName: string) => void) => () => void;
+  onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -131,6 +133,7 @@ const api: ElectronAPI = {
   pauseDownload: () => ipcRenderer.invoke('pause-download'),
   resumeDownload: () => ipcRenderer.invoke('resume-download'),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
+  runBenchmark: (audioBuffer, models) => ipcRenderer.invoke('run-benchmark', audioBuffer, models),
   deleteModel: (model) => ipcRenderer.invoke('delete-model', model),
   getDownloadProgress: () => ipcRenderer.invoke('get-download-progress'),
   isModelDownloaded: (model) => ipcRenderer.invoke('is-model-downloaded', model),
@@ -217,6 +220,11 @@ const api: ElectronAPI = {
     const handler = (_: any, appName: string) => callback(appName);
     ipcRenderer.on('target-app-changed', handler);
     return () => ipcRenderer.removeListener('target-app-changed', handler);
+  },
+  onBenchmarkProgress: (callback) => {
+    const handler = (_: any, data: any) => callback(data);
+    ipcRenderer.on('benchmark-progress', handler);
+    return () => ipcRenderer.removeListener('benchmark-progress', handler);
   },
 };
 

@@ -273,4 +273,60 @@ export class TextCleaner {
     if (!text) return 0;
     return text.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
   }
+
+  /**
+   * Apply processing mode to text.
+   * Modes:
+   *  - raw:    Whisper output untouched except blank/audio tags removed
+   *  - natural: light whitespace + spoken punctuation (koma→, titik→.) only
+   *  - clean:  full cleanup – fillers, punctuation, capitalization, dictionary
+   */
+  cleanForMode(
+    input: string,
+    mode: 'raw' | 'natural' | 'clean' = 'natural',
+    opts: {
+      dictionary?: Record<string, string>;
+      snippets?: Record<string, string>;
+      voiceCommands?: boolean;
+    } = {}
+  ): string {
+    if (!input?.trim()) return input || '';
+
+    const { dictionary = {}, snippets = {}, voiceCommands = false } = opts;
+
+    switch (mode) {
+      case 'raw':
+        // Preserve Whisper output as-is, only normalize whitespace
+        return this.normalizeWhitespace(input.trim());
+
+      case 'natural':
+        // Light cleanup: spoken punctuation + whitespace, nothing else
+        return this.clean(input.trim(), {
+          removeFillers: false,
+          handlePunctuation: true,
+          handleVoiceCommands: voiceCommands,
+          capitalizeFirst: false,
+          capitalizeAfterPeriod: false,
+          fixSpacing: true,
+          dictionary: {},
+          snippets: {},
+        });
+
+      case 'clean':
+        // Full cleanup: fillers, punctuation, capitalization, dictionary, snippets
+        return this.clean(input.trim(), {
+          removeFillers: true,
+          handlePunctuation: true,
+          handleVoiceCommands: voiceCommands,
+          capitalizeFirst: true,
+          capitalizeAfterPeriod: true,
+          fixSpacing: true,
+          dictionary,
+          snippets,
+        });
+
+      default:
+        return input.trim();
+    }
+  }
 }

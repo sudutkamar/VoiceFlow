@@ -4,12 +4,15 @@ import { WavRecorder } from './utils/wavRecorder';
 import Settings from './pages/Settings';
 import Models from './pages/Models';
 import History from './pages/History';
+import Benchmark from './pages/Benchmark';
 import { NotificationProvider, useNotification } from './components/Notification';
 
 declare global {
   interface Window {
     voiceflowSoundEnabled?: boolean;
     electronAPI: {
+      runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;
+      onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
       startRecording: () => Promise<{ success: boolean; error?: string }>;
       stopRecording: () => Promise<{ success: boolean; error?: string }>;
       sendAudioData: (data: { buffer: number[]; mimeType: string; duration: number }) => void;
@@ -66,7 +69,7 @@ declare global {
 }
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
-type Page = 'home' | 'settings' | 'models' | 'history';
+type Page = 'home' | 'settings' | 'models' | 'history' | 'benchmark';
 
 // Helper functions
 function getConfidenceColor(confidence: number): string {
@@ -132,6 +135,39 @@ function playSound(type: 'start' | 'stop' | 'done' | 'error') {
   } catch {}
 }
 
+function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active: boolean, timeoutMs: number) {
+  const [silenceDetected, setSilence] = useState(false);
+  const silenceStart = useRef(0);
+  const animRef = useRef(0);
+
+  useEffect(() => {
+    if (!active) { setSilence(false); return; }
+    const checkAndLoop = () => {
+      const analyser = analyserRef.current;
+      if (!analyser) { animRef.current = requestAnimationFrame(checkAndLoop); return; }
+      const loop = () => {
+        if (!analyserRef.current) { setSilence(false); return; }
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
+        if (rms < 6) {
+          if (!silenceStart.current) silenceStart.current = Date.now();
+          else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
+        } else {
+          silenceStart.current = 0;
+          setSilence(false);
+        }
+        animRef.current = requestAnimationFrame(loop);
+      };
+      animRef.current = requestAnimationFrame(loop);
+    };
+    animRef.current = requestAnimationFrame(checkAndLoop);
+    return () => { cancelAnimationFrame(animRef.current); silenceStart.current = 0; setSilence(false); };
+  }, [active, timeoutMs]);
+
+  return silenceDetected;
+}
+
 export default function App() {
   return (
     <NotificationProvider>
@@ -168,6 +204,7 @@ function MiniBar() {
   const [targetApp, setTargetApp] = useState('');
   const [micLevel, setMicLevel] = useState(0);
   const [langOpen, setLangOpen] = useState(false);
+  const [clipPeak, setClipPeak] = useState(0);
   const langRef = useRef<HTMLDivElement>(null);
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
@@ -179,6 +216,14 @@ function MiniBar() {
   const stateRef = useRef<State>(state);
 
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  const vadEnabled = settings.vad_enabled !== 'false';
+  const vadSilenceMs = parseInt(settings.vad_silence_ms || '1500', 10);
+  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
+
+  useEffect(() => {
+    if (silenceDetected && stateRef.current === 'recording') stopRec();
+  }, [silenceDetected]);
 
   useEffect(() => {
     loadSettings();
@@ -251,7 +296,7 @@ function MiniBar() {
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();
       setState('recording');
-      setPartial(''); setText(''); setTime(0);
+      setPartial(''); setText(''); setTime(0); setClipPeak(0); setMicLevel(0);
       playSound('start');
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 200);
       const viz = () => {
@@ -259,7 +304,9 @@ function MiniBar() {
         const data = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(data);
         setLevels(Array.from(data).slice(0, 20).map((v) => Math.min(100, v * 1.5)));
-        setMicLevel(Math.min(100, data.reduce((a, b) => a + b, 0) / data.length * 2));
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        setMicLevel(Math.min(100, avg * 2));
+        setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
         animRef.current = requestAnimationFrame(viz);
       };
       viz();
@@ -305,6 +352,8 @@ function MiniBar() {
         <div className="m-lang-wrap" ref={langRef}>
           <button className={`m-lang ${langOpen ? 'open' : ''}`} onClick={(e) => { e.stopPropagation(); setLangOpen(!langOpen); }} title={`Language: ${currentLang.l}`}>
             <span className="m-lang-flag">{currentLang.f}</span>
+            <span className="m-lang-current">{currentLang.l}</span>
+            <svg className="m-lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {langOpen && (
             <div className="m-lang-dropdown">
@@ -341,12 +390,15 @@ function MiniBar() {
             <div className="m-rec-row">
               <div className="m-viz">{levels.map((l, i) => <div key={i} className="m-vb" style={{ height: `${Math.max(4, l)}%` }} />)}</div>
               <span className="m-time">{fmt(time)}</span>
+              <span className={`m-mic-badge ${clipPeak >= 2 ? 'clip' : clipPeak >= 1 ? 'loud' : micLevel < 3 ? 'low' : 'ok'}`}>
+                {clipPeak >= 2 ? '⚠️' : micLevel < 3 ? '🔇' : clipPeak >= 1 ? '🔊' : '🎙️'}
+              </span>
             </div>
           )}
           {state === 'processing' && (
             <div className="m-proc-row">
               <div className="m-spinner" />
-              <span>Processing...</span>
+              <span>{partial ? partial.substring(0, 40) + (partial.length > 40 ? '...' : '') : 'Processing...'}</span>
             </div>
           )}
           {state === 'done' && (
@@ -422,6 +474,7 @@ function MainApp() {
     { id: 'home', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>, label: 'Record' },
     { id: 'models', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>, label: 'Models' },
     { id: 'history', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, label: 'History' },
+    { id: 'benchmark', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>, label: 'Benchmark' },
     { id: 'settings', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>, label: 'Settings' },
   ];
 
@@ -488,6 +541,7 @@ function MainApp() {
           {currentPage === 'home' && <HomePage settings={settings} onSuccess={showSuccess} onError={showError} />}
           {currentPage === 'models' && <Models onSuccess={showSuccess} onError={showError} />}
           {currentPage === 'history' && <History onSuccess={showSuccess} />}
+          {currentPage === 'benchmark' && <Benchmark />}
           {currentPage === 'settings' && <Settings onSuccess={showSuccess} />}
         </main>
       </div>
@@ -507,6 +561,8 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
   const [confidence, setConfidence] = useState<any>(null);
   const [fuzzyChanges, setFuzzyChanges] = useState<number>(0);
   const [rawText, setRawText] = useState<string>('');
+  const [micLevel, setMicLevel] = useState(0);
+  const [clipPeak, setClipPeak] = useState(0);
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -517,6 +573,14 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
   const stateRef = useRef<State>(state);
 
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  const vadEnabled = settings.vad_enabled !== 'false';
+  const vadSilenceMs = parseInt(settings.vad_silence_ms || '1500', 10);
+  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
+
+  useEffect(() => {
+    if (silenceDetected && stateRef.current === 'recording') stopRec();
+  }, [silenceDetected]);
 
   useEffect(() => {
     const unsubs = [
@@ -556,7 +620,7 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();
       setState('recording');
-      setPartial(''); setTime(0);
+      setPartial(''); setTime(0); setClipPeak(0); setMicLevel(0);
       playSound('start');
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 100);
       const viz = () => {
@@ -564,6 +628,9 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
         const data = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(data);
         setLevels(Array.from(data).slice(0, 30).map((v) => Math.min(100, v * 1.8)));
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        setMicLevel(Math.min(100, avg * 2));
+        setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
         animRef.current = requestAnimationFrame(viz);
       };
       viz();
@@ -616,22 +683,28 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
                 <span className="rec-time">{fmt(time)}</span>
               </div>
             )}
-            {state === 'processing' && <span className="processing-text">Processing audio...</span>}
+            {state === 'processing' && <span className="processing-text">{partial ? partial.substring(0, 50) + (partial.length > 50 ? '...' : '') : 'Processing audio...'}</span>}
             {state === 'done' && <span className="done-text">✓ Complete</span>}
           </div>
         </div>
 
         {/* Visualizer */}
         {state === 'recording' && (
-          <div className="visualizer">
-            {levels.map((l, i) => <div key={i} className="viz-bar" style={{ height: `${Math.max(4, l)}%` }} />)}
-          </div>
+          <>
+            <div className="visualizer">
+              {levels.map((l, i) => <div key={i} className="viz-bar" style={{ height: `${Math.max(4, l)}%` }} />)}
+            </div>
+            <div className={`mic-diag ${clipPeak >= 2 ? 'clip' : clipPeak >= 1 ? 'loud' : micLevel < 3 ? 'low' : 'ok'}`}>
+              {clipPeak >= 2 ? '⚠️ Clipping - move mic away' : micLevel < 3 ? '🔇 No input detected - check mic' : clipPeak >= 1 ? '🔊 Loud - may distort' : '🎙️ Good level'}
+              {vadEnabled && <span className="vad-badge">VAD</span>}
+            </div>
+          </>
         )}
 
         {/* Partial */}
-        {partial && state === 'recording' && (
+        {partial && (state === 'recording' || state === 'processing') && (
           <div className="partial-box">
-            <div className="partial-label">Listening...</div>
+            <div className="partial-label">{state === 'processing' ? 'Transcribing...' : 'Listening...'}</div>
             <p>{partial}</p>
           </div>
         )}
@@ -640,6 +713,17 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
         {text && state !== 'recording' && (
           <div className="result-box">
             <p>{text}</p>
+            
+            {/* Diff View: raw vs final */}
+            {rawText && rawText !== text && (
+              <div className="diff-view">
+                <div className="diff-header">Raw Whisper → Final</div>
+                <div className="diff-pair">
+                  <div className="diff-raw"><span className="diff-tag">RAW</span> {rawText}</div>
+                  <div className="diff-final"><span className="diff-tag">FINAL</span> {text}</div>
+                </div>
+              </div>
+            )}
             
             {/* Confidence Info */}
             {confidence && (

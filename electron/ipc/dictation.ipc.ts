@@ -74,22 +74,30 @@ export function setupDictationIPC(
       fs.writeFileSync(wavPath, buffer);
       logger.info('Audio saved', { path: wavPath });
 
-      // 2. Transcribe
+      // 2. Transcribe (two-pass: fast preview + accurate final)
       const model = getBestAvailableModel(database.getSetting('model') || 'ggml-base.bin');
       const language = database.getSetting('language') || 'auto';
       const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
+      const processingMode = (database.getSetting('processing_mode') || 'natural') as 'raw' | 'natural' | 'clean';
+      const initialPrompt = database.getSetting('initial_prompt') || '';
       const preprocessAudio = database.getSetting('audio_preprocess') === 'true';
       const fuzzyMatch = !verbatimMode && database.getSetting('fuzzy_match') === 'true';
-      
+      const send = hotkeyManager
+        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+
       hotkeyManager?.setState('transcribing');
-      logger.info('Starting whisper...', { model, language, verbatimMode, preprocessAudio, fuzzyMatch });
+      logger.info('Starting whisper...', { model, language, verbatimMode, processingMode });
+
+      // Single pass: accurate transcription with selected model + GPU
       const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
         preprocess: preprocessAudio,
         fuzzyMatch,
         confidenceScore: true,
         audioDurationMs: audioData.duration,
+        initialPrompt: initialPrompt || undefined,
       });
-      
+
       // Cleanup temp file
       try { fs.unlinkSync(wavPath); } catch {}
 
@@ -99,48 +107,24 @@ export function setupDictationIPC(
 
       logger.info('Whisper result', { text: transcribeResult.text });
 
-      // 3. Clean text
+      // Clean text
       hotkeyManager?.setState('cleaning');
       const dictionary = database.getDictionaryMap();
       const snippets = database.getSnippetsMap();
-      const removeFillers = database.getSetting('remove_fillers') !== 'false';
-      const cleanupEnabled = database.getSetting('cleanup_enabled') !== 'false';
+      const voiceCommands = database.getSetting('voice_commands') !== 'false';
+      const mode = verbatimMode ? 'raw' : processingMode;
 
       let finalText = transcribeResult.text || '';
       if (finalText) {
-        if (verbatimMode) {
-          // Dictation-first behavior: keep the user's words as close to Whisper output as possible.
-          // Only normalize whitespace; no filler removal, no capitalization, no dictionary/fuzzy changes.
-          finalText = textCleaner.clean(finalText, {
-            removeFillers: false,
-            handlePunctuation: false,
-            handleVoiceCommands: false,
-            capitalizeFirst: false,
-            capitalizeAfterPeriod: false,
-            fixSpacing: true,
-            dictionary: {},
-            snippets: {},
-          });
-        } else if (cleanupEnabled) {
-          finalText = textCleaner.clean(finalText, {
-            removeFillers,
-            handlePunctuation: true,
-            handleVoiceCommands: database.getSetting('voice_commands') !== 'false',
-            capitalizeFirst: database.getSetting('capitalize_first') !== 'false',
-            capitalizeAfterPeriod: database.getSetting('capitalize_sentences') !== 'false',
-            dictionary,
-            snippets,
-          });
-        }
+        finalText = textCleaner.cleanForMode(finalText, mode, { dictionary, snippets, voiceCommands });
       }
 
       logger.info('Final text', { text: finalText });
       lastTranscript = transcribeResult.text || '';
       lastCleanedText = finalText;
 
-      // If no speech detected, send error and return
       if (!finalText || finalText.trim().length === 0) {
-        logger.info('No speech detected in audio');
+        logger.info('No speech detected');
         hotkeyManager?.setState('error');
         const sendErr = hotkeyManager
           ? (msg: string) => hotkeyManager.sendToAll('error', msg)
@@ -150,25 +134,7 @@ export function setupDictationIPC(
         return;
       }
 
-      // 4. Auto-paste
-      const autoPaste = database.getSetting('auto_paste') !== 'false';
-      if (autoPaste && finalText) {
-        hotkeyManager?.setState('pasting');
-        logger.info('Pasting...');
-        await pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle());
-        logger.info('Paste done');
-      }
-
-      // 5. Save to history
-      const id = uuidv4();
-      const durationMs = Date.now() - startTime;
-      database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
-
-      // 6. Send success to UI (ALL windows: main + mini)
-      const send = hotkeyManager
-        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-
+      // Send to UI immediately
       send('transcript-ready', {
         raw: transcribeResult.rawText || transcribeResult.text,
         cleaned: finalText,
@@ -184,6 +150,18 @@ export function setupDictationIPC(
         fuzzyChanges: transcribeResult.fuzzyChanges,
         rawText: transcribeResult.rawText,
       });
+
+      // Paste in background
+      const autoPaste = database.getSetting('auto_paste') !== 'false';
+      if (autoPaste && finalText) {
+        hotkeyManager?.setState('pasting');
+        pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle()).catch(() => {});
+      }
+
+      // Save to history
+      const id = uuidv4();
+      const durationMs = Date.now() - startTime;
+      database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
 
       hotkeyManager?.setState('done');
       setTimeout(() => hotkeyManager?.setState('idle'), 500);
@@ -215,6 +193,29 @@ export function setupDictationIPC(
 
   ipcMain.handle('get-clipboard-text', async () => {
     return pasteEngine.getClipboardText();
+  });
+
+  ipcMain.handle('run-benchmark', async (_event, audioBuffer: number[], models: string[]) => {
+    const sendBench = hotkeyManager
+      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+    try {
+      const tempDir = getTempDir();
+      const wavPath = path.join(tempDir, `benchmark_${Date.now()}.wav`);
+      fs.writeFileSync(wavPath, Buffer.from(audioBuffer));
+      const language = database.getSetting('language') || 'auto';
+      const initialPrompt = database.getSetting('initial_prompt') || '';
+      for (const model of models) {
+        sendBench('benchmark-progress', { model, status: 'running' });
+        const result = await transcriber.benchmarkModel(wavPath, model, language, initialPrompt || undefined);
+        sendBench('benchmark-progress', { model, status: result.success ? 'done' : 'error', text: result.text, elapsedMs: result.elapsedMs, error: result.error });
+      }
+      try { fs.unlinkSync(wavPath); } catch {}
+      return { success: true };
+    } catch (err: any) {
+      logger.error('Benchmark error', err);
+      return { success: false, error: err.message };
+    }
   });
 
   function getBestAvailableModel(preferredModel: string): string {

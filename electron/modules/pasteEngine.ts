@@ -44,23 +44,20 @@ export class PasteEngine {
       }
 
       // 4. Small delay to let windows hide and target app gain focus
-      await this.sleep(150);
+      await this.sleep(60);
 
       // 5. Send Ctrl+V to target window
       const ok = await this.sendPasteKeystroke(targetWindowHandle || null);
 
       // 6. Re-show mini window after paste
       if (this.showAfterPaste) {
-        // Delay to ensure paste keystroke is processed first
-        setTimeout(() => this.showAfterPaste!(), 300);
+        setTimeout(() => this.showAfterPaste!(), 150);
       }
 
       // 7. Restore original clipboard after a delay
       setTimeout(() => {
-        try {
-          clipboard.writeText(savedClipboard || '');
-        } catch {}
-      }, 800);
+        try { clipboard.writeText(savedClipboard || ''); } catch {}
+      }, 500);
 
       if (ok) {
         this.logger.info('Paste successful');
@@ -97,14 +94,14 @@ public class NI {
 if($hwnd.ToInt64()-ne 0 -and [NI]::IsWindow($hwnd)){
   [NI]::ShowWindow($hwnd, 9)|Out-Null
   [NI]::SetForegroundWindow($hwnd)|Out-Null
-  Start-Sleep -m 180
+  Start-Sleep -m 80
 }
 [NI]::keybd_event(0x11,0,0,[UIntPtr]::Zero)
-Start-Sleep -m 20
+Start-Sleep -m 10
 [NI]::keybd_event(0x56,0,0,[UIntPtr]::Zero)
-Start-Sleep -m 20
+Start-Sleep -m 10
 [NI]::keybd_event(0x56,0,2,[UIntPtr]::Zero)
-Start-Sleep -m 20
+Start-Sleep -m 10
 [NI]::keybd_event(0x11,0,2,[UIntPtr]::Zero)
 `;
 

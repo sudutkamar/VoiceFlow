@@ -84,6 +84,7 @@ export class Transcriber {
       fuzzyMatch?: boolean;
       confidenceScore?: boolean;
       audioDurationMs?: number;
+      initialPrompt?: string;
     } = {}
   ): Promise<TranscribeResult> {
     const {
@@ -91,6 +92,7 @@ export class Transcriber {
       fuzzyMatch = true,
       confidenceScore = true,
       audioDurationMs,
+      initialPrompt,
     } = options;
 
     const modelPath = path.join(this.modelsPath, model);
@@ -144,13 +146,15 @@ export class Transcriber {
         '-m', modelPath,
         '-f', processedAudioPath,
         '-otxt',
-        '-nt',
         '--no-prints',
-        '-t', String(Math.max(2, Math.min(8, os.cpus()?.length || 4))),
+        '-t', '4',
       ];
 
-      // Let Whisper auto-detect when requested. Forcing Indonesian on "auto" hurts mixed ID/EN speech.
       args.push('-l', language && language !== 'auto' ? language : 'auto');
+
+      if (initialPrompt) {
+        args.push('--prompt', initialPrompt);
+      }
 
       this.logger.info('Starting transcription...', { model, language, preprocess, fuzzyMatch, args: args.filter(a => a !== modelPath && a !== processedAudioPath) });
 
@@ -161,7 +165,7 @@ export class Transcriber {
       this.currentProcess = whisper;
 
       let settled = false;
-      const timeoutMs = Math.max(30000, Math.min(180000, (audioDurationMs || 0) * 3 + 20000));
+      const timeoutMs = Math.max(15000, Math.min(45000, (audioDurationMs || 0) * 4 + 10000));
       const timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
@@ -351,5 +355,95 @@ export class Transcriber {
 
   isModelAvailable(model: string): boolean {
     return fs.existsSync(path.join(this.modelsPath, model));
+  }
+
+  /**
+   * Fast transcription with speed-optimized arguments.
+   * Uses greedy decoding (beam-size 1, best-of 1) for maximum speed.
+   * Result quality is slightly lower but arrives much faster.
+   */
+  async transcribeFast(
+    audioPath: string,
+    language: string = 'auto',
+    initialPrompt?: string
+  ): Promise<{ success: boolean; text?: string }> {
+    const modelPriority = ['ggml-base.bin', 'ggml-tiny.bin', 'ggml-small.bin'];
+    let modelPath = '';
+    for (const m of modelPriority) {
+      const p = path.join(this.modelsPath, m);
+      if (fs.existsSync(p)) { modelPath = p; break; }
+    }
+    if (!modelPath) return { success: false };
+
+    return new Promise((resolve) => {
+      const args = [
+        '-m', modelPath,
+        '-f', audioPath,
+        '-otxt',
+        '--no-prints',
+        '--beam-size', '1',
+        '--best-of', '1',
+        '-t', '4',
+      ];
+      args.push('-l', language && language !== 'auto' ? language : 'auto');
+      if (initialPrompt) args.push('--prompt', initialPrompt);
+
+      let settled = false;
+      const proc = spawn(this.whisperPath, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { proc.kill(); } catch {}
+        resolve({ success: false });
+      }, 8000);
+
+      let stdout = '';
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', () => {});
+
+      proc.on('close', (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        const txtPath = audioPath + '.txt';
+        let text = '';
+        if (fs.existsSync(txtPath)) {
+          text = fs.readFileSync(txtPath, 'utf-8').trim();
+          try { fs.unlinkSync(txtPath); } catch {}
+        }
+        if (!text && stdout) {
+          text = stdout.split('\n').map(l => l.trim()).filter(l => l && l.length > 1 && !l.startsWith('[') && !l.startsWith('whisper') && !l.includes('ggml')).join(' ').trim();
+        }
+        resolve({ success: !!text, text: text || undefined });
+      });
+      proc.on('error', () => { if (!settled) { settled = true; clearTimeout(timeout); resolve({ success: false }); } });
+    });
+  }
+
+  /**
+   * Run transcription benchmark on an audio file with a specific model.
+   * Returns transcription result + elapsed time.
+   */
+  async benchmarkModel(
+    audioPath: string,
+    model: string,
+    language: string = 'auto',
+    initialPrompt?: string
+  ): Promise<{ success: boolean; text?: string; elapsedMs?: number; error?: string }> {
+    const modelPath = path.join(this.modelsPath, model);
+    if (!fs.existsSync(modelPath)) return { success: false, error: 'Model not found' };
+
+    const start = Date.now();
+    try {
+      const result = await this.transcribe(audioPath, model, language, {
+        preprocess: false,
+        fuzzyMatch: false,
+        confidenceScore: false,
+        initialPrompt,
+      });
+      return { success: result.success, text: result.text, elapsedMs: Date.now() - start, error: result.error };
+    } catch (err: any) {
+      return { success: false, elapsedMs: Date.now() - start, error: err.message };
+    }
   }
 }
