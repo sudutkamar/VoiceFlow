@@ -2,7 +2,7 @@
 AppId={{VOICEFLOW-1234-5678-ABCD}
 AppName=VoiceFlow
 AppVersion=1.0.0
-AppPublisher=VoiceFlow
+AppPublisher=SudutKamar
 AppPublisherURL=https://github.com/sudutkamar/VoiceFlow
 DefaultDirName={autopf}\VoiceFlow
 DefaultGroupName=VoiceFlow

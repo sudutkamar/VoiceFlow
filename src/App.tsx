@@ -20,7 +20,7 @@ declare global {
       updateSetting: (key: string, value: string) => Promise<{ success: boolean; error?: string }>;
       updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
       quitApp: () => Promise<void>;
-      showMain: () => Promise<void>;
+      showMain: (page?: Page) => Promise<void>;
       minimizeToBar: () => Promise<void>;
       showMiniWindow: () => Promise<void>;
       hideMiniWindow: () => Promise<void>;
@@ -37,7 +37,9 @@ declare global {
       onStopRecording: (callback: (duration: number) => void) => () => void;
       onPartialTranscript: (callback: (text: string) => void) => () => void;
       onTargetAppChanged: (callback: (appName: string) => void) => () => void;
-      copyText: (text: string) => Promise<{ success: boolean; error?: string }>;
+      onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
+      onNavigate: (callback: (page: string) => void) => () => void;
+      copyText: (text: string) => Promise<{ success: boolean; error?: string }>; 
       pasteText: (text: string) => Promise<{ success: boolean; error?: string }>;
       getAvailableModels: () => Promise<any[]>;
       getDownloadedModels: () => Promise<string[]>;
@@ -218,6 +220,7 @@ function MiniBar() {
   const [micLevel, setMicLevel] = useState(0);
   const [langOpen, setLangOpen] = useState(false);
   const [clipPeak, setClipPeak] = useState(0);
+  const [barHover, setBarHover] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
@@ -225,6 +228,7 @@ function MiniBar() {
   const animRef = useRef<number>(0);
   const timerRef = useRef<any>(null);
   const processingTimeoutRef = useRef<any>(null);
+  const resizeTimerRef = useRef<any>(null);
   const startRef = useRef(0);
   const stateRef = useRef<State>(state);
 
@@ -260,6 +264,7 @@ function MiniBar() {
         setError(e); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); 
       }),
       window.electronAPI.onTargetAppChanged((appName) => setTargetApp(appName)),
+      window.electronAPI.onHotkeyRegistered?.((hotkey) => setSettings(prev => ({ ...prev, hotkey }))),
     ];
     window.electronAPI.getTargetApp().then(setTargetApp).catch(() => {});
 
@@ -280,6 +285,7 @@ function MiniBar() {
       cancelAnimationFrame(animRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       document.removeEventListener('mousedown', handleOutsideClick);
       window.removeEventListener('blur', handleBlur);
     };
@@ -287,17 +293,17 @@ function MiniBar() {
 
   const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
 
-  // Resize mini window when dropdown opens/closes
+  // Resize once for the tooltip zone; delay shrinking to avoid jitter while moving fast.
   useEffect(() => {
-    if (langOpen) {
-      // 6 items * ~40px + padding = ~280px, plus bar height ~48px = ~328px
-      window.electronAPI.resizeMiniWindow?.(340);
-      window.electronAPI.setMiniWindowFocusable?.(true);
+    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+    window.electronAPI.setMiniWindowFocusable?.(true);
+    if (barHover) {
+      window.electronAPI.resizeMiniWindow?.(116);
     } else {
-      window.electronAPI.resizeMiniWindow?.(48);
-      window.electronAPI.setMiniWindowFocusable?.(false);
+      resizeTimerRef.current = setTimeout(() => window.electronAPI.resizeMiniWindow?.(64), 520);
     }
-  }, [langOpen]);
+    return () => { if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current); };
+  }, [barHover]);
 
   const startRec = useCallback(async () => {
     if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
@@ -315,8 +321,19 @@ function MiniBar() {
       const viz = () => {
         if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
         const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+        const wave = new Uint8Array(analyserRef.current.fftSize);
         analyserRef.current.getByteFrequencyData(data);
-        setLevels(Array.from(data).slice(0, 15).map((v) => Math.min(100, v * 1.8)));
+        analyserRef.current.getByteTimeDomainData(wave);
+        const freq = Array.from(data).slice(2, Math.max(3, Math.floor(data.length * 0.85)));
+        const amp = Array.from(wave).map((v) => Math.abs(v - 128) * 4.8);
+        const barCount = 13;
+        const freqBucket = Math.max(1, Math.floor(freq.length / barCount));
+        const ampBucket = Math.max(1, Math.floor(amp.length / barCount));
+        setLevels(Array.from({ length: barCount }, (_, i) => {
+          const freqPeak = freq.slice(i * freqBucket, (i + 1) * freqBucket).reduce((m, v) => Math.max(m, v), 0) * 1.55;
+          const ampPeak = amp.slice(i * ampBucket, (i + 1) * ampBucket).reduce((m, v) => Math.max(m, v), 0);
+          return Math.min(100, Math.max(6, freqPeak, ampPeak));
+        }));
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
         setMicLevel(Math.min(100, avg * 2));
         setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
@@ -346,7 +363,7 @@ function MiniBar() {
     }
   }, []);
 
-  const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
+  const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'hover' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
   const langs = [
     { c: 'auto', f: '🌐', l: 'Auto Detect', s: 'AUTO' },
@@ -356,110 +373,138 @@ function MiniBar() {
     { c: 'ko', f: '🇰🇷', l: '한국어', s: 'KO' },
     { c: 'zh', f: '🇨🇳', l: '中文', s: 'ZH' },
   ];
-  const currentLang = langs.find((l) => l.c === (settings.language || 'id')) || langs[1];
+  const currentLang = langs.find((l) => l.c === (settings.language || 'auto')) || langs[0];
+  const formatHotkey = (hk: string) => hk.replace('CommandOrControl', 'Ctrl').replace('Control', 'Ctrl').replace(/\+/g, ' + ');
+  const hotkeyLabel = formatHotkey(settings.hotkey || 'CommandOrControl+Shift+Space');
+  const cycleLanguage = async () => {
+    const idx = Math.max(0, langs.findIndex((l) => l.c === currentLang.c));
+    const next = langs[(idx + 1) % langs.length];
+    setSettings(prev => ({ ...prev, language: next.c }));
+    try {
+      const result = await window.electronAPI.updateSetting('language', next.c);
+      if (result?.success === false) setSettings(prev => ({ ...prev, language: currentLang.c }));
+    } catch {
+      setSettings(prev => ({ ...prev, language: currentLang.c }));
+    }
+  };
 
   return (
     <div className="mini-app">
-      <div className={`mini-bar ${state}`} onMouseEnter={() => state === 'idle' && setState('hover')} onMouseLeave={() => state === 'hover' && setState('idle')}>
-        {/* Language Dropdown */}
+      <div
+        className={`mini-bar ${state}`}
+        onMouseEnter={() => { setBarHover(true); if (state === 'idle') setState('hover'); }}
+        onMouseLeave={() => { setBarHover(false); if (stateRef.current === 'hover') setState('idle'); }}
+      >
+        {/* Click to cycle language */}
         <div className="m-lang-wrap" ref={langRef}>
-          <button className={`m-lang ${langOpen ? 'open' : ''}`} onClick={(e) => { e.stopPropagation(); setLangOpen(!langOpen); }} title={`Language: ${currentLang.l}`}>
+          <div className="m-btn-tooltip">Language: {currentLang.s}</div>
+          <button
+            type="button"
+            className="m-lang"
+            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); cycleLanguage(); }}
+            title={`Click to switch language. Current: ${currentLang.l}`}
+          >
             <span className="m-lang-current">{currentLang.s}</span>
-            <svg className="m-lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          {langOpen && (
-            <div className="m-lang-dropdown">
-              {langs.map((l) => (
-                <button
-                  key={l.c}
-                  className={`m-lang-option ${currentLang.c === l.c ? 'active' : ''}`}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await window.electronAPI.updateSetting('language', l.c);
-                    setSettings(prev => ({ ...prev, language: l.c }));
-                    setLangOpen(false);
-                  }}
-                >
-                  <span className="m-lang-flag">{l.f}</span>
-                  <span className="m-lang-label">{l.l}</span>
-                  {currentLang.c === l.c && <span className="m-lang-check">✓</span>}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="m-app-chip" title={targetApp ? `Target: ${targetApp}` : 'VoiceFlow is ready'}>
-          <span className="m-app-dot" />
-          <span className="m-app-name">{targetApp || 'VoiceFlow'}</span>
-        </div>
-
-        {/* Center: input / text / visualizer / status */}
-        <div className="m-center">
+        <button
+          className={`m-voice-btn ${state}`}
+          onClick={toggle}
+          disabled={state === 'processing'}
+          title={state === 'recording' ? 'Stop recording' : 'Start recording'}
+        >
+          <div className="m-btn-tooltip m-dictate-tooltip">
+            {state === 'recording' ? 'Stop' : <><span>Dictate</span><strong>{hotkeyLabel}</strong></>}
+          </div>
           {(state === 'idle' || state === 'hover') && (
-            text ? (
-              <div className="m-text" title={text}>{text.length > 45 ? text.substring(0, 45) + '...' : text}</div>
-            ) : (
-              <input className="m-inp" placeholder={state === 'hover' ? 'Click mic to record...' : 'Type or speak...'} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={async (e) => { if (e.key === 'Enter' && text) { const r = await window.electronAPI.pasteText(text); if (r.success) setText(''); } }} />
-            )
+            <svg className="m-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3.5 3.5 0 0 0-3.5 3.5v6a3.5 3.5 0 0 0 7 0v-6A3.5 3.5 0 0 0 12 2Z"/>
+              <path d="M19 10.5v1a7 7 0 0 1-14 0v-1"/>
+              <path d="M12 18.5V22"/>
+            </svg>
           )}
           {state === 'recording' && (
-            <div className="m-rec-row">
-              <div className="m-viz">{levels.map((l, i) => <div key={i} className="m-vb" style={{ height: `${Math.max(4, l)}%` }} />)}</div>
+            <div className="m-recording-core">
+              <span className="m-live-dot" />
+              <div className="m-viz">{levels.slice(0, 11).map((l, i) => <div key={i} className="m-vb" style={{ height: `${Math.max(5, l)}%` }} />)}</div>
               <span className="m-time">{fmt(time)}</span>
-              <span className={`m-mic-badge ${clipPeak >= 2 ? 'clip' : clipPeak >= 1 ? 'loud' : micLevel < 3 ? 'low' : 'ok'}`}>
-                {clipPeak >= 2 ? '⚠️' : micLevel < 3 ? '🔇' : clipPeak >= 1 ? '🔊' : '🎙️'}
-              </span>
             </div>
           )}
           {state === 'processing' && (
-            <div className="m-proc-row">
+            <div className="m-processing-core">
               <div className="m-spinner" />
-              <span>{partial ? partial.substring(0, 40) + (partial.length > 40 ? '...' : '') : 'Processing...'}</span>
             </div>
           )}
           {state === 'done' && (
-            <div className="m-done-row">
+            <div className="m-done-core">
               <span className="m-chk">✓</span>
-              <span>Done!</span>
+              <span>OK</span>
             </div>
           )}
-        </div>
+        </button>
 
-        {/* Right actions */}
-        <div className="m-right">
-          {(state === 'idle' || state === 'hover') && text && (
-            <>
-              <button className="m-btn" onClick={async () => { const r = await window.electronAPI.copyText(text); if (r.success) setText(''); }} title="Copy">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              </button>
-              <button className="m-btn primary" onClick={async () => { const r = await window.electronAPI.pasteText(text); if (r.success) setText(''); }} title="Paste">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-              </button>
-            </>
+        <button
+          className={`m-orb-btn m-spark-btn ${text ? 'ready copy-mode' : ''}`}
+          onClick={async () => {
+            if (text) {
+              const r = await window.electronAPI.copyText(text);
+              if (r.success) {
+                playSound('done');
+                setState('done');
+                setTimeout(() => setState('idle'), 900);
+              }
+            } else {
+              window.electronAPI.showMain('settings');
+            }
+          }}
+          title={text ? 'Copy result' : 'Open Settings'}
+        >
+          <div className="m-btn-tooltip">{text ? 'Copy' : 'Tools'}</div>
+          {text ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="11" height="11" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 4V2"/>
+              <path d="M15 10v-2"/>
+              <path d="M12 7h6"/>
+              <path d="m5 19 9.2-9.2a1.9 1.9 0 0 1 2.7 2.7L7.7 21.7a1.9 1.9 0 0 1-2.7-2.7Z"/>
+              <path d="m12.5 11.5 2 2"/>
+            </svg>
           )}
-          {(state === 'idle' || state === 'hover') && !text && (
-            <button className="m-btn mic" onClick={toggle}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-            </button>
-          )}
-          {state === 'recording' && (
-            <button className="m-btn stop" onClick={toggle}>
-              <div className="m-stop-icon" />
-            </button>
-          )}
-        </div>
+        </button>
 
-        {/* Divider & Utility buttons */}
-        <div className="m-util-divider" />
-        <div className="m-util">
-          <button className="m-util-btn" onClick={() => window.electronAPI.showMain()} title="Open VoiceFlow">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-          </button>
-          <button className="m-util-btn close" onClick={() => window.electronAPI.quitApp()} title="Quit">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
+        <button
+          className={`m-orb-btn m-note-btn ${text ? 'ready paste-mode' : ''}`}
+          onClick={async () => {
+            if (text) {
+              const r = await window.electronAPI.pasteText(text);
+              if (r.success) setText('');
+            } else {
+              window.electronAPI.showMain('history');
+            }
+          }}
+          title={text ? 'Paste result' : 'Open History'}
+        >
+          <div className="m-btn-tooltip">{text ? 'Paste' : 'History'}</div>
+          {text ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              <rect x="8" y="2" width="8" height="5" rx="1.5"/>
+              <path d="M8 12h8"/>
+              <path d="M8 16h5"/>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v10A2.5 2.5 0 0 1 16.5 18H10l-4.4 3.2A.4.4 0 0 1 5 20.9Z"/>
+              <path d="M9 8h6"/>
+              <path d="M9 12h4"/>
+            </svg>
+          )}
+        </button>
       </div>
 
       {/* Tooltips */}
@@ -477,6 +522,19 @@ function MainApp() {
   const notif = useNotification();
 
   useEffect(() => { loadSettings(); }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const page = (e as CustomEvent).detail;
+      if (page) setCurrentPage(page);
+    };
+    const unsubNavigate = window.electronAPI.onNavigate?.((page) => setCurrentPage(page as Page));
+    window.addEventListener('navigate-page', handler);
+    return () => {
+      window.removeEventListener('navigate-page', handler);
+      unsubNavigate?.();
+    };
+  }, []);
 
   const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
 
@@ -517,7 +575,7 @@ function MainApp() {
           <button className="title-btn maximize" onClick={() => window.electronAPI.maximizeWindow()} title="Maximize">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
           </button>
-          <button className="title-btn close" onClick={() => window.electronAPI.quitApp()} title="Close">
+          <button className="title-btn close" onClick={() => window.electronAPI.minimizeToBar()} title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -706,11 +764,18 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
           </div>
         </div>
 
-        {/* Visualizer */}
+        {/* Professional Waveform Visualizer */}
         {state === 'recording' && (
           <>
-            <div className="visualizer">
-              {levels.map((l, i) => <div key={i} className="viz-bar" style={{ height: `${Math.max(4, l)}%` }} />)}
+            <div className="pro-viz">
+              <div className="pro-viz-inner">
+                {levels.map((l, i) => (
+                  <div key={i} className="pro-viz-bar-wrap">
+                    <div className="pro-viz-bar" style={{ height: `${Math.max(6, l * 0.95)}%` }} />
+                    <div className="pro-viz-bar-mirror" style={{ height: `${Math.max(3, l * 0.4)}%` }} />
+                  </div>
+                ))}
+              </div>
             </div>
             <div className={`mic-diag ${clipPeak >= 2 ? 'clip' : clipPeak >= 1 ? 'loud' : micLevel < 3 ? 'low' : 'ok'}`}>
               {clipPeak >= 2 ? '⚠️ Clipping - move mic away' : micLevel < 3 ? '🔇 No input detected - check mic' : clipPeak >= 1 ? '🔊 Loud - may distort' : '🎙️ Good level'}
@@ -786,17 +851,22 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
         {/* Error */}
         {error && <div className="error-box">⚠️ {error}</div>}
 
-        {/* Recent */}
-        {history.length > 0 && (
-          <div className="recent-section">
-            <h3>Recent</h3>
-            {history.slice(0, 3).map((item, i) => (
-              <div key={i} className="recent-item" onClick={() => setText(item)}>
-                {item.length > 50 ? item.substring(0, 50) + '...' : item}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* History Link */}
+        <div className="history-link-section">
+          <button className="btn-action history-link-btn" onClick={() => {
+            const event = new CustomEvent('navigate-page', { detail: 'history' });
+            window.dispatchEvent(event);
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            View History
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14, marginLeft: 2 }}>
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );

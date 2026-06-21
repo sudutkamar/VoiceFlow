@@ -68,7 +68,7 @@ export interface ElectronAPI {
   setAutoStart: (enable: boolean) => Promise<{ success: boolean }>;
   quitApp: () => Promise<void>;
   minimizeToTray: () => Promise<void>;
-  showMain: () => Promise<void>;
+  showMain: (page?: string) => Promise<void>;
   minimizeToBar: () => Promise<void>;
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
@@ -151,7 +151,7 @@ const api: ElectronAPI = {
   setAutoStart: (enable) => ipcRenderer.invoke('set-autostart', enable),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
-  showMain: () => ipcRenderer.invoke('show-main'),
+  showMain: (page?: string) => ipcRenderer.invoke('show-main', page),
   minimizeToBar: () => ipcRenderer.invoke('minimize-to-bar'),
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   maximizeWindow: () => ipcRenderer.invoke('maximize-window'),

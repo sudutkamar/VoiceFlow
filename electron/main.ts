@@ -44,7 +44,7 @@ function getPreloadPath(): string {
 }
 
 // ============ MAIN WINDOW (Full UI) ============
-function createMainWindow(): void {
+function createMainWindow(showInitially: boolean = true): void {
   mainWindow = new BrowserWindow({
     width: 480,
     height: 600,
@@ -58,7 +58,7 @@ function createMainWindow(): void {
     },
     title: 'VoiceFlow',
     icon: getAppIcon(),
-    show: true,
+    show: showInitially,
     backgroundColor: '#0a0a0f',
     frame: false,
     resizable: true,
@@ -66,9 +66,11 @@ function createMainWindow(): void {
   });
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.maximize();
-    mainWindow?.show();
-    mainWindow?.focus();
+    if (showInitially) {
+      mainWindow?.maximize();
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
   });
 
   // When minimized -> minimize to taskbar (stay in taskbar)
@@ -98,13 +100,16 @@ function createMainWindow(): void {
 
 // ============ MINI WINDOW (Floating Bar) ============
 function createMiniWindow(): void {
-  const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  const miniWidth = Math.min(460, sw - 40);
+  const miniHeight = 64;
+  const taskbarHeight = sh; // workArea already excludes taskbar
 
   miniWindow = new BrowserWindow({
-    width: Math.min(400, sw - 40),
-    height: 48,
-    x: Math.round((sw - Math.min(420, sw - 40)) / 2),
-    y: 20,
+    width: miniWidth,
+    height: miniHeight,
+    x: Math.round((sw - miniWidth) / 2),
+    y: taskbarHeight - miniHeight - 10, // 10px above taskbar bottom
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -121,7 +126,7 @@ function createMiniWindow(): void {
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
-    focusable: false,
+    focusable: true,
   });
 
   miniWindow.on('blur', () => {
@@ -193,9 +198,23 @@ function showAfterPaste(): void {
   }
 }
 
-function showMainWindow(): void {
+function showMainWindow(page?: string): void {
   if (!mainWindow) {
     createMainWindow();
+  }
+  const navigate = () => {
+    if (page && mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('navigate', page);
+        }
+      }, 80);
+    }
+  };
+  if (mainWindow?.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', navigate);
+  } else {
+    navigate();
   }
   mainWindow?.show();
   mainWindow?.focus();
@@ -285,7 +304,7 @@ function setupIPC(): void {
   ipcMain.handle('get-target-app', () => hotkeyManager.getTargetAppName());
   ipcMain.handle('get-version', () => app.getVersion());
   ipcMain.handle('quit-app', () => { isQuitting = true; app.quit(); });
-  ipcMain.handle('show-main', () => showMainWindow());
+  ipcMain.handle('show-main', (_, page?: string) => showMainWindow(page));
   ipcMain.handle('minimize-to-bar', () => {
     mainWindow?.hide();
     if (database?.getSetting('show_mini_window') !== 'false') showMiniWindow();
@@ -308,9 +327,15 @@ function setupIPC(): void {
   ipcMain.handle('hide-mini-window', () => hideMiniWindow());
   ipcMain.handle('resize-mini-window', (_, height: number) => {
     if (miniWindow && !miniWindow.isDestroyed()) {
-      const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
-      const w = Math.min(400, sw - 40);
-      miniWindow.setContentSize(w, height);
+      // Resize upward/downward while preserving the user's dragged X position and bottom anchor.
+      const bounds = miniWindow.getBounds();
+      const nextHeight = Math.max(64, Math.round(height));
+      miniWindow.setBounds({
+        x: bounds.x,
+        y: bounds.y + bounds.height - nextHeight,
+        width: bounds.width,
+        height: nextHeight,
+      }, false);
     }
   });
   ipcMain.handle('set-mini-window-focusable', (_, focusable: boolean) => {
@@ -344,16 +369,28 @@ app.whenReady().then(() => {
   database = new Database(logger);
   database.initialize();
 
-  createMainWindow();
+  // Check before creating the window, so first install can start directly in floating mode.
+  // Use VOICEFLOW_FIRST_RUN=1 env var to simulate first run in development
+  const forceFirstRun = process.env.VOICEFLOW_FIRST_RUN === '1';
+  const isFirstRun = forceFirstRun || !database.getSetting('has_run_before');
+
+  // Always create main window (shown by default)
+  createMainWindow(true);
   createTray();
 
   if (mainWindow) {
     hotkeyManager = new HotkeyManager(mainWindow, database, logger, showMiniWindow, hideMiniWindow);
     hotkeyManager.register();
     
-    // Ensure main window is shown and focused on startup
-    mainWindow.show();
-    mainWindow.focus();
+    if (isFirstRun) {
+      database.updateSetting('has_run_before', 'true');
+      // First install: also show floating UI after main window is ready
+      mainWindow.once('ready-to-show', () => {
+        setTimeout(() => {
+          showMiniWindow();
+        }, 800);
+      });
+    }
   }
 
   setupIPC();
