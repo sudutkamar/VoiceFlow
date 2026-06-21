@@ -144,6 +144,7 @@ export class Transcriber {
         '-m', modelPath,
         '-f', processedAudioPath,
         '-otxt',
+        '-nt',
         '--no-prints',
         '-t', String(Math.max(2, Math.min(8, os.cpus()?.length || 4))),
       ];

@@ -79,7 +79,9 @@ function createMainWindow(): void {
     if (!isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
-      showMiniWindow();
+      if (database?.getSetting('show_mini_window') !== 'false') {
+        showMiniWindow();
+      }
     }
   });
 
@@ -131,7 +133,8 @@ function createMiniWindow(): void {
 
   // Prevent any attempt to hide the mini window (except during paste or quit)
   miniWindow.on('hide', () => {
-    if (!isQuitting && !isPasting && miniWindow && !miniWindow.isDestroyed()) {
+    const floatingEnabled = database?.getSetting('show_mini_window') !== 'false';
+    if (!isQuitting && !isPasting && floatingEnabled && miniWindow && !miniWindow.isDestroyed()) {
       setTimeout(() => miniWindow?.showInactive(), 50);
     }
   });
@@ -184,6 +187,7 @@ function hideAllForPaste(): void {
 
 function showAfterPaste(): void {
   isPasting = false;
+  if (database?.getSetting('show_mini_window') === 'false') return;
   if (miniWindow && !miniWindow.isDestroyed()) {
     miniWindow.showInactive();
   }
@@ -282,7 +286,10 @@ function setupIPC(): void {
   ipcMain.handle('get-version', () => app.getVersion());
   ipcMain.handle('quit-app', () => { isQuitting = true; app.quit(); });
   ipcMain.handle('show-main', () => showMainWindow());
-  ipcMain.handle('minimize-to-bar', () => { mainWindow?.hide(); showMiniWindow(); });
+  ipcMain.handle('minimize-to-bar', () => {
+    mainWindow?.hide();
+    if (database?.getSetting('show_mini_window') !== 'false') showMiniWindow();
+  });
   ipcMain.handle('minimize-window', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.minimize();

@@ -61,6 +61,7 @@ function Settings({ onSuccess }: SettingsProps) {
     try {
       await window.electronAPI.updateSetting(key, value);
       setSettings({ ...settings, [key]: value });
+      if (key === 'sound_effects') window.voiceflowSoundEnabled = value !== 'false';
     } catch (error) {
       console.error('Failed to save setting:', error);
     }
@@ -208,6 +209,22 @@ function Settings({ onSuccess }: SettingsProps) {
                 <span className="setting-hint">Launch on Windows startup</span>
               </div>
               <div className={`toggle ${settings.auto_start === 'true' ? 'on' : ''}`} onClick={async () => { const v = settings.auto_start !== 'true'; await save('auto_start', v.toString()); await window.electronAPI.setAutoStart(v); onSuccess(v ? 'Enabled' : 'Disabled'); }} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Floating UI</span>
+                <span className="setting-hint">Show compact floating bar while dictating. Turn off for silent background paste.</span>
+              </div>
+              <div className={`toggle ${settings.show_mini_window !== 'false' ? 'on' : ''}`} onClick={async () => {
+                const next = settings.show_mini_window === 'false' ? 'true' : 'false';
+                await save('show_mini_window', next);
+                if (next === 'false') {
+                  await window.electronAPI.hideMiniWindow?.();
+                } else {
+                  await window.electronAPI.showMiniWindow?.();
+                }
+                onSuccess(next === 'false' ? 'Floating UI disabled' : 'Floating UI enabled');
+              }} />
             </div>
           </div>
 

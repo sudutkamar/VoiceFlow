@@ -8,6 +8,7 @@ import { NotificationProvider, useNotification } from './components/Notification
 
 declare global {
   interface Window {
+    voiceflowSoundEnabled?: boolean;
     electronAPI: {
       startRecording: () => Promise<{ success: boolean; error?: string }>;
       stopRecording: () => Promise<{ success: boolean; error?: string }>;
@@ -18,6 +19,8 @@ declare global {
       quitApp: () => Promise<void>;
       showMain: () => Promise<void>;
       minimizeToBar: () => Promise<void>;
+      showMiniWindow: () => Promise<void>;
+      hideMiniWindow: () => Promise<void>;
       minimizeWindow: () => Promise<void>;
       maximizeWindow: () => Promise<void>;
       miniWindowReady: () => void;
@@ -75,6 +78,7 @@ function getConfidenceColor(confidence: number): string {
 
 // Sound feedback
 function playSound(type: 'start' | 'stop' | 'done' | 'error') {
+  if (window.voiceflowSoundEnabled === false) return;
   try {
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
@@ -223,7 +227,7 @@ function MiniBar() {
     };
   }, []);
 
-  const loadSettings = async () => { try { setSettings(await window.electronAPI.getSettings()); } catch {} };
+  const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
 
   // Resize mini window when dropdown opens/closes
   useEffect(() => {
@@ -299,9 +303,8 @@ function MiniBar() {
       <div className={`mini-bar ${state}`} onMouseEnter={() => state === 'idle' && setState('hover')} onMouseLeave={() => state === 'hover' && setState('idle')}>
         {/* Language Dropdown */}
         <div className="m-lang-wrap" ref={langRef}>
-          <button className={`m-lang ${langOpen ? 'open' : ''}`} onClick={(e) => { e.stopPropagation(); setLangOpen(!langOpen); }}>
+          <button className={`m-lang ${langOpen ? 'open' : ''}`} onClick={(e) => { e.stopPropagation(); setLangOpen(!langOpen); }} title={`Language: ${currentLang.l}`}>
             <span className="m-lang-flag">{currentLang.f}</span>
-            <svg className="m-lang-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {langOpen && (
             <div className="m-lang-dropdown">
@@ -405,7 +408,7 @@ function MainApp() {
 
   useEffect(() => { loadSettings(); }, []);
 
-  const loadSettings = async () => { try { setSettings(await window.electronAPI.getSettings()); } catch {} };
+  const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
 
   const showSuccess = (msg: string) => {
     notif.success(msg);
@@ -517,6 +520,11 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
 
   useEffect(() => {
     const unsubs = [
+      window.electronAPI.onStartRecording(() => {
+        if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
+        startRec();
+      }),
+      window.electronAPI.onStopRecording(() => { if (wavRecorderRef.current) stopRec(); }),
       window.electronAPI.onTranscriptReady((d) => {
         if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
         const result = d.cleaned || d.raw;

@@ -89,12 +89,15 @@ using System;
 using System.Runtime.InteropServices;
 public class NI {
   [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h, int nCmdShow);
+  [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr h);
   [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);
 }
 "@
-if($hwnd.ToInt64()-ne 0){
+if($hwnd.ToInt64()-ne 0 -and [NI]::IsWindow($hwnd)){
+  [NI]::ShowWindow($hwnd, 9)|Out-Null
   [NI]::SetForegroundWindow($hwnd)|Out-Null
-  Start-Sleep -m 150
+  Start-Sleep -m 180
 }
 [NI]::keybd_event(0x11,0,0,[UIntPtr]::Zero)
 Start-Sleep -m 20

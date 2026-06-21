@@ -338,7 +338,53 @@ body {
 .partial-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 .partial-box p, .result-box p { font-size: 14px; color: var(--text); line-height: 1.5; }
 
-.result-actions { display: flex; gap: 8px; margin-top: 12px; }
+.result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 13px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.btn-action svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.btn-action:hover {
+  background: var(--bg-hover);
+  border-color: rgba(74, 158, 255, 0.25);
+  color: var(--text);
+}
+
+.btn-action.primary {
+  background: var(--accent-soft);
+  border-color: rgba(74, 158, 255, 0.3);
+  color: var(--accent);
+}
+
+.btn-action.primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 
 .error-box {
   width: 100%;
@@ -1134,7 +1180,7 @@ body.mini-mode, html.mini-mode { background: transparent; }
   display: flex;
   align-items: center;
   height: 40px;
-  width: 340px;
+  width: 390px;
   background: linear-gradient(135deg, rgba(14, 14, 24, 0.98) 0%, rgba(18, 18, 30, 0.98) 100%);
   backdrop-filter: blur(30px) saturate(180%);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
@@ -1173,14 +1219,16 @@ body.mini-mode, html.mini-mode { background: transparent; }
 .m-lang {
   display: flex;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
   height: 28px;
-  padding: 0 6px;
+  width: 36px;
+  padding: 0;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   cursor: pointer;
   transition: all 0.15s ease;
+  color: white;
 }
 
 .m-lang:hover {
@@ -1194,26 +1242,15 @@ body.mini-mode, html.mini-mode { background: transparent; }
 }
 
 .m-lang-flag {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
-}
-
-.m-lang-arrow {
-  width: 10px;
-  height: 10px;
-  color: rgba(255, 255, 255, 0.3);
-  transition: transform 0.15s ease;
-}
-
-.m-lang.open .m-lang-arrow {
-  transform: rotate(180deg);
 }
 
 .m-lang-dropdown {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  min-width: 160px;
+  min-width: 190px;
   background: rgba(14, 14, 24, 0.98);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
@@ -1246,6 +1283,7 @@ body.mini-mode, html.mini-mode { background: transparent; }
   white-space: nowrap;
   -webkit-app-region: no-drag;
   pointer-events: auto;
+  color: white;
 }
 
 .m-lang-option:hover {
@@ -1257,19 +1295,19 @@ body.mini-mode, html.mini-mode { background: transparent; }
 }
 
 .m-lang-flag {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
   flex-shrink: 0;
 }
 
 .m-lang-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: white;
   flex: 1;
 }
 
 .m-lang-option:hover .m-lang-label {
-  color: rgba(255, 255, 255, 0.9);
+  color: white;
 }
 
 .m-lang-option.active .m-lang-label {

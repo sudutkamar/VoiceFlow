@@ -271,10 +271,10 @@ $hwnd = [NativeWin]::GetForegroundWindow()
 $len = [NativeWin]::GetWindowTextLength($hwnd)
 $sb = New-Object System.Text.StringBuilder($len + 1)
 [NativeWin]::GetWindowText($hwnd, $sb, $sb.Capacity) | Out-Null
-$pid = 0
-[NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$pid) | Out-Null
+[uint32]$targetPid = 0
+[NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$targetPid) | Out-Null
 $procName = ''
-try { $procName = (Get-Process -Id $pid).ProcessName } catch {}
+try { $procName = (Get-Process -Id $targetPid).ProcessName } catch {}
 Write-Output "$($hwnd.ToInt64())|$($sb.ToString())|$procName"
 `;
       const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
@@ -313,24 +313,33 @@ Write-Output "$($hwnd.ToInt64())|$($sb.ToString())|$procName"
     if (this.state === 'idle') {
       this.logger.info('Starting recording flow...');
       this.captureTargetWindowHandle();
-      this.showMini();
+      const showMiniWindow = this.database.getSetting('show_mini_window') !== 'false';
+      if (showMiniWindow) {
+        this.showMini();
+      }
       this.setState('recording');
 
       const sendStartRecording = () => {
-        if (this.miniWindow && !this.miniWindow.isDestroyed()) {
+        if (showMiniWindow && this.miniWindow && !this.miniWindow.isDestroyed()) {
           this.logger.info('Sending single start-recording-request to mini window');
           this.miniWindow.webContents.send('start-recording-request');
+        } else if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.logger.info('Sending start-recording-request to main window');
+          this.mainWindow.webContents.send('start-recording-request');
         } else {
-          this.logger.warn('miniWindow not available for start-recording-request');
+          this.logger.warn('No renderer window available for start-recording-request');
         }
       };
 
-      // Send once after the mini window has had time to mount React listeners.
-      setTimeout(sendStartRecording, this.miniWindow?.webContents.isLoading() ? 500 : 150);
+      // Send once after the target renderer has had time to mount React listeners.
+      setTimeout(sendStartRecording, showMiniWindow && this.miniWindow?.webContents.isLoading() ? 500 : 150);
     } else if (this.state === 'recording') {
       this.logger.info('Stopping recording flow...');
-      if (this.miniWindow && !this.miniWindow.isDestroyed()) {
+      const showMiniWindow = this.database.getSetting('show_mini_window') !== 'false';
+      if (showMiniWindow && this.miniWindow && !this.miniWindow.isDestroyed()) {
         this.miniWindow.webContents.send('stop-recording-request', Date.now() - this.recordingStartTime);
+      } else if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('stop-recording-request', Date.now() - this.recordingStartTime);
       }
       // Do not return to idle here. Backend will set idle after transcription/paste finishes.
       this.setState('converting');

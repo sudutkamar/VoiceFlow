@@ -138,6 +138,18 @@ export function setupDictationIPC(
       lastTranscript = transcribeResult.text || '';
       lastCleanedText = finalText;
 
+      // If no speech detected, send error and return
+      if (!finalText || finalText.trim().length === 0) {
+        logger.info('No speech detected in audio');
+        hotkeyManager?.setState('error');
+        const sendErr = hotkeyManager
+          ? (msg: string) => hotkeyManager.sendToAll('error', msg)
+          : (msg: string) => mainWindow.webContents.send('error', msg);
+        sendErr('No speech detected');
+        setTimeout(() => hotkeyManager?.setState('idle'), 1000);
+        return;
+      }
+
       // 4. Auto-paste
       const autoPaste = database.getSetting('auto_paste') !== 'false';
       if (autoPaste && finalText) {
