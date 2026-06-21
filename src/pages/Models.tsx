@@ -235,10 +235,21 @@ function Models({ onSuccess, onError }: ModelsProps) {
   };
 
   const handleDelete = async (modelName: string) => {
+    const isCurrentActive = selectedModel === modelName;
+    
     try {
       await window.electronAPI.deleteModel(modelName);
+      
+      // If deleted model was active, switch to base
+      if (isCurrentActive) {
+        await window.electronAPI.updateSetting('model', 'ggml-base.bin');
+        setSelectedModel('ggml-base.bin');
+        notif.warning(`Model ${modelName} dihapus, beralih ke Base model`);
+      } else {
+        notif.success(`Model ${modelName} dihapus`);
+      }
+      
       loadModels(false);
-      notif.success(`Model ${modelName} dihapus`);
     } catch (error) {
       notif.error('Gagal menghapus model');
     }
@@ -427,26 +438,44 @@ function Models({ onSuccess, onError }: ModelsProps) {
               </div>
               <div className="card-right">
                 {model.downloaded && !isCorrupt ? (
-                  isActive ? (
-                    <span className="status-active">✓ Active</span>
-                  ) : (
-                    <button className="btn btn-primary" onClick={() => handleSelect(model.name)}>
-                      Use
+                  <div className="card-actions-row">
+                    {isActive ? (
+                      <span className="status-active">✓ Active</span>
+                    ) : (
+                      <button className="btn btn-primary" onClick={() => handleSelect(model.name)}>
+                        Use
+                      </button>
+                    )}
+                    <button 
+                      className="btn btn-danger btn-icon" 
+                      onClick={() => handleDelete(model.name)}
+                      title="Hapus model"
+                    >
+                      🗑
                     </button>
-                  )
+                  </div>
                 ) : isDownloading ? (
                   <div className="downloading-indicator">
                     <div className="mini-spinner" />
                     <span>{Math.round(progress)}%</span>
                   </div>
                 ) : isCorrupt ? (
-                  <button
-                    className="btn btn-warning"
-                    onClick={() => handleForceDownload(model.name)}
-                    disabled={!!downloading}
-                  >
-                    Re-download
-                  </button>
+                  <div className="card-actions-row">
+                    <button
+                      className="btn btn-warning"
+                      onClick={() => handleForceDownload(model.name)}
+                      disabled={!!downloading}
+                    >
+                      Re-download
+                    </button>
+                    <button 
+                      className="btn btn-danger btn-icon" 
+                      onClick={() => handleDelete(model.name)}
+                      title="Hapus file corrupt"
+                    >
+                      🗑
+                    </button>
+                  </div>
                 ) : (
                   <button
                     className="btn btn-primary"

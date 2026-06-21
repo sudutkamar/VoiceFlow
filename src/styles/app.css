@@ -538,6 +538,12 @@ body {
 
 .card-right { flex-shrink: 0; }
 
+.card-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .badge {
   font-size: 10px;
   padding: 2px 6px;
