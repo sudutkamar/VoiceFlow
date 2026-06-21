@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface SettingsProps {
   onSuccess: (message: string) => void;
@@ -28,6 +28,12 @@ function Settings({ onSuccess }: SettingsProps) {
   const [newReplacement, setNewReplacement] = useState('');
   const [newTrigger, setNewTrigger] = useState('');
   const [newOutput, setNewOutput] = useState('');
+  const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => { if (promptTimerRef.current) clearTimeout(promptTimerRef.current); };
+  }, []);
 
   useEffect(() => { loadData(); loadMics(); }, []);
 
@@ -60,7 +66,7 @@ function Settings({ onSuccess }: SettingsProps) {
   const save = async (key: string, value: string) => {
     try {
       await window.electronAPI.updateSetting(key, value);
-      setSettings({ ...settings, [key]: value });
+      setSettings(prev => ({ ...prev, [key]: value }));
       if (key === 'sound_effects') window.voiceflowSoundEnabled = value !== 'false';
     } catch (error) {
       console.error('Failed to save setting:', error);
@@ -344,7 +350,12 @@ function Settings({ onSuccess }: SettingsProps) {
                 <span className="setting-name">Initial Prompt</span>
                 <span className="setting-hint">Hint Whisper with domain words (e.g. coding terms, names). Leave empty for auto.</span>
               </div>
-              <input type="text" className="setting-input" placeholder="e.g. VoiceFlow, API, React, TypeScript" value={settings.initial_prompt || ''} onChange={(e) => save('initial_prompt', e.target.value)} />
+              <input type="text" className="setting-input" placeholder="e.g. VoiceFlow, API, React, TypeScript" value={settings.initial_prompt || ''} onChange={(e) => {
+                const val = e.target.value;
+                setSettings(prev => ({ ...prev, initial_prompt: val }));
+                if (promptTimerRef.current) clearTimeout(promptTimerRef.current);
+                promptTimerRef.current = setTimeout(() => save('initial_prompt', val), 500);
+              }} />
             </div>
           </div>
 
