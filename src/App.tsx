@@ -389,6 +389,11 @@ function MiniBar() {
           )}
         </div>
 
+        <div className="m-app-chip" title={targetApp ? `Target: ${targetApp}` : 'VoiceFlow is ready'}>
+          <span className="m-app-dot" />
+          <span className="m-app-name">{targetApp || 'VoiceFlow'}</span>
+        </div>
+
         {/* Center: input / text / visualizer / status */}
         <div className="m-center">
           {(state === 'idle' || state === 'hover') && (
