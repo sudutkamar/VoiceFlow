@@ -136,6 +136,9 @@ export class VoiceFlowDatabase {
       show_mini_window: 'true',
       sound_effects: 'false',
       selected_mic: '',
+      push_to_talk: 'false',
+      preview_before_paste: 'false',
+      show_target_app: 'true',
     };
 
     const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

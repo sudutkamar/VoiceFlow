@@ -24,6 +24,10 @@ export function setupSettingsIPC(
     try {
       database.updateSetting(key, value);
       logger.info(`Setting updated: ${key} = ${value}`);
+      // Apply setting changes immediately
+      if (key === 'push_to_talk' && hotkeyManager) {
+        hotkeyManager.updatePushToTalk(value === 'true');
+      }
       return { success: true };
     } catch (error) {
       logger.error('Failed to update setting', error);

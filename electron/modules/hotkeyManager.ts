@@ -1,5 +1,8 @@
 import { globalShortcut, BrowserWindow, clipboard } from 'electron';
-import { execFileSync } from 'child_process';
+import { execFileSync, execFile } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
+import { app } from 'electron';
 import { Logger } from './logger';
 import { VoiceFlowDatabase as Database } from './database';
 
@@ -69,6 +72,9 @@ export class HotkeyManager {
   private wpmInterval: NodeJS.Timeout | null = null;
   private wordCount: number = 0;
   private targetWindowHandle: string | null = null;
+  private targetAppName: string = '';
+  private pushToTalk: boolean = false;
+  private pushToTalkTimer: NodeJS.Timeout | null = null;
 
   constructor(
     mainWindow: BrowserWindow,
@@ -89,7 +95,7 @@ export class HotkeyManager {
     this.miniWindow = miniWindow;
   }
 
-  private sendToAll(channel: string, ...args: any[]): void {
+  sendToAll(channel: string, ...args: any[]): void {
     // Send to main window
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, ...args);
@@ -202,9 +208,7 @@ export class HotkeyManager {
       this.startWpmTracking();
     } else if (state === 'idle' || state === 'error') {
       this.stopWpmTracking();
-      setTimeout(() => {
-        this.hideMini();
-      }, 2000);
+      // Do NOT hide mini window - it stays visible always
     }
   }
 
@@ -233,6 +237,19 @@ export class HotkeyManager {
     return this.targetWindowHandle;
   }
 
+  getTargetAppName(): string {
+    return this.targetAppName;
+  }
+
+  isPushToTalk(): boolean {
+    return this.pushToTalk;
+  }
+
+  updatePushToTalk(enabled: boolean): void {
+    this.pushToTalk = enabled;
+    this.logger.info('Push-to-talk mode', { enabled });
+  }
+
   private captureTargetWindowHandle(): void {
     try {
       const script = `
@@ -242,19 +259,40 @@ using System.Runtime.InteropServices;
 public class NativeWin {
   [DllImport("user32.dll")]
   public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet = CharSet.Auto)]
+  public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+  [DllImport("user32.dll")]
+  public static extern int GetWindowTextLength(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 }
 "@
-[NativeWin]::GetForegroundWindow().ToInt64()
+$hwnd = [NativeWin]::GetForegroundWindow()
+$len = [NativeWin]::GetWindowTextLength($hwnd)
+$sb = New-Object System.Text.StringBuilder($len + 1)
+[NativeWin]::GetWindowText($hwnd, $sb, $sb.Capacity) | Out-Null
+$pid = 0
+[NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$pid) | Out-Null
+$procName = ''
+try { $procName = (Get-Process -Id $pid).ProcessName } catch {}
+Write-Output "$($hwnd.ToInt64())|$($sb.ToString())|$procName"
 `;
       const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
         encoding: 'utf8',
         windowsHide: true,
-        timeout: 1000,
+        timeout: 1500,
       }).trim();
-      this.targetWindowHandle = /^\d+$/.test(out) && out !== '0' ? out : null;
-      this.logger.info('Captured target window handle', { hwnd: this.targetWindowHandle });
+      const parts = out.split('|');
+      const hwnd = parts[0] || '';
+      const title = parts[1] || '';
+      const procName = parts[2] || '';
+      this.targetWindowHandle = /^\d+$/.test(hwnd) && hwnd !== '0' ? hwnd : null;
+      this.targetAppName = (title || procName || '').trim();
+      this.logger.info('Captured target window', { hwnd: this.targetWindowHandle, app: this.targetAppName });
+      this.sendToAll('target-app-changed', this.targetAppName);
     } catch (error) {
       this.targetWindowHandle = null;
+      this.targetAppName = '';
       this.logger.warn('Failed to capture target window handle', error);
     }
   }

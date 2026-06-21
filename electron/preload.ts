@@ -8,6 +8,11 @@ export interface ElectronAPI {
   toggleDictation: () => Promise<void>;
   sendAudioData: (data: { buffer: number[]; mimeType: string; duration: number }) => void;
   
+  // Clipboard
+  copyText: (text: string) => Promise<{ success: boolean; error?: string }>;
+  pasteText: (text: string) => Promise<{ success: boolean; error?: string }>;
+  getClipboardText: () => Promise<string>;
+  
   // Mini Window
   showMiniWindow: () => Promise<void>;
   hideMiniWindow: () => Promise<void>;
@@ -47,6 +52,7 @@ export interface ElectronAPI {
   
   // App State
   getAppState: () => Promise<string>;
+  getTargetApp: () => Promise<string>;
   getVersion: () => Promise<string>;
   isAutoStart: () => Promise<boolean>;
   setAutoStart: (enable: boolean) => Promise<{ success: boolean }>;
@@ -68,6 +74,7 @@ export interface ElectronAPI {
   onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
   onWpmUpdate: (callback: (wpm: number) => void) => () => void;
   onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
+  onTargetAppChanged: (callback: (appName: string) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -76,6 +83,10 @@ const api: ElectronAPI = {
   getTranscript: () => ipcRenderer.invoke('get-transcript'),
   toggleDictation: () => ipcRenderer.invoke('toggle-dictation'),
   sendAudioData: (data) => ipcRenderer.send('audio-recorded', data),
+  
+  copyText: (text) => ipcRenderer.invoke('copy-text', text),
+  pasteText: (text) => ipcRenderer.invoke('paste-text', text),
+  getClipboardText: () => ipcRenderer.invoke('get-clipboard-text'),
   
   showMiniWindow: () => ipcRenderer.invoke('show-mini-window'),
   hideMiniWindow: () => ipcRenderer.invoke('hide-mini-window'),
@@ -111,6 +122,7 @@ const api: ElectronAPI = {
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
   
   getAppState: () => ipcRenderer.invoke('get-app-state'),
+  getTargetApp: () => ipcRenderer.invoke('get-target-app'),
   getVersion: () => ipcRenderer.invoke('get-version'),
   isAutoStart: () => ipcRenderer.invoke('is-autostart'),
   setAutoStart: (enable) => ipcRenderer.invoke('set-autostart', enable),
@@ -178,6 +190,11 @@ const api: ElectronAPI = {
     const handler = (_: any, hotkey: string) => callback(hotkey);
     ipcRenderer.on('hotkey-registered', handler);
     return () => ipcRenderer.removeListener('hotkey-registered', handler);
+  },
+  onTargetAppChanged: (callback) => {
+    const handler = (_: any, appName: string) => callback(appName);
+    ipcRenderer.on('target-app-changed', handler);
+    return () => ipcRenderer.removeListener('target-app-changed', handler);
   },
 };
 

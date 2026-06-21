@@ -19,12 +19,22 @@ let isProcessing = false;
 let lastTranscript = '';
 let lastCleanedText = '';
 
-export function setupDictationIPC(mainWindow: BrowserWindow, database: Database, logger: Logger, hotkeyManager?: HotkeyManager): void {
+export function setupDictationIPC(
+  mainWindow: BrowserWindow,
+  database: Database,
+  logger: Logger,
+  hotkeyManager?: HotkeyManager,
+  hideAllForPaste?: () => void,
+  showAfterPaste?: () => void
+): void {
   audioConverter = new AudioConverter(logger);
   transcriber = new Transcriber(logger);
   transcriber.setMainWindow(mainWindow);
+  if (hotkeyManager) {
+    transcriber.setSendToAll((channel: string, ...args: any[]) => hotkeyManager.sendToAll(channel, ...args));
+  }
   textCleaner = new TextCleaner(logger);
-  pasteEngine = new PasteEngine(mainWindow, logger);
+  pasteEngine = new PasteEngine(mainWindow, logger, hideAllForPaste, showAfterPaste);
 
   ipcMain.handle('start-recording', async () => {
     mainWindow.webContents.send('state-change', 'recording');
@@ -90,16 +100,31 @@ export function setupDictationIPC(mainWindow: BrowserWindow, database: Database,
       const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
 
       let finalText = transcribeResult.text || '';
-      if (!verbatimMode && cleanupEnabled && finalText) {
-        finalText = textCleaner.clean(finalText, {
-          removeFillers,
-          handlePunctuation: true,
-          handleVoiceCommands: database.getSetting('voice_commands') !== 'false',
-          capitalizeFirst: database.getSetting('capitalize_first') !== 'false',
-          capitalizeAfterPeriod: database.getSetting('capitalize_sentences') !== 'false',
-          dictionary,
-          snippets,
-        });
+      if (finalText) {
+        if (verbatimMode) {
+          // In verbatim mode: only process spoken punctuation (koma→, titik→.) and voice commands
+          // Do NOT remove fillers, capitalize, or change words
+          finalText = textCleaner.clean(finalText, {
+            removeFillers: false,
+            handlePunctuation: true,
+            handleVoiceCommands: true,
+            capitalizeFirst: false,
+            capitalizeAfterPeriod: false,
+            fixSpacing: true,
+            dictionary: {},
+            snippets: {},
+          });
+        } else if (cleanupEnabled) {
+          finalText = textCleaner.clean(finalText, {
+            removeFillers,
+            handlePunctuation: true,
+            handleVoiceCommands: database.getSetting('voice_commands') !== 'false',
+            capitalizeFirst: database.getSetting('capitalize_first') !== 'false',
+            capitalizeAfterPeriod: database.getSetting('capitalize_sentences') !== 'false',
+            dictionary,
+            snippets,
+          });
+        }
       }
 
       logger.info('Final text', { text: finalText });
@@ -120,8 +145,12 @@ export function setupDictationIPC(mainWindow: BrowserWindow, database: Database,
       const durationMs = Date.now() - startTime;
       database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
 
-      // 6. Send success to UI
-      mainWindow.webContents.send('transcript-ready', {
+      // 6. Send success to UI (ALL windows: main + mini)
+      const send = hotkeyManager
+        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+
+      send('transcript-ready', {
         raw: transcribeResult.text,
         cleaned: finalText,
         duration: audioData.duration,
@@ -135,7 +164,10 @@ export function setupDictationIPC(mainWindow: BrowserWindow, database: Database,
     } catch (error: any) {
       logger.error('Dictation error', error);
       hotkeyManager?.setState('error');
-      mainWindow.webContents.send('error', error.message || 'Unknown error');
+      const sendErr = hotkeyManager
+        ? (msg: string) => hotkeyManager.sendToAll('error', msg)
+        : (msg: string) => mainWindow.webContents.send('error', msg);
+      sendErr(error.message || 'Unknown error');
       setTimeout(() => hotkeyManager?.setState('idle'), 1000);
     } finally {
       isProcessing = false;
@@ -152,6 +184,10 @@ export function setupDictationIPC(mainWindow: BrowserWindow, database: Database,
 
   ipcMain.handle('get-word-count', async (event, text: string) => {
     return textCleaner.getWordCount(text);
+  });
+
+  ipcMain.handle('get-clipboard-text', async () => {
+    return pasteEngine.getClipboardText();
   });
 
   function getBestAvailableModel(preferredModel: string): string {

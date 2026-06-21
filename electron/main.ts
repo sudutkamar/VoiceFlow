@@ -33,6 +33,7 @@ let database: Database;
 let logger: Logger;
 let hotkeyManager: HotkeyManager;
 let isQuitting = false;
+let isPasting = false;
 
 function isDev(): boolean {
   return process.env.NODE_ENV === 'development';
@@ -119,12 +120,19 @@ function createMiniWindow(): void {
     resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    hasShadow: true,
+    hasShadow: false,
     focusable: false,
   });
 
   miniWindow.on('blur', () => {
-    // Don't hide on blur - keep it visible
+    // Don't hide on blur - keep it visible always
+  });
+
+  // Prevent any attempt to hide the mini window (except during paste or quit)
+  miniWindow.on('hide', () => {
+    if (!isQuitting && !isPasting && miniWindow && !miniWindow.isDestroyed()) {
+      setTimeout(() => miniWindow?.showInactive(), 50);
+    }
   });
 
   miniWindow.webContents.on('did-finish-load', () => {
@@ -158,7 +166,26 @@ function showMiniWindow(): void {
 }
 
 function hideMiniWindow(): void {
-  miniWindow?.hide();
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.hide();
+  }
+}
+
+function hideAllForPaste(): void {
+  isPasting = true;
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+    mainWindow.hide();
+  }
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.hide();
+  }
+}
+
+function showAfterPaste(): void {
+  isPasting = false;
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.showInactive();
+  }
 }
 
 function showMainWindow(): void {
@@ -244,12 +271,13 @@ function createTray(): void {
 function setupIPC(): void {
   if (!mainWindow || !database || !logger) return;
 
-  setupDictationIPC(mainWindow, database, logger, hotkeyManager);
+  setupDictationIPC(mainWindow, database, logger, hotkeyManager, hideAllForPaste, showAfterPaste);
   setupSettingsIPC(mainWindow, database, logger, hotkeyManager);
   setupModelIPC(mainWindow, database, logger);
   setupSnippetIPC(mainWindow, database, logger);
 
   ipcMain.handle('get-app-state', () => hotkeyManager.getState());
+  ipcMain.handle('get-target-app', () => hotkeyManager.getTargetAppName());
   ipcMain.handle('get-version', () => app.getVersion());
   ipcMain.handle('quit-app', () => { isQuitting = true; app.quit(); });
   ipcMain.handle('show-main', () => showMainWindow());
@@ -261,6 +289,10 @@ function setupIPC(): void {
     logger?.info('Mini window reported ready');
     if (hotkeyManager?.getState() === 'recording' && miniWindow && !miniWindow.isDestroyed()) {
       miniWindow.webContents.send('start-recording-request');
+    }
+    // Send current target app name
+    if (miniWindow && !miniWindow.isDestroyed() && hotkeyManager) {
+      miniWindow.webContents.send('target-app-changed', hotkeyManager.getTargetAppName());
     }
   });
   ipcMain.handle('is-autostart', () => app.getLoginItemSettings().openAtLogin);

@@ -19,7 +19,6 @@ function Models({ onSuccess }: ModelsProps) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [modelsPath, setModelsPath] = useState('');
 
   useEffect(() => {
     loadModels();
@@ -36,11 +35,10 @@ function Models({ onSuccess }: ModelsProps) {
             clearInterval(interval);
             setDownloading(null);
             loadModels();
-            onSuccess('Model downloaded successfully!');
+            onSuccess('Model downloaded!');
           }
         } catch {}
       }, 500);
-
       return () => clearInterval(interval);
     }
   }, [downloading]);
@@ -61,20 +59,13 @@ function Models({ onSuccess }: ModelsProps) {
     try {
       const settings = await window.electronAPI.getSettings();
       setSelectedModel(settings.model || 'ggml-base.bin');
-      const path = await window.electronAPI.getModelsPath();
-      setModelsPath(path);
     } catch {}
   };
 
   const handleDownload = async (modelName: string) => {
-    if (downloading) {
-      alert('Please wait for current download to finish');
-      return;
-    }
-
+    if (downloading) return;
     setDownloading(modelName);
     setProgress(0);
-
     try {
       const result = await window.electronAPI.downloadModel(modelName);
       if (!result.success) {
@@ -82,7 +73,6 @@ function Models({ onSuccess }: ModelsProps) {
         setDownloading(null);
       }
     } catch (error) {
-      console.error('Download failed:', error);
       setDownloading(null);
     }
   };
@@ -95,7 +85,7 @@ function Models({ onSuccess }: ModelsProps) {
     }
   };
 
-  const handleSelectModel = async (modelName: string) => {
+  const handleSelect = async (modelName: string) => {
     try {
       await window.electronAPI.updateSetting('model', modelName);
       setSelectedModel(modelName);
@@ -105,141 +95,128 @@ function Models({ onSuccess }: ModelsProps) {
     }
   };
 
-  const getModelIcon = (modelName: string): string => {
-    if (modelName.includes('tiny')) return '⚡';
-    if (modelName.includes('base')) return '⚖️';
-    if (modelName.includes('small')) return '🎯';
-    if (modelName.includes('medium')) return '💎';
-    if (modelName.includes('large')) return '👑';
-    return '📦';
+  const getIcon = (name: string) => {
+    if (name.includes('tiny')) return '⚡';
+    if (name.includes('base')) return '⚖️';
+    if (name.includes('small')) return '🎯';
+    if (name.includes('medium')) return '💎';
+    return '🧠';
   };
 
-  const getModelSpeed = (modelName: string): string => {
-    if (modelName.includes('tiny')) return 'Fastest';
-    if (modelName.includes('base')) return 'Fast';
-    if (modelName.includes('small')) return 'Medium';
-    if (modelName.includes('medium')) return 'Slow';
-    if (modelName.includes('large')) return 'Slowest';
-    return 'Unknown';
+  const getLabel = (name: string) => {
+    if (name.includes('tiny')) return 'Tiny';
+    if (name.includes('base')) return 'Base';
+    if (name.includes('small')) return 'Small';
+    if (name.includes('medium')) return 'Medium';
+    return name.replace('ggml-', '').replace('.bin', '');
   };
 
-  const getModelAccuracy = (modelName: string): string => {
-    if (modelName.includes('tiny')) return 'Basic';
-    if (modelName.includes('base')) return 'Good';
-    if (modelName.includes('small')) return 'Better';
-    if (modelName.includes('medium')) return 'Great';
-    if (modelName.includes('large')) return 'Best';
-    return 'Unknown';
+  const getSpeed = (name: string) => {
+    if (name.includes('tiny')) return '~1s';
+    if (name.includes('base')) return '~2-3s';
+    if (name.includes('small')) return '~5-7s';
+    if (name.includes('medium')) return '~10-15s';
+    return '';
+  };
+
+  const getAccuracy = (name: string) => {
+    if (name.includes('tiny')) return 'Low';
+    if (name.includes('base')) return 'Good';
+    if (name.includes('small')) return 'Better';
+    if (name.includes('medium')) return 'Best';
+    return '';
   };
 
   if (loading) {
     return (
-      <div className="models-page">
-        <div className="empty-state">
-          <p>Loading models...</p>
+      <div className="page">
+        <div className="page-loading">
+          <div className="spinner-lg" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="models-page">
+    <div className="page">
       <div className="page-header">
-        <h2>Whisper Models</h2>
+        <h1>Models</h1>
+        <p className="page-subtitle">Choose a Whisper model for transcription</p>
       </div>
 
-      <div className="models-info">
-        <p>Download Whisper models for speech recognition.</p>
-        <p className="models-path">
-          📁 {modelsPath}
-        </p>
+      {/* Current Model */}
+      <div className="info-card accent">
+        <span className="info-label">Active Model:</span>
+        <span className="info-value">{getIcon(selectedModel)} {getLabel(selectedModel)}</span>
       </div>
 
-      {downloading && (
-        <div className="download-progress">
-          <div className="progress-header">
-            <span>Downloading {downloading}...</span>
-            <button className="cancel-btn" onClick={handleCancel}>Cancel</button>
-          </div>
-          <div className="progress-bar-container">
-            <div 
-              className="progress-bar" 
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="progress-text">{progress}%</div>
-        </div>
-      )}
+      {/* Models List */}
+      <div className="card-list">
+        {models.map((model) => {
+          const isActive = selectedModel === model.name;
+          const isDownloading = downloading === model.name;
 
-      <div className="models-grid">
-        {models.map((model) => (
-          <div 
-            key={model.name} 
-            className={`model-card ${selectedModel === model.name ? 'selected' : ''} ${model.downloaded ? 'downloaded' : ''}`}
-          >
-            <div className="model-header">
-              <span className="model-icon">{getModelIcon(model.name)}</span>
-              <h3 className="model-name">{model.name.replace('.bin', '').replace('ggml-', '').toUpperCase()}</h3>
-              {selectedModel === model.name && (
-                <span className="model-active-badge">Active</span>
-              )}
-            </div>
-
-            <div className="model-description">{model.description}</div>
-
-            <div className="model-stats">
-              <div className="model-stat">
-                <span className="stat-icon">💾</span>
-                <span>{model.size}</span>
+          return (
+            <div key={model.name} className={`card ${isActive ? 'card-active' : ''}`}>
+              <div className="card-left">
+                <div className="card-icon">{getIcon(model.name)}</div>
+                <div className="card-body">
+                  <div className="card-title">
+                    {getLabel(model.name)}
+                    {isActive && <span className="badge">Active</span>}
+                  </div>
+                  <div className="card-desc">{model.description}</div>
+                  <div className="card-meta">
+                    <span>📦 {model.size}</span>
+                    <span>⚡ {getSpeed(model.name)}</span>
+                    <span>🎯 {getAccuracy(model.name)}</span>
+                  </div>
+                  {isDownloading && (
+                    <div className="progress-wrap">
+                      <div className="progress-track">
+                        <div className="progress-bar" style={{ width: `${progress}%` }} />
+                      </div>
+                      <span className="progress-text">{Math.round(progress)}%</span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="model-stat">
-                <span className="stat-icon">⚡</span>
-                <span>{getModelSpeed(model.name)}</span>
-              </div>
-              <div className="model-stat">
-                <span className="stat-icon">🎯</span>
-                <span>{getModelAccuracy(model.name)}</span>
-              </div>
-            </div>
-
-            <div className="model-actions">
-              {model.downloaded ? (
-                <>
-                  <button
-                    className={`model-btn ${selectedModel === model.name ? 'active' : ''}`}
-                    onClick={() => handleSelectModel(model.name)}
-                  >
-                    {selectedModel === model.name ? '✓ Selected' : 'Select'}
+              <div className="card-right">
+                {model.downloaded ? (
+                  isActive ? (
+                    <span className="status-active">✓ Active</span>
+                  ) : (
+                    <button className="btn btn-primary" onClick={() => handleSelect(model.name)}>
+                      Use
+                    </button>
+                  )
+                ) : isDownloading ? (
+                  <button className="btn btn-secondary" onClick={handleCancel}>
+                    Cancel
                   </button>
-                </>
-              ) : (
-                <button
-                  className="model-btn download"
-                  onClick={() => handleDownload(model.name)}
-                  disabled={!!downloading}
-                >
-                  {downloading === model.name ? `Downloading ${progress}%` : 'Download'}
-                </button>
-              )}
+                ) : (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleDownload(model.name)}
+                    disabled={!!downloading}
+                  >
+                    Download
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="models-help">
+      {/* Tips */}
+      <div className="info-box">
         <h3>💡 Tips</h3>
         <ul>
-          <li><strong>⚡ Tiny</strong> - Tercepat (~1 detik), cocok untuk real-time</li>
-          <li><strong>⚖️ Base</strong> - Seimbang (~2-3 detik), recommended</li>
-          <li><strong>🎯 Small</strong> - Lebih akurat (~5-7 detik)</li>
-          <li><strong>💎 Medium</strong> - Sangat akurat (~10-15 detik)</li>
+          <li><strong>Base</strong> is good enough for daily use</li>
+          <li><strong>Medium</strong> gives best accuracy but uses more RAM</li>
+          <li>Download requires internet connection</li>
         </ul>
-        <p className="models-note">
-          Model diunduh dari Hugging Face dan disimpan secara lokal.
-        </p>
-        <div className="speed-tip">
-          <strong>🚀 Untuk kecepatan maksimal:</strong> Gunakan model <strong>Tiny</strong>
-        </div>
       </div>
     </div>
   );

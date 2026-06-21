@@ -15,6 +15,7 @@ export class Transcriber {
   private whisperPath: string;
   private modelsPath: string;
   private mainWindow: BrowserWindow | null = null;
+  private sendToAllFn: ((channel: string, ...args: any[]) => void) | null = null;
   private currentProcess: any = null;
 
   constructor(logger: Logger) {
@@ -39,6 +40,18 @@ export class Transcriber {
 
   setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window;
+  }
+
+  setSendToAll(fn: (channel: string, ...args: any[]) => void): void {
+    this.sendToAllFn = fn;
+  }
+
+  private sendToRenderer(channel: string, ...args: any[]): void {
+    if (this.sendToAllFn) {
+      this.sendToAllFn(channel, ...args);
+    } else {
+      this.mainWindow?.webContents.send(channel, ...args);
+    }
   }
 
   async transcribe(
@@ -124,7 +137,7 @@ export class Transcriber {
             const partial = match[1].trim();
             if (partial && partial !== partialText && partial.length > 2) {
               partialText = partial;
-              this.mainWindow?.webContents.send('partial-transcript', partial);
+              this.sendToRenderer('partial-transcript', partial);
             }
           }
         }

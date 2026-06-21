@@ -9,21 +9,16 @@ interface HistoryItem {
   raw_text: string;
   final_text: string;
   duration_ms: number;
-  audio_duration_ms: number;
   word_count: number;
-  char_count: number;
   created_at: string;
 }
 
 function History({ onSuccess }: HistoryProps) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  useEffect(() => { loadHistory(); }, []);
 
   const loadHistory = async () => {
     try {
@@ -37,227 +32,137 @@ function History({ onSuccess }: HistoryProps) {
     }
   };
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
-    if (!query.trim()) {
-      loadHistory();
-      return;
-    }
-    try {
-      const items = await window.electronAPI.searchHistory(query);
-      setHistory(items);
-    } catch (error) {
-      console.error('Failed to search history:', error);
-    }
-  };
-
   const handleDelete = async (id: string) => {
     try {
-      await window.electronAPI.deleteHistoryItem(id);
+      await window.electronAPI.deleteHistory(id);
       setHistory(history.filter(item => item.id !== id));
-      onSuccess('Item deleted');
+      onSuccess('Deleted');
     } catch (error) {
-      console.error('Failed to delete item:', error);
+      console.error('Failed to delete:', error);
     }
   };
 
-  const handleClearAll = async () => {
-    if (window.confirm('Yakin ingin menghapus semua history?')) {
-      try {
-        await window.electronAPI.clearHistory();
-        setHistory([]);
-        onSuccess('History cleared');
-      } catch (error) {
-        console.error('Failed to clear history:', error);
-      }
-    }
-  };
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    onSuccess('Copied to clipboard');
-  };
-
-  const handleExport = async () => {
+  const handleClear = async () => {
+    if (!confirm('Clear all history?')) return;
     try {
-      const result = await window.electronAPI.exportHistory();
-      if (result.success) {
-        onSuccess(`History exported to: ${result.path}`);
-      } else if (result.error !== 'Export cancelled') {
-        alert(result.error);
-      }
+      await window.electronAPI.clearHistory();
+      setHistory([]);
+      onSuccess('History cleared');
     } catch (error) {
-      console.error('Failed to export history:', error);
+      console.error('Failed to clear:', error);
     }
   };
 
-  const formatDate = (dateStr: string): string => {
+  const handleCopy = async (text: string) => {
+    try {
+      await window.electronAPI.copyText(text);
+      onSuccess('Copied!');
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  };
+
+  const filtered = search
+    ? history.filter(item =>
+        item.final_text.toLowerCase().includes(search.toLowerCase()) ||
+        item.raw_text.toLowerCase().includes(search.toLowerCase())
+      )
+    : history;
+
+  const timeAgo = (dateStr: string) => {
     try {
       const date = new Date(dateStr);
       const now = new Date();
       const diff = now.getTime() - date.getTime();
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const mins = Math.floor(diff / 60000);
+      const hours = Math.floor(diff / 3600000);
+      const days = Math.floor(diff / 86400000);
 
-      if (days === 0) {
-        return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      } else if (days === 1) {
-        return 'Kemarin';
-      } else if (days < 7) {
-        return `${days} hari lalu`;
-      } else {
-        return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-      }
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      if (hours < 24) return `${hours}h ago`;
+      if (days < 7) return `${days}d ago`;
+      return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
     } catch {
-      return dateStr;
+      return '';
     }
   };
 
-  const formatDuration = (ms: number): string => {
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}m ${secs}s`;
+  const formatDuration = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
   };
-
-  const getStats = () => {
-    const totalWords = history.reduce((sum, item) => sum + (item.word_count || 0), 0);
-    const totalDuration = history.reduce((sum, item) => sum + (item.audio_duration_ms || 0), 0);
-    return {
-      totalDictations: history.length,
-      totalWords,
-      totalDuration: formatDuration(totalDuration),
-    };
-  };
-
-  const stats = getStats();
 
   if (loading) {
     return (
-      <div className="history-page">
-        <div className="empty-state">
-          <p>Memuat history...</p>
+      <div className="page">
+        <div className="page-loading">
+          <div className="spinner-lg" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="history-page">
+    <div className="page">
       <div className="page-header">
-        <h2>History</h2>
-        <div className="page-actions">
-          <button className="action-btn" onClick={handleExport} title="Export">
-            📥 Export
-          </button>
-          {history.length > 0 && (
-            <button className="action-btn danger" onClick={handleClearAll}>
-              🗑️ Clear All
-            </button>
-          )}
-        </div>
+        <h1>History</h1>
+        <p className="page-subtitle">Your recent transcriptions</p>
       </div>
 
+      {/* Search Bar */}
       <div className="search-bar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
         <input
           type="text"
-          placeholder="Search history..."
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="search-input"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
-        {searchQuery && (
-          <button 
-            className="search-clear"
-            onClick={() => {
-              setSearchQuery('');
-              loadHistory();
-            }}
-          >
-            ✕
+        {history.length > 0 && (
+          <button className="btn btn-sm btn-danger" onClick={handleClear}>
+            Clear All
           </button>
         )}
       </div>
 
-      {history.length > 0 && (
-        <div className="history-stats">
-          <div className="stat">
-            <span className="stat-value">{stats.totalDictations}</span>
-            <span className="stat-label">Dictations</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{stats.totalWords}</span>
-            <span className="stat-label">Words</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{stats.totalDuration}</span>
-            <span className="stat-label">Audio</span>
-          </div>
-        </div>
-      )}
-
-      {history.length === 0 ? (
-        <div className="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p>{searchQuery ? 'Tidak ada hasil' : 'Belum ada history'}</p>
-          <p style={{ fontSize: '12px', marginTop: '4px' }}>
-            {searchQuery ? 'Coba kata kunci lain' : 'History akan muncul setelah Anda menggunakan VoiceFlow'}
-          </p>
-        </div>
-      ) : (
-        <div className="history-list">
-          {history.map((item) => (
-            <div 
-              key={item.id} 
-              className={`history-item ${selectedItem === item.id ? 'expanded' : ''}`}
-            >
-              <div 
-                className="history-item-header"
-                onClick={() => setSelectedItem(selectedItem === item.id ? null : item.id)}
-              >
-                <div className="history-text">
-                  {item.final_text.length > 80 
-                    ? item.final_text.substring(0, 80) + '...' 
-                    : item.final_text}
-                </div>
-                <div className="history-meta">
-                  <span>{formatDate(item.created_at)}</span>
-                  <span>•</span>
-                  <span>{item.word_count || 0} kata</span>
-                  <span>•</span>
-                  <span>{formatDuration(item.audio_duration_ms || item.duration_ms)}</span>
-                </div>
-              </div>
-              
-              {selectedItem === item.id && (
-                <div className="history-item-expanded">
-                  <div className="history-full-text">{item.final_text}</div>
-                  {item.raw_text !== item.final_text && (
-                    <details className="history-raw">
-                      <summary>Original</summary>
-                      <div>{item.raw_text}</div>
-                    </details>
-                  )}
-                  <div className="history-item-actions">
-                    <button
-                      className="action-btn small"
-                      onClick={() => handleCopy(item.final_text)}
-                    >
-                      📋 Copy
+      {/* History List */}
+      {filtered.length > 0 ? (
+        <div className="card-list">
+          {filtered.map((item) => (
+            <div key={item.id} className="card card-hover">
+              <div className="card-body-full">
+                <div className="card-text">{item.final_text || item.raw_text}</div>
+                <div className="card-footer">
+                  <div className="card-meta">
+                    <span>{timeAgo(item.created_at)}</span>
+                    {item.duration_ms > 0 && <span>{formatDuration(item.duration_ms)}</span>}
+                    {item.word_count > 0 && <span>{item.word_count} words</span>}
+                  </div>
+                  <div className="card-actions">
+                    <button className="btn btn-sm" onClick={() => handleCopy(item.final_text || item.raw_text)}>
+                      Copy
                     </button>
-                    <button
-                      className="action-btn small danger"
-                      onClick={() => handleDelete(item.id)}
-                    >
-                      🗑️ Delete
+                    <button className="btn btn-sm btn-icon" onClick={() => handleDelete(item.id)} title="Delete">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      </svg>
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <div className="empty-icon">📝</div>
+          <h3>{search ? 'No Results' : 'No History'}</h3>
+          <p>{search ? 'Try a different search' : 'Your transcriptions will appear here'}</p>
         </div>
       )}
     </div>

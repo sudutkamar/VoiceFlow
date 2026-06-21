@@ -7,89 +7,141 @@ import { Logger } from './logger';
 export class PasteEngine {
   private logger: Logger;
   private mainWindow: BrowserWindow;
+  private hideAllForPaste: (() => void) | null;
+  private showAfterPaste: (() => void) | null;
 
-  constructor(mainWindow: BrowserWindow, logger: Logger) {
+  constructor(
+    mainWindow: BrowserWindow,
+    logger: Logger,
+    hideAllForPaste?: () => void,
+    showAfterPaste?: () => void
+  ) {
     this.mainWindow = mainWindow;
     this.logger = logger;
+    this.hideAllForPaste = hideAllForPaste || null;
+    this.showAfterPaste = showAfterPaste || null;
   }
 
   async paste(text: string, targetWindowHandle?: string | null): Promise<{ success: boolean; error?: string }> {
     if (!text?.trim()) return { success: false, error: 'No text' };
 
     try {
-      this.logger.info('Paste starting...', { textLength: text.length, targetWindowHandle });
-
+      // 1. Save current clipboard
       const savedClipboard = clipboard.readText();
-      clipboard.writeText(text);
-      await this.wait(50);
 
-      // Hide only the main settings window. Keep floating UI visible.
-      if (!this.mainWindow.isDestroyed() && this.mainWindow.isVisible()) {
-        this.mainWindow.hide();
+      // 2. Write text to clipboard
+      clipboard.writeText(text);
+      this.logger.info('Clipboard set', { length: text.length });
+
+      // 3. Hide ALL windows (main + mini) so paste goes to target app
+      if (this.hideAllForPaste) {
+        this.hideAllForPaste();
+      } else {
+        // Fallback: hide main window only
+        if (!this.mainWindow.isDestroyed() && this.mainWindow.isVisible()) {
+          this.mainWindow.hide();
+        }
       }
 
+      // 4. Small delay to let windows hide and target app gain focus
+      await this.sleep(150);
+
+      // 5. Send Ctrl+V to target window
       const ok = await this.sendPasteKeystroke(targetWindowHandle || null);
 
-      setTimeout(() => {
-        try { clipboard.writeText(savedClipboard || ''); } catch {}
-      }, 1000);
+      // 6. Re-show mini window after paste
+      if (this.showAfterPaste) {
+        // Delay to ensure paste keystroke is processed first
+        setTimeout(() => this.showAfterPaste!(), 300);
+      }
 
-      this.logger.info('Paste done', { success: ok });
+      // 7. Restore original clipboard after a delay
+      setTimeout(() => {
+        try {
+          clipboard.writeText(savedClipboard || '');
+        } catch {}
+      }, 800);
+
+      if (ok) {
+        this.logger.info('Paste successful');
+      } else {
+        this.logger.warn('Paste keystroke may have failed');
+      }
+
       return { success: ok };
     } catch (err: any) {
       this.logger.error('Paste error', err);
+      // Re-show mini window on error
+      if (this.showAfterPaste) {
+        this.showAfterPaste();
+      }
       return { success: false, error: err.message };
     }
   }
 
   private async sendPasteKeystroke(targetWindowHandle: string | null): Promise<boolean> {
-    const tempScript = path.join(app.getPath('temp'), `voiceflow-paste-${Date.now()}.ps1`);
     const hwndLiteral = targetWindowHandle && /^\d+$/.test(targetWindowHandle) ? targetWindowHandle : '0';
 
     const script = `
-$hwnd = [IntPtr]${hwndLiteral}
+$hwnd=[IntPtr]${hwndLiteral}
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public class NativeInput {
-  [DllImport("user32.dll")]
-  public static extern bool SetForegroundWindow(IntPtr hWnd);
-  [DllImport("user32.dll")]
-  public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+public class NI {
+  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);
 }
 "@
-if ($hwnd.ToInt64() -ne 0) {
-  [NativeInput]::SetForegroundWindow($hwnd) | Out-Null
-  Start-Sleep -Milliseconds 180
+if($hwnd.ToInt64()-ne 0){
+  [NI]::SetForegroundWindow($hwnd)|Out-Null
+  Start-Sleep -m 150
 }
-[NativeInput]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 20
-[NativeInput]::keybd_event(0x56, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 20
-[NativeInput]::keybd_event(0x56, 0, 2, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 20
-[NativeInput]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+[NI]::keybd_event(0x11,0,0,[UIntPtr]::Zero)
+Start-Sleep -m 20
+[NI]::keybd_event(0x56,0,0,[UIntPtr]::Zero)
+Start-Sleep -m 20
+[NI]::keybd_event(0x56,0,2,[UIntPtr]::Zero)
+Start-Sleep -m 20
+[NI]::keybd_event(0x11,0,2,[UIntPtr]::Zero)
 `;
 
-    fs.writeFileSync(tempScript, script, 'utf8');
-
     return new Promise((resolve) => {
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tempScript], {
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
         timeout: 4000,
         windowsHide: true,
-      }, (err) => {
-        try { fs.unlinkSync(tempScript); } catch {}
-        resolve(!err);
+      }, (err, stdout, stderr) => {
+        if (err) {
+          this.logger.error('Paste keystroke error', { error: err.message, stderr });
+          resolve(false);
+        } else {
+          resolve(true);
+        }
       });
     });
   }
 
-  private wait(ms: number): Promise<void> {
-    return new Promise(r => setTimeout(r, ms));
+  async copy(text: string): Promise<{ success: boolean; error?: string }> {
+    if (!text?.trim()) return { success: false, error: 'No text' };
+
+    try {
+      clipboard.writeText(text);
+      this.logger.info('Copied to clipboard', { length: text.length });
+      return { success: true };
+    } catch (err: any) {
+      this.logger.error('Copy error', err);
+      return { success: false, error: err.message };
+    }
   }
 
-  async copy(text: string): Promise<{ success: boolean }> {
-    clipboard.writeText(text);
-    return { success: true };
+  getClipboardText(): string {
+    try {
+      return clipboard.readText();
+    } catch {
+      return '';
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

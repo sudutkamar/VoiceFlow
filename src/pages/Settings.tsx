@@ -4,67 +4,44 @@ interface SettingsProps {
   onSuccess: (message: string) => void;
 }
 
-interface DictionaryEntry {
+interface DictEntry {
   id: string;
   phrase: string;
   replacement: string;
-  created_at: string;
 }
 
 interface SnippetEntry {
   id: string;
   trigger_phrase: string;
   output_text: string;
-  created_at: string;
 }
 
 function Settings({ onSuccess }: SettingsProps) {
   const [settings, setSettings] = useState<Record<string, string>>({});
-  const [dictionary, setDictionary] = useState<DictionaryEntry[]>([]);
+  const [dict, setDict] = useState<DictEntry[]>([]);
   const [snippets, setSnippets] = useState<SnippetEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'general' | 'recording' | 'processing' | 'dictionary' | 'snippets'>('general');
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+  const [editingHotkey, setEditingHotkey] = useState(false);
   const [newPhrase, setNewPhrase] = useState('');
   const [newReplacement, setNewReplacement] = useState('');
-  const [newSnippetTrigger, setNewSnippetTrigger] = useState('');
-  const [newSnippetOutput, setNewSnippetOutput] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'dictionary' | 'snippets' | 'hotkey'>('general');
-  const [editingDict, setEditingDict] = useState<string | null>(null);
-  const [editingSnippet, setEditingSnippet] = useState<string | null>(null);
-  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedMic, setSelectedMic] = useState<string>('');
+  const [newTrigger, setNewTrigger] = useState('');
+  const [newOutput, setNewOutput] = useState('');
 
-  useEffect(() => {
-    loadData();
-    loadAudioDevices();
-  }, []);
-
-  const loadAudioDevices = async () => {
-    try {
-      // Request permission first to get full device labels
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const mics = devices.filter(d => d.kind === 'audioinput');
-      setAudioDevices(mics);
-      
-      // Load saved mic preference
-      const savedMic = settings.selected_mic || '';
-      setSelectedMic(savedMic);
-    } catch (error) {
-      console.error('Failed to load audio devices:', error);
-    }
-  };
+  useEffect(() => { loadData(); loadMics(); }, []);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [settingsData, dictData, snippetData] = await Promise.all([
+      const [s, d, sn] = await Promise.all([
         window.electronAPI.getSettings(),
         window.electronAPI.getDictionary(),
         window.electronAPI.getSnippets(),
       ]);
-      setSettings(settingsData);
-      setDictionary(dictData);
-      setSnippets(snippetData);
+      setSettings(s);
+      setDict(d);
+      setSnippets(sn);
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -72,404 +49,373 @@ function Settings({ onSuccess }: SettingsProps) {
     }
   };
 
-  const updateSetting = async (key: string, value: string) => {
+  const loadMics = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setMics(devices.filter(d => d.kind === 'audioinput'));
+    } catch {}
+  };
+
+  const save = async (key: string, value: string) => {
     try {
       await window.electronAPI.updateSetting(key, value);
       setSettings({ ...settings, [key]: value });
     } catch (error) {
-      console.error('Failed to update setting:', error);
+      console.error('Failed to save setting:', error);
     }
   };
 
-  const handleToggle = async (key: string) => {
-    const currentValue = settings[key] !== 'false';
-    await updateSetting(key, (!currentValue).toString());
+  const toggle = async (key: string) => {
+    const current = settings[key] !== 'false';
+    await save(key, (!current).toString());
   };
 
-  const handleAddDictionary = async () => {
+  const handleHotkey = async (e: React.KeyboardEvent) => {
+    e.preventDefault();
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Super');
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      parts.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    }
+    if (parts.length >= 2) {
+      const hotkey = parts.join('+').replace('Ctrl', 'CommandOrControl');
+      try {
+        const result = await window.electronAPI.updateHotkey(hotkey);
+        if (result.success) {
+          setSettings(prev => ({ ...prev, hotkey }));
+          onSuccess('Hotkey updated');
+        }
+      } catch {}
+      setEditingHotkey(false);
+    }
+  };
+
+  const formatHotkey = (hk: string) => {
+    return hk.replace('CommandOrControl', 'Ctrl').replace('Control', 'Ctrl').split('+').map(k => k.trim()).join(' + ');
+  };
+
+  const addDict = async () => {
     if (!newPhrase.trim() || !newReplacement.trim()) return;
-
     try {
-      const result = await window.electronAPI.addDictionaryEntry(newPhrase.trim(), newReplacement.trim());
-      if (result.success) {
-        setNewPhrase('');
-        setNewReplacement('');
-        const dictData = await window.electronAPI.getDictionary();
-        setDictionary(dictData);
-        onSuccess('Dictionary entry added');
-      }
-    } catch (error) {
-      console.error('Failed to add dictionary entry:', error);
-    }
+      await window.electronAPI.addDictionaryEntry(newPhrase.trim(), newReplacement.trim());
+      setNewPhrase('');
+      setNewReplacement('');
+      const d = await window.electronAPI.getDictionary();
+      setDict(d);
+      onSuccess('Added');
+    } catch {}
   };
 
-  const handleDeleteDictionary = async (id: string) => {
+  const deleteDict = async (id: string) => {
     try {
       await window.electronAPI.deleteDictionaryEntry(id);
-      setDictionary(dictionary.filter(entry => entry.id !== id));
-      onSuccess('Dictionary entry deleted');
-    } catch (error) {
-      console.error('Failed to delete dictionary entry:', error);
-    }
+      setDict(dict.filter(e => e.id !== id));
+      onSuccess('Deleted');
+    } catch {}
   };
 
-  const handleAddSnippet = async () => {
-    if (!newSnippetTrigger.trim() || !newSnippetOutput.trim()) return;
-
+  const addSnippet = async () => {
+    if (!newTrigger.trim() || !newOutput.trim()) return;
     try {
-      const result = await window.electronAPI.addSnippet(newSnippetTrigger.trim(), newSnippetOutput.trim());
-      if (result.success) {
-        setNewSnippetTrigger('');
-        setNewSnippetOutput('');
-        const snippetData = await window.electronAPI.getSnippets();
-        setSnippets(snippetData);
-        onSuccess('Snippet added');
-      }
-    } catch (error) {
-      console.error('Failed to add snippet:', error);
-    }
+      await window.electronAPI.addSnippet(newTrigger.trim(), newOutput.trim());
+      setNewTrigger('');
+      setNewOutput('');
+      const s = await window.electronAPI.getSnippets();
+      setSnippets(s);
+      onSuccess('Added');
+    } catch {}
   };
 
-  const handleDeleteSnippet = async (id: string) => {
+  const deleteSnippet = async (id: string) => {
     try {
       await window.electronAPI.deleteSnippet(id);
       setSnippets(snippets.filter(s => s.id !== id));
-      onSuccess('Snippet deleted');
-    } catch (error) {
-      console.error('Failed to delete snippet:', error);
-    }
+      onSuccess('Deleted');
+    } catch {}
   };
 
-  const handleAutoStart = async () => {
-    const newValue = settings.auto_start !== 'true';
-    await updateSetting('auto_start', newValue.toString());
-    await window.electronAPI.setAutoStart(newValue);
-    onSuccess(newValue ? 'Auto-start enabled' : 'Auto-start disabled');
-  };
+  const langs = [
+    { code: 'auto', name: 'Auto Detect', flag: '🌐' },
+    { code: 'id', name: 'Indonesia', flag: '🇮🇩' },
+    { code: 'en', name: 'English', flag: '🇺🇸' },
+    { code: 'ja', name: '日本語', flag: '🇯🇵' },
+    { code: 'ko', name: '한국어', flag: '🇰🇷' },
+    { code: 'zh', name: '中文', flag: '🇨🇳' },
+  ];
 
   if (loading) {
     return (
-      <div className="settings-page">
-        <div className="empty-state">
-          <p>Loading settings...</p>
+      <div className="page">
+        <div className="page-loading">
+          <div className="spinner-lg" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="settings-page">
+    <div className="page">
       <div className="page-header">
-        <h2>Settings</h2>
+        <h1>Settings</h1>
+        <p className="page-subtitle">Configure VoiceFlow</p>
       </div>
 
-      <div className="settings-tabs">
-        <button 
-          className={`tab ${activeTab === 'general' ? 'active' : ''}`}
-          onClick={() => setActiveTab('general')}
-        >
-          ⚙️ General
-        </button>
-        <button 
-          className={`tab ${activeTab === 'dictionary' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dictionary')}
-        >
-          📖 Dictionary
-        </button>
-        <button 
-          className={`tab ${activeTab === 'snippets' ? 'active' : ''}`}
-          onClick={() => setActiveTab('snippets')}
-        >
-          ✨ Snippets
-        </button>
+      {/* Tabs */}
+      <div className="tabs">
+        {[
+          { id: 'general', label: 'General', icon: '⚙️' },
+          { id: 'recording', label: 'Recording', icon: '🎤' },
+          { id: 'processing', label: 'Processing', icon: '✨' },
+          { id: 'dictionary', label: 'Dictionary', icon: '📖' },
+          { id: 'snippets', label: 'Snippets', icon: '📝' },
+        ].map(t => (
+          <button
+            key={t.id}
+            className={`tab ${tab === t.id ? 'tab-active' : ''}`}
+            onClick={() => setTab(t.id as any)}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
       </div>
 
-      {activeTab === 'general' && (
-        <div className="settings-content">
-          <div className="settings-section">
-            <h3>🎤 Recording</h3>
-            
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Microphone</span>
-                <span>Pilih microphone yang akan digunakan</span>
+      {/* General */}
+      {tab === 'general' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Quick Settings</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Auto Paste</span>
+                <span className="setting-hint">Auto paste text to active app</span>
               </div>
-              <div className="setting-control">
-                <select
-                  value={selectedMic}
-                  onChange={(e) => {
-                    setSelectedMic(e.target.value);
-                    updateSetting('selected_mic', e.target.value);
-                    onSuccess('Microphone changed');
-                  }}
-                >
-                  <option value="">Default Microphone</option>
-                  {audioDevices.map((device) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Microphone ${device.deviceId.slice(0, 8)}`}
-                    </option>
-                  ))}
-                </select>
-                <button 
-                  className="btn-refresh"
-                  onClick={loadAudioDevices}
-                  title="Refresh microphone list"
-                >
-                  🔄
+              <div className={`toggle ${settings.auto_paste !== 'false' ? 'on' : ''}`} onClick={() => toggle('auto_paste')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Sound Feedback</span>
+                <span className="setting-hint">Play sound on record start/stop</span>
+              </div>
+              <div className={`toggle ${settings.sound_effects !== 'false' ? 'on' : ''}`} onClick={() => toggle('sound_effects')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Start on Boot</span>
+                <span className="setting-hint">Launch on Windows startup</span>
+              </div>
+              <div className={`toggle ${settings.auto_start === 'true' ? 'on' : ''}`} onClick={async () => { const v = settings.auto_start !== 'true'; await save('auto_start', v.toString()); await window.electronAPI.setAutoStart(v); onSuccess(v ? 'Enabled' : 'Disabled'); }} />
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="section-header">Hotkey</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Push to Talk</span>
+                <span className="setting-hint">Hold hotkey to record, release to stop</span>
+              </div>
+              <div className={`toggle ${settings.push_to_talk !== 'false' ? 'on' : ''}`} onClick={() => toggle('push_to_talk')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Recording Hotkey</span>
+                <span className="setting-hint">Press key combination to change</span>
+              </div>
+              {editingHotkey ? (
+                <div className="hotkey-input" tabIndex={0} onKeyDown={handleHotkey} onBlur={() => setEditingHotkey(false)} autoFocus>
+                  Press keys...
+                </div>
+              ) : (
+                <button className="hotkey-btn" onClick={() => setEditingHotkey(true)}>
+                  {formatHotkey(settings.hotkey || 'Ctrl+Shift+F9')}
+                  <span className="hotkey-edit">Edit</span>
                 </button>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Whisper Model</span>
-                <span>Model yang digunakan untuk transkripsi</span>
-              </div>
-              <div className="setting-control">
-                <select
-                  value={settings.model || 'ggml-base.bin'}
-                  onChange={(e) => {
-                    updateSetting('model', e.target.value);
-                    onSuccess(`Model changed to ${e.target.value}`);
-                  }}
-                >
-                  <option value="ggml-tiny.bin">⚡ Tiny (Tercepat ~1 detik)</option>
-                  <option value="ggml-base.bin">⚖️ Base (Seimbang ~2-3 detik)</option>
-                  <option value="ggml-small.bin">🎯 Small (Akurat ~5-7 detik)</option>
-                  <option value="ggml-medium.bin">💎 Medium (Sangat akurat ~10-15 detik)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Language</span>
-                <span>Bahasa untuk transkripsi</span>
-              </div>
-              <div className="setting-control">
-                <select
-                  value={settings.language || 'auto'}
-                  onChange={(e) => updateSetting('language', e.target.value)}
-                >
-                  <option value="auto">Auto Detect</option>
-                  <option value="id">Bahasa Indonesia</option>
-                  <option value="en">English</option>
-                  <option value="ja">日本語</option>
-                  <option value="ko">한국어</option>
-                  <option value="zh">中文</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Auto Paste</span>
-                <span>Otomatis tempel teks ke aplikasi aktif</span>
-              </div>
-              <div
-                className={`toggle ${settings.auto_paste !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('auto_paste')}
-              />
+              )}
             </div>
           </div>
 
-          <div className="settings-section">
-            <h3>✨ Text Processing</h3>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Text Cleanup</span>
-                <span>Bersihkan filler words dan punctuation</span>
+          <div className="section">
+            <div className="section-header">System</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Language</span>
+                <span className="setting-hint">Transcription language</span>
               </div>
-              <div
-                className={`toggle ${settings.cleanup_enabled !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('cleanup_enabled')}
-              />
+              <select value={settings.language || 'auto'} onChange={(e) => save('language', e.target.value)}>
+                {langs.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
+              </select>
             </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Remove Fillers</span>
-                <span>Hapus kata-kata filler (eh, anu, hmm)</span>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Save History</span>
+                <span className="setting-hint">Save transcription history locally</span>
               </div>
-              <div
-                className={`toggle ${settings.remove_fillers !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('remove_fillers')}
-              />
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Capitalize First</span>
-                <span>Kapitalisasi huruf pertama</span>
-              </div>
-              <div
-                className={`toggle ${settings.capitalize_first !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('capitalize_first')}
-              />
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Capitalize Sentences</span>
-                <span>Kapitalisasi setelah titik</span>
-              </div>
-              <div
-                className={`toggle ${settings.capitalize_sentences !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('capitalize_sentences')}
-              />
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Voice Commands</span>
-                <span>Gunakan voice commands (new paragraph, bold, dll)</span>
-              </div>
-              <div
-                className={`toggle ${settings.voice_commands !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('voice_commands')}
-              />
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>🔒 Privacy</h3>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Save History</span>
-                <span>Simpan history transkripsi lokal</span>
-              </div>
-              <div
-                className={`toggle ${settings.save_history !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('save_history')}
-              />
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>🖥️ System</h3>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Start on Boot</span>
-                <span>Otomatis jalankan saat Windows startup</span>
-              </div>
-              <div
-                className={`toggle ${settings.auto_start === 'true' ? 'active' : ''}`}
-                onClick={handleAutoStart}
-              />
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-label">
-                <span>Minimize to Tray</span>
-                <span>Sembunyikan ke system tray saat close</span>
-              </div>
-              <div
-                className={`toggle ${settings.minimize_to_tray !== 'false' ? 'active' : ''}`}
-                onClick={() => handleToggle('minimize_to_tray')}
-              />
+              <div className={`toggle ${settings.save_history !== 'false' ? 'on' : ''}`} onClick={() => toggle('save_history')} />
             </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'dictionary' && (
-        <div className="settings-content">
-          <div className="dictionary-section">
-            <p className="section-description">
-              Kata-kata yang akan diganti otomatis saat transkripsi.
-              Berguna untuk nama, istilah teknis, atau singkatan.
-            </p>
-
-            <div className="dictionary-form">
-              <input
-                type="text"
-                placeholder="Kata/Frasa"
-                value={newPhrase}
-                onChange={(e) => setNewPhrase(e.target.value)}
-              />
-              <input
-                type="text"
-                placeholder="Pengganti"
-                value={newReplacement}
-                onChange={(e) => setNewReplacement(e.target.value)}
-              />
-              <button onClick={handleAddDictionary}>Tambah</button>
+      {/* Recording */}
+      {tab === 'recording' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Microphone</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Input Device</span>
+                <span className="setting-hint">Select microphone</span>
+              </div>
+              <div className="setting-control">
+                <select value={settings.selected_mic || ''} onChange={(e) => { save('selected_mic', e.target.value); onSuccess('Mic changed'); }}>
+                  <option value="">Default</option>
+                  {mics.map(m => <option key={m.deviceId} value={m.deviceId}>{m.label || `Mic ${m.deviceId.slice(0, 6)}`}</option>)}
+                </select>
+                <button className="btn btn-sm btn-icon" onClick={loadMics} title="Refresh">🔄</button>
+              </div>
             </div>
+          </div>
 
-            {dictionary.length > 0 ? (
-              <div className="dictionary-list">
-                {dictionary.map((entry) => (
-                  <div key={entry.id} className="dictionary-item">
-                    <span className="dictionary-phrase">{entry.phrase}</span>
-                    <span className="dictionary-arrow">→</span>
-                    <span className="dictionary-replacement">{entry.replacement}</span>
-                    <button
-                      className="dictionary-delete"
-                      onClick={() => handleDeleteDictionary(entry.id)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+          <div className="section">
+            <div className="section-header">Whisper Model</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Model</span>
+                <span className="setting-hint">Model for transcription</span>
               </div>
-            ) : (
-              <div className="empty-list">
-                Belum ada kata dalam dictionary
-              </div>
-            )}
+              <select value={settings.model || 'ggml-base.bin'} onChange={(e) => { save('model', e.target.value); onSuccess('Model changed'); }}>
+                <option value="ggml-tiny.bin">⚡ Tiny - Fastest</option>
+                <option value="ggml-base.bin">⚖️ Base - Balanced</option>
+                <option value="ggml-small.bin">🎯 Small - Accurate</option>
+                <option value="ggml-medium.bin">💎 Medium - Best</option>
+              </select>
+            </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'snippets' && (
-        <div className="settings-content">
-          <div className="snippets-section">
-            <p className="section-description">
-              Snippets adalah shortcut untuk teks yang sering diketik.
-              Cukup ucapkan trigger phrase dan akan diganti otomatis.
-            </p>
-
-            <div className="snippet-form">
-              <input
-                type="text"
-                placeholder="Trigger phrase"
-                value={newSnippetTrigger}
-                onChange={(e) => setNewSnippetTrigger(e.target.value)}
-              />
-              <input
-                type="text"
-                placeholder="Output text"
-                value={newSnippetOutput}
-                onChange={(e) => setNewSnippetOutput(e.target.value)}
-              />
-              <button onClick={handleAddSnippet}>Tambah</button>
+      {/* Processing */}
+      {tab === 'processing' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Text Cleanup</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Enable Cleanup</span>
+                <span className="setting-hint">Clean filler words and punctuation</span>
+              </div>
+              <div className={`toggle ${settings.cleanup_enabled !== 'false' ? 'on' : ''}`} onClick={() => toggle('cleanup_enabled')} />
             </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Remove Fillers</span>
+                <span className="setting-hint">Remove filler words (eh, anu, hmm)</span>
+              </div>
+              <div className={`toggle ${settings.remove_fillers !== 'false' ? 'on' : ''}`} onClick={() => toggle('remove_fillers')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Verbatim Mode</span>
+                <span className="setting-hint">Exact transcription without changes</span>
+              </div>
+              <div className={`toggle ${settings.verbatim_mode !== 'false' ? 'on' : ''}`} onClick={() => toggle('verbatim_mode')} />
+            </div>
+          </div>
 
-            {snippets.length > 0 ? (
-              <div className="snippet-list">
-                {snippets.map((snippet) => (
-                  <div key={snippet.id} className="snippet-item">
-                    <div className="snippet-header">
-                      <span className="snippet-trigger">{snippet.trigger_phrase}</span>
-                      <button
-                        className="snippet-delete"
-                        onClick={() => handleDeleteSnippet(snippet.id)}
-                      >
-                        ✕
-                      </button>
+          <div className="section">
+            <div className="section-header">Capitalization</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Capitalize First</span>
+                <span className="setting-hint">Capitalize first letter</span>
+              </div>
+              <div className={`toggle ${settings.capitalize_first !== 'false' ? 'on' : ''}`} onClick={() => toggle('capitalize_first')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Capitalize Sentences</span>
+                <span className="setting-hint">Capitalize after period</span>
+              </div>
+              <div className={`toggle ${settings.capitalize_sentences !== 'false' ? 'on' : ''}`} onClick={() => toggle('capitalize_sentences')} />
+            </div>
+          </div>
+
+          <div className="section">
+            <div className="section-header">Voice Commands</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Enable Voice Commands</span>
+                <span className="setting-hint">Use voice commands (new paragraph, bold, etc)</span>
+              </div>
+              <div className={`toggle ${settings.voice_commands !== 'false' ? 'on' : ''}`} onClick={() => toggle('voice_commands')} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dictionary */}
+      {tab === 'dictionary' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Custom Dictionary</div>
+            <div className="section-body">
+              <p className="section-hint">Words that will be auto-replaced during transcription.</p>
+              <div className="form-row">
+                <input type="text" placeholder="Original word" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addDict()} />
+                <input type="text" placeholder="Replacement" value={newReplacement} onChange={(e) => setNewReplacement(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addDict()} />
+                <button className="btn btn-primary" onClick={addDict}>Add</button>
+              </div>
+              {dict.length > 0 ? (
+                <div className="list">
+                  {dict.map((entry) => (
+                    <div key={entry.id} className="list-item">
+                      <span className="list-key">{entry.phrase}</span>
+                      <span className="list-arrow">→</span>
+                      <span className="list-value">{entry.replacement}</span>
+                      <button className="btn btn-sm btn-icon" onClick={() => deleteDict(entry.id)}>✕</button>
                     </div>
-                    <div className="snippet-output">{snippet.output_text}</div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-hint">No dictionary entries yet</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Snippets */}
+      {tab === 'snippets' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Text Snippets</div>
+            <div className="section-body">
+              <p className="section-hint">Shortcuts for frequently used text.</p>
+              <div className="form-row">
+                <input type="text" placeholder="Trigger phrase" value={newTrigger} onChange={(e) => setNewTrigger(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addSnippet()} />
+                <input type="text" placeholder="Output text" value={newOutput} onChange={(e) => setNewOutput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addSnippet()} />
+                <button className="btn btn-primary" onClick={addSnippet}>Add</button>
               </div>
-            ) : (
-              <div className="empty-list">
-                Belum ada snippets
-              </div>
-            )}
+              {snippets.length > 0 ? (
+                <div className="list">
+                  {snippets.map((snippet) => (
+                    <div key={snippet.id} className="list-item snippet">
+                      <div className="snippet-top">
+                        <span className="list-key">{snippet.trigger_phrase}</span>
+                        <button className="btn btn-sm btn-icon" onClick={() => deleteSnippet(snippet.id)}>✕</button>
+                      </div>
+                      <div className="snippet-output">{snippet.output_text}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-hint">No snippets yet</div>
+              )}
+            </div>
           </div>
         </div>
       )}
