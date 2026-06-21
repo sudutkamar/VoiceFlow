@@ -25,6 +25,7 @@ resources/whisper/*.exe
 resources/whisper/*.dll
 resources/whisper/models/*.bin
 resources/whisper/_backup/
+resources-whisper-clean/
 dist-build/
 
 # Environment
