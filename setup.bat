@@ -3,34 +3,58 @@ echo ========================================
 echo VoiceFlow - Setup Script
 echo ========================================
 echo.
-echo This script will help you set up VoiceFlow.
-echo.
 
-echo [1/3] Checking Node.js...
+echo [1/4] Checking Node.js...
 node --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: Node.js not found. Please install Node.js 18+ from https://nodejs.org
+    echo.
+    echo ERROR: Node.js not found!
+    echo.
+    echo Please install Node.js 18+ from: https://nodejs.org
+    echo After installing, restart this terminal and run setup.bat again.
+    echo.
     pause
     exit /b 1
 )
-echo Node.js found!
+for /f "tokens=*" %%i in ('node --version') do echo Node.js found: %%i
 
 echo.
-echo [2/3] Installing dependencies...
+echo [2/4] Installing dependencies...
 call npm install
 if %errorlevel% neq 0 (
+    echo.
     echo ERROR: Failed to install dependencies
+    echo Try running: npm cache clean --force
+    echo Then run setup.bat again.
+    echo.
     pause
     exit /b 1
 )
 echo Dependencies installed!
 
 echo.
-echo [3/3] Creating necessary directories...
+echo [3/4] Creating necessary directories...
+if not exist "resources\whisper" mkdir "resources\whisper"
 if not exist "resources\whisper\models" mkdir "resources\whisper\models"
 if not exist "data" mkdir "data"
 if not exist "logs" mkdir "logs"
 echo Directories created!
+
+echo.
+echo [4/4] Checking Whisper...
+if exist "resources\whisper\whisper-cli.exe" (
+    echo whisper-cli.exe found!
+) else (
+    echo whisper-cli.exe NOT found.
+    echo Please run download-whisper.bat to download it.
+)
+
+if exist "resources\whisper\models\ggml-base.bin" (
+    echo ggml-base.bin model found!
+) else (
+    echo Model NOT found.
+    echo Please run download-model.bat to download it.
+)
 
 echo.
 echo ========================================
@@ -39,19 +63,8 @@ echo ========================================
 echo.
 echo Next steps:
 echo.
-echo 1. Download whisper-cli.exe from:
-echo    https://github.com/ggerganov/whisper.cpp/releases
-echo    Place it in: resources\whisper\
-echo.
-echo 2. Download ggml-base.bin model from:
-echo    https://huggingface.co/ggerganov/whisper.cpp/tree/main
-echo    Place it in: resources\whisper\models\
-echo.
-echo 3. Run the app:
-echo    npm run dev
-echo.
-echo Or use the download scripts:
-echo    download-whisper.bat
-echo    download-model.bat
+echo 1. Run download-whisper.bat  (if whisper not installed yet)
+echo 2. Run download-model.bat    (if model not downloaded yet)
+echo 3. Run: npm run dev          (to start the app)
 echo.
 pause

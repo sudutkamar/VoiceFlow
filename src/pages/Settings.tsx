@@ -305,13 +305,11 @@ function Settings({ onSuccess }: SettingsProps) {
                 <span className="setting-name">Model</span>
                 <span className="setting-hint">Model for transcription</span>
               </div>
-              <select value={settings.model || 'ggml-base.bin'} onChange={(e) => { save('model', e.target.value); onSuccess('Model changed'); }}>
-                <option value="ggml-tiny.bin">⚡ Tiny - Fastest</option>
+              <select value={settings.model || 'ggml-large-v3-turbo-q5_0.bin'} onChange={(e) => { save('model', e.target.value); onSuccess('Model changed'); }}>
+                <option value="ggml-base-q5_1.bin">⚡ Base Q5 - Fast + Good</option>
                 <option value="ggml-base.bin">⚖️ Base - Balanced</option>
-                <option value="ggml-small.bin">🎯 Small - Accurate</option>
-                <option value="ggml-medium.bin">💎 Medium - Great</option>
-                <option value="ggml-large-v3-turbo.bin">🏆 Large v3 Turbo - Excellent</option>
-                <option value="ggml-large-v3.bin">👑 Large v3 - Best</option>
+                <option value="ggml-large-v3-turbo-q5_0.bin">🏆 Large v3 Turbo Q5 - Fast + Accurate</option>
+                <option value="ggml-large-v3.bin">👑 Large v3 - Best Quality</option>
               </select>
             </div>
           </div>

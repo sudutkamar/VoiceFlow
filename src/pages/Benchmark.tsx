@@ -19,12 +19,21 @@ const ALL_MODELS = [
 ];
 
 const MODEL_LABELS: Record<string, string> = {
-  'ggml-tiny.bin': '⚡ Tiny',
-  'ggml-base.bin': '⚖️ Base',
-  'ggml-small.bin': '🎯 Small',
-  'ggml-medium.bin': '💎 Medium',
-  'ggml-large-v3-turbo.bin': '🏆 Large v3 Turbo',
-  'ggml-large-v3.bin': '👑 Large v3',
+  'ggml-tiny.bin': 'Tiny',
+  'ggml-base.bin': 'Base',
+  'ggml-small.bin': 'Small',
+  'ggml-medium.bin': 'Medium',
+  'ggml-large-v3-turbo.bin': 'Large v3 Turbo',
+  'ggml-large-v3.bin': 'Large v3',
+};
+
+const MODEL_ICONS: Record<string, string> = {
+  'ggml-tiny.bin': '⚡',
+  'ggml-base.bin': '⚖️',
+  'ggml-small.bin': '🎯',
+  'ggml-medium.bin': '💎',
+  'ggml-large-v3-turbo.bin': '🏆',
+  'ggml-large-v3.bin': '👑',
 };
 
 export default function Benchmark() {
@@ -36,6 +45,11 @@ export default function Benchmark() {
   const [running, setRunning] = useState(false);
   const recorderRef = useRef<WavRecorder | null>(null);
   const [countdown, setCountdown] = useState(0);
+
+  // Determine current step
+  const currentStep = !audioBuffer ? 1 : !running && results.length === 0 ? 2 : 3;
+  const step1Complete = !!audioBuffer;
+  const step2Complete = selectedModels.length > 0;
 
   useEffect(() => {
     const unsub = window.electronAPI.onBenchmarkProgress?.((data) => {
@@ -56,7 +70,6 @@ export default function Benchmark() {
       setRecording(true);
       setCountdown(5);
 
-      // 5-second countdown
       for (let i = 5; i > 0; i--) {
         setCountdown(i);
         await new Promise(r => setTimeout(r, 1000));
@@ -87,42 +100,104 @@ export default function Benchmark() {
     setRunning(false);
   };
 
+  const resetAll = () => {
+    setAudioBuffer(null);
+    setResults([]);
+    setRunning(false);
+    setDuration(0);
+  };
+
   const fastest = results.filter(r => r.status === 'done' && r.elapsedMs).sort((a, b) => (a.elapsedMs || Infinity) - (b.elapsedMs || Infinity))[0];
+  const slowest = results.filter(r => r.status === 'done' && r.elapsedMs).sort((a, b) => (b.elapsedMs || 0) - (a.elapsedMs || 0))[0];
+  const completedCount = results.filter(r => r.status === 'done').length;
+  const errorCount = results.filter(r => r.status === 'error').length;
 
   return (
     <div className="page benchmark-page">
       <div className="page-header">
         <h1>Model Benchmark</h1>
-        <p className="page-subtitle">Compare transcription speed and accuracy across models</p>
+        <p className="page-subtitle">Compare transcription speed and accuracy across Whisper models</p>
+      </div>
+
+      {/* Steps Indicator */}
+      <div className="bench-steps">
+        <div className={`bench-step-item ${currentStep === 1 ? 'active' : step1Complete ? 'complete' : ''}`}>
+          <div className="bench-step-dot">{step1Complete ? '✓' : '1'}</div>
+          <span className="bench-step-label">Record Sample</span>
+        </div>
+        <div className={`bench-step-line ${step1Complete ? 'complete' : ''}`} />
+        <div className={`bench-step-item ${currentStep === 2 ? 'active' : step2Complete && step1Complete ? 'complete' : ''}`}>
+          <div className="bench-step-dot">{step2Complete && step1Complete ? '✓' : '2'}</div>
+          <span className="bench-step-label">Select Models</span>
+        </div>
+        <div className={`bench-step-line ${results.length > 0 ? 'complete' : ''}`} />
+        <div className={`bench-step-item ${currentStep === 3 ? 'active' : results.length > 0 && !running ? 'complete' : ''}`}>
+          <div className="bench-step-dot">{results.length > 0 && !running ? '✓' : '3'}</div>
+          <span className="bench-step-label">Run & Compare</span>
+        </div>
       </div>
 
       {/* Step 1: Record */}
-      <div className="section">
-        <div className="section-header">Step 1: Record a 5-second sample</div>
-        <div className="bench-record">
+      <div className={`bench-section ${currentStep === 1 ? 'active' : ''}`}>
+        <div className="bench-section-header">
+          <div className="bench-section-num">1</div>
+          <span className="bench-section-title">Record Audio Sample</span>
+        </div>
+        <p className="bench-section-desc">
+          Record a 5-second audio sample to test across all selected models. Speak clearly for best results.
+        </p>
+
+        <div className={`bench-record-area ${recording ? 'recording' : audioBuffer ? 'ready' : ''}`}>
           {!recording && !audioBuffer && (
-            <button className="btn btn-primary" onClick={recordSample}>
-              🎙️ Record Sample
-            </button>
+            <>
+              <button className="bench-record-btn" onClick={recordSample} title="Start recording">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                </svg>
+              </button>
+              <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Click to start recording (5 seconds)</span>
+            </>
           )}
+
           {recording && (
             <div className="bench-countdown">
-              <div className="countdown-num">{countdown}</div>
-              <span>Recording...</span>
+              <div className="bench-countdown-ring">
+                <span className="bench-countdown-num">{countdown}</span>
+              </div>
+              <div className="bench-countdown-label">
+                <span className="bench-countdown-dot" />
+                Recording... Speak now
+              </div>
             </div>
           )}
+
           {audioBuffer && !recording && (
             <div className="bench-sample-ready">
-              ✅ Sample recorded ({(duration / 1000).toFixed(1)}s)
-              <button className="btn btn-sm" onClick={() => { setAudioBuffer(null); setResults([]); }}>Re-record</button>
+              <div className="bench-sample-check">✓</div>
+              <div className="bench-sample-info">
+                <span className="duration">Sample recorded ({(duration / 1000).toFixed(1)}s)</span>
+                <span className="label">Ready for benchmark</span>
+              </div>
+              <button className="btn btn-sm" onClick={resetAll}>
+                ↺ Re-record
+              </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Step 2: Select models */}
-      <div className="section">
-        <div className="section-header">Step 2: Select models to compare</div>
+      {/* Step 2: Select Models */}
+      <div className={`bench-section ${currentStep === 2 ? 'active' : ''}`}>
+        <div className="bench-section-header">
+          <div className="bench-section-num">2</div>
+          <span className="bench-section-title">Select Models</span>
+        </div>
+        <p className="bench-section-desc">
+          Choose which Whisper models to compare. Smaller models are faster but less accurate.
+        </p>
+
         <div className="bench-models">
           {ALL_MODELS.map(m => (
             <button
@@ -130,42 +205,133 @@ export default function Benchmark() {
               className={`bench-model-btn ${selectedModels.includes(m) ? 'selected' : ''}`}
               onClick={() => toggleModel(m)}
             >
-              {MODEL_LABELS[m] || m}
+              <span className="bench-model-check">
+                {selectedModels.includes(m) && '✓'}
+              </span>
+              <span>{MODEL_ICONS[m] || '🧠'} {MODEL_LABELS[m] || m}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Step 3: Run */}
-      <div className="section">
-        <div className="section-header">Step 3: Run benchmark</div>
-        <button
-          className="btn btn-primary"
-          onClick={runBenchmark}
-          disabled={!audioBuffer || selectedModels.length === 0 || running}
-        >
-          {running ? '⏳ Running...' : '🚀 Run Benchmark'}
-        </button>
+      <div className={`bench-section ${currentStep === 3 ? 'active' : ''}`}>
+        <div className="bench-section-header">
+          <div className="bench-section-num">3</div>
+          <span className="bench-section-title">Run Benchmark</span>
+        </div>
+
+        <div className="bench-run-area">
+          <div className="bench-run-info">
+            {audioBuffer && selectedModels.length > 0 ? (
+              <>
+                <div>Testing <strong>{selectedModels.length} model{selectedModels.length > 1 ? 's' : ''}</strong> with {(duration / 1000).toFixed(1)}s audio sample</div>
+                {results.length > 0 && !running && (
+                  <div style={{ marginTop: '4px', color: completedCount === selectedModels.length ? 'var(--success)' : 'var(--text-dim)' }}>
+                    {completedCount}/{selectedModels.length} completed{errorCount > 0 && `, ${errorCount} failed`}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ color: 'var(--text-muted)' }}>
+                {!audioBuffer ? 'Record an audio sample first' : 'Select at least one model'}
+              </div>
+            )}
+          </div>
+
+          <button
+            className="bench-run-btn"
+            onClick={runBenchmark}
+            disabled={!audioBuffer || selectedModels.length === 0 || running}
+          >
+            {running ? (
+              <>
+                <span className="run-spinner" />
+                Running...
+              </>
+            ) : (
+              <>
+                🚀 Run Benchmark
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Results */}
       {results.length > 0 && (
-        <div className="section">
-          <div className="section-header">Results</div>
+        <div className="bench-section">
+          <div className="bench-section-header">
+            <div className="bench-section-num" style={{ background: 'rgba(74, 222, 128, 0.12)', color: 'var(--success)' }}>📊</div>
+            <span className="bench-section-title">Results</span>
+            {fastest && slowest && fastest.model !== slowest.model && (
+              <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-dim)' }}>
+                {((slowest.elapsedMs || 0) / (fastest.elapsedMs || 1)).toFixed(1)}x speed difference
+              </span>
+            )}
+          </div>
+
           <div className="bench-results">
             {results.map(r => (
               <div key={r.model} className={`bench-result-card ${r.status} ${fastest?.model === r.model ? 'fastest' : ''}`}>
                 <div className="bench-result-header">
-                  <span className="bench-model-name">{MODEL_LABELS[r.model] || r.model}</span>
-                  {fastest?.model === r.model && <span className="bench-fastest-badge">FASTEST</span>}
+                  <span className="bench-model-name">{MODEL_ICONS[r.model]} {MODEL_LABELS[r.model] || r.model}</span>
+                  {fastest?.model === r.model && r.status === 'done' && <span className="bench-fastest-badge">⚡ FASTEST</span>}
+                  {r.status === 'pending' && <span className="bench-pending-icon" />}
                   {r.status === 'running' && <span className="bench-spinner" />}
-                  {r.status === 'done' && <span className="bench-time">{((r.elapsedMs || 0) / 1000).toFixed(1)}s</span>}
-                  {r.status === 'error' && <span className="bench-error">❌ {r.error}</span>}
+                  {r.status === 'done' && <span className="bench-time">{((r.elapsedMs || 0) / 1000).toFixed(2)}s</span>}
+                  {r.status === 'error' && <span className="bench-error">❌ {r.error || 'Failed'}</span>}
                 </div>
+                {r.status === 'running' && (
+                  <div className="bench-result-progress">
+                    <div className="bench-progress-bar">
+                      <div className="bench-progress-fill" />
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Processing...</span>
+                  </div>
+                )}
                 {r.text && <div className="bench-text">{r.text}</div>}
               </div>
             ))}
           </div>
+
+          {/* Summary */}
+          {!running && completedCount > 0 && (
+            <div style={{ marginTop: '16px', padding: '14px', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text)', marginBottom: '8px' }}>Summary</div>
+              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Models tested</span>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--accent)' }}>{completedCount}</div>
+                </div>
+                {fastest && (
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fastest</span>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--success)' }}>
+                      {MODEL_ICONS[fastest.model]} {((fastest.elapsedMs || 0) / 1000).toFixed(2)}s
+                    </div>
+                  </div>
+                )}
+                {slowest && slowest.model !== fastest?.model && (
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Slowest</span>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--error)' }}>
+                      {MODEL_ICONS[slowest.model]} {((slowest.elapsedMs || 0) / 1000).toFixed(2)}s
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Empty state when no results */}
+      {results.length === 0 && !running && (
+        <div className="bench-empty">
+          <div className="bench-empty-icon">📊</div>
+          <h3>No Results Yet</h3>
+          <p>Record a sample, select models, and run the benchmark to see comparison results here.</p>
         </div>
       )}
     </div>

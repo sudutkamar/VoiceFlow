@@ -23,6 +23,7 @@ temp/
 resources/whisper/*.exe
 resources/whisper/*.dll
 resources/whisper/models/*.bin
+resources/whisper/_backup/
 dist-build/
 
 # Environment

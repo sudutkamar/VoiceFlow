@@ -3,33 +3,64 @@ echo ========================================
 echo VoiceFlow - Download Whisper CLI
 echo ========================================
 echo.
-echo This script will download whisper-cli.exe for VoiceFlow.
-echo.
-echo Downloading whisper-cli.exe...
+echo This script will download whisper-cli.exe and required DLLs.
 echo.
 
 if not exist "resources\whisper" mkdir "resources\whisper"
 
-curl -L -o "resources\whisper\whisper-cli.exe" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/whisper-cli.exe"
-
-if %errorlevel% equ 0 (
+echo Checking for existing whisper-cli.exe...
+if exist "resources\whisper\whisper-cli.exe" (
+    echo whisper-cli.exe already exists!
     echo.
-    echo Whisper CLI downloaded successfully!
-    echo Location: resources\whisper\whisper-cli.exe
-) else (
-    echo.
-    echo Failed to download whisper-cli.exe.
-    echo.
-    echo Please download manually from:
-    echo https://github.com/ggerganov/whisper.cpp/releases
-    echo.
-    echo Or build from source:
-    echo 1. git clone https://github.com/ggerganov/whisper.cpp
-    echo 2. cd whisper.cpp
-    echo 3. cmake -B build
-    echo 4. cmake --build build --config Release
-    echo 5. Copy build\bin\Release\whisper-cli.exe to resources\whisper\
+    set /p REINSTALL="Re-download? (y/N): "
+    if /i not "%REINSTALL%"=="y" (
+        echo Skipping download.
+        goto :dlls
+    )
 )
 
+echo.
+echo Downloading whisper-cli.exe...
+echo (This may take a moment)
+echo.
+
+:: Try downloading from GitHub Releases (whisper.cpp)
+:: Latest release: https://github.com/ggerganov/whisper.cpp/releases
+echo Please download whisper-cli.exe manually from:
+echo.
+echo   https://github.com/ggerganov/whisper.cpp/releases
+echo.
+echo Look for: whisper-cli.exe (or whisper-main.exe)
+echo.
+echo Also download these DLL files to resources\whisper\:
+echo   - whisper.dll
+echo   - ggml.dll
+echo   - ggml-cpu-*.dll
+echo   - ggml-base.dll
+echo   - ggml-cuda.dll (if you have NVIDIA GPU)
+echo   - cublas64_12.dll (if you have NVIDIA GPU)
+echo   - cublasLt64_12.dll (if you have NVIDIA GPU)
+echo   - cudart64_12.dll (if you have NVIDIA GPU)
+echo.
+
+:dlls
+echo ========================================
+echo Alternative: Use pre-built package
+echo ========================================
+echo.
+echo You can also download a pre-built package that includes
+echo whisper-cli.exe + all DLLs from:
+echo.
+echo   https://github.com/ggerganov/whisper.cpp/releases
+echo.
+echo Look for: whisper-*.zip or whisper-bin-*.zip
+echo Extract to: resources\whisper\
+echo.
+
+echo ========================================
+echo Done! 
+echo ========================================
+echo.
+echo After downloading, run: npm run dev
 echo.
 pause

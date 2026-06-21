@@ -223,7 +223,7 @@ export function setupDictationIPC(
       ? path.join(process.resourcesPath, 'whisper', 'models')
       : path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
 
-    const accuracyOrder = [preferredModel, 'ggml-medium.bin', 'ggml-small.bin', 'ggml-base.bin', 'ggml-tiny.bin'];
+    const accuracyOrder = [preferredModel, 'ggml-large-v3-turbo-q5_0.bin', 'ggml-base-q5_1.bin', 'ggml-base.bin'];
     for (const model of [...new Set(accuracyOrder)]) {
       if (fs.existsSync(path.join(modelsDir, model))) return model;
     }
