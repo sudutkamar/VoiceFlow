@@ -1222,6 +1222,8 @@ body.mini-mode, html.mini-mode { background: transparent; }
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   animation: dropdownIn 0.15s ease;
   z-index: 100;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 @keyframes dropdownIn {
@@ -1241,6 +1243,8 @@ body.mini-mode, html.mini-mode { background: transparent; }
   cursor: pointer;
   transition: all 0.1s ease;
   white-space: nowrap;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 .m-lang-option:hover {

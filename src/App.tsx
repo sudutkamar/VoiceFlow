@@ -21,6 +21,8 @@ declare global {
       minimizeWindow: () => Promise<void>;
       maximizeWindow: () => Promise<void>;
       miniWindowReady: () => void;
+      resizeMiniWindow: (height: number) => Promise<void>;
+      setMiniWindowFocusable: (focusable: boolean) => Promise<void>;
       getTargetApp: () => Promise<string>;
       onStateChange: (callback: (state: string) => void) => () => void;
       onTranscriptReady: (callback: (data: any) => void) => () => void;
@@ -51,7 +53,7 @@ declare global {
       deleteSnippet: (id: string) => Promise<void>;
       setAutoStart: (enable: boolean) => Promise<void>;
       getHistory: () => Promise<any[]>;
-      deleteHistory: (id: string) => Promise<void>;
+      deleteHistoryItem: (id: string) => Promise<void>;
       clearHistory: () => Promise<void>;
       exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
       searchHistory: (query: string) => Promise<any[]>;
@@ -206,16 +208,33 @@ function MiniBar() {
     };
     document.addEventListener('mousedown', handleOutsideClick);
 
+    // Close dropdown when window loses focus
+    const handleBlur = () => setLangOpen(false);
+    window.addEventListener('blur', handleBlur);
+
     return () => {
       unsubs.forEach((u) => u());
       cancelAnimationFrame(animRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
       document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 
   const loadSettings = async () => { try { setSettings(await window.electronAPI.getSettings()); } catch {} };
+
+  // Resize mini window when dropdown opens/closes
+  useEffect(() => {
+    if (langOpen) {
+      // 6 items * ~40px + padding = ~280px, plus bar height ~48px = ~328px
+      window.electronAPI.resizeMiniWindow?.(340);
+      window.electronAPI.setMiniWindowFocusable?.(true);
+    } else {
+      window.electronAPI.resizeMiniWindow?.(48);
+      window.electronAPI.setMiniWindowFocusable?.(false);
+    }
+  }, [langOpen]);
 
   const startRec = useCallback(async () => {
     if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;

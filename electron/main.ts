@@ -123,7 +123,10 @@ function createMiniWindow(): void {
   });
 
   miniWindow.on('blur', () => {
-    // Don't hide on blur - keep it visible always
+    // Notify renderer to close dropdown when clicking outside
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.webContents.send('mini-window-blur');
+    }
   });
 
   // Prevent any attempt to hide the mini window (except during paste or quit)
@@ -296,6 +299,18 @@ function setupIPC(): void {
   });
   ipcMain.handle('show-mini-window', () => showMiniWindow());
   ipcMain.handle('hide-mini-window', () => hideMiniWindow());
+  ipcMain.handle('resize-mini-window', (_, height: number) => {
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
+      const w = Math.min(400, sw - 40);
+      miniWindow.setContentSize(w, height);
+    }
+  });
+  ipcMain.handle('set-mini-window-focusable', (_, focusable: boolean) => {
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.setFocusable(focusable);
+    }
+  });
   
   ipcMain.on('mini-window-ready', () => {
     logger?.info('Mini window reported ready');

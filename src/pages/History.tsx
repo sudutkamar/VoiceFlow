@@ -34,7 +34,7 @@ function History({ onSuccess }: HistoryProps) {
 
   const handleDelete = async (id: string) => {
     try {
-      await window.electronAPI.deleteHistory(id);
+      await window.electronAPI.deleteHistoryItem(id);
       setHistory(history.filter(item => item.id !== id));
       onSuccess('Deleted');
     } catch (error) {

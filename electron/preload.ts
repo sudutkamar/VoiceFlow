@@ -16,6 +16,8 @@ export interface ElectronAPI {
   // Mini Window
   showMiniWindow: () => Promise<void>;
   hideMiniWindow: () => Promise<void>;
+  resizeMiniWindow: (height: number) => Promise<void>;
+  setMiniWindowFocusable: (focusable: boolean) => Promise<void>;
   miniWindowReady: () => void;
   
   // Settings
@@ -98,6 +100,8 @@ const api: ElectronAPI = {
   
   showMiniWindow: () => ipcRenderer.invoke('show-mini-window'),
   hideMiniWindow: () => ipcRenderer.invoke('hide-mini-window'),
+  resizeMiniWindow: (height: number) => ipcRenderer.invoke('resize-mini-window', height),
+  setMiniWindowFocusable: (focusable: boolean) => ipcRenderer.invoke('set-mini-window-focusable', focusable),
   miniWindowReady: () => ipcRenderer.send('mini-window-ready'),
   
   getSettings: () => ipcRenderer.invoke('get-settings'),
