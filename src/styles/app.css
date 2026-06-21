@@ -1911,6 +1911,18 @@ body.mini-mode, html.mini-mode { background: transparent; }
   position: relative;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity 0.25s ease, width 0.25s ease;
+}
+
+.mini-bar:hover .m-lang-wrap,
+.mini-bar.recording .m-lang-wrap,
+.mini-bar.processing .m-lang-wrap,
+.mini-bar.done .m-lang-wrap {
+  opacity: 1;
+  width: 70px;
 }
 
 .m-lang {
@@ -1965,9 +1977,10 @@ body.mini-mode, html.mini-mode { background: transparent; }
   transform: rotate(180deg);
 }
 
+/* DROP UP - muncul ke atas */
 .m-lang-dropdown {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 6px);
   left: 0;
   min-width: 190px;
   background: rgba(14, 14, 24, 0.98);
@@ -1976,16 +1989,16 @@ body.mini-mode, html.mini-mode { background: transparent; }
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 4px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  animation: dropdownIn 0.15s ease;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+  animation: dropUp 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   -webkit-app-region: no-drag;
   pointer-events: auto;
 }
 
-@keyframes dropdownIn {
-  from { opacity: 0; transform: translateY(-4px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes dropUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .m-lang-option {
