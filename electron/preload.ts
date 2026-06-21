@@ -48,6 +48,7 @@ export interface ElectronAPI {
   pauseDownload: () => Promise<{ success: boolean; error?: string }>;
   resumeDownload: () => Promise<{ success: boolean; error?: string }>;
   cancelDownload: () => Promise<void>;
+  deleteModel: (model: string) => Promise<boolean>;
   getDownloadProgress: () => Promise<{ progress: number; state: string }>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   getModelsPath: () => Promise<string>;
@@ -130,6 +131,7 @@ const api: ElectronAPI = {
   pauseDownload: () => ipcRenderer.invoke('pause-download'),
   resumeDownload: () => ipcRenderer.invoke('resume-download'),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
+  deleteModel: (model) => ipcRenderer.invoke('delete-model', model),
   getDownloadProgress: () => ipcRenderer.invoke('get-download-progress'),
   isModelDownloaded: (model) => ipcRenderer.invoke('is-model-downloaded', model),
   getModelsPath: () => ipcRenderer.invoke('get-models-path'),

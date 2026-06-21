@@ -40,6 +40,7 @@ declare global {
       pauseDownload: () => Promise<{ success: boolean; error?: string }>;
       resumeDownload: () => Promise<{ success: boolean; error?: string }>;
       cancelDownload: () => Promise<void>;
+      deleteModel: (modelName: string) => Promise<boolean>;
       getDownloadProgress: () => Promise<{ progress: number; state: string }>;
       getModelsPath: () => Promise<string>;
       getCustomModelsPath: () => Promise<string | null>;
