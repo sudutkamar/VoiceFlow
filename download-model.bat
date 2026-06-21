@@ -13,14 +13,14 @@ echo.
 echo Downloading ggml-base.bin (default model)...
 echo.
 
-if not exist "resources\whisper\models" mkdir "resources\whisper\models"
+if not exist "resources-whisper-clean\models" mkdir "resources-whisper-clean\models"
 
-curl -L -o "resources\whisper\models\ggml-base.bin" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+curl -L -o "resources-whisper-clean\models\ggml-base.bin" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
 
 if %errorlevel% equ 0 (
     echo.
     echo Model downloaded successfully!
-    echo Location: resources\whisper\models\ggml-base.bin
+    echo Location: resources-whisper-clean\models\ggml-base.bin
 ) else (
     echo.
     echo Failed to download model. Please download manually from:

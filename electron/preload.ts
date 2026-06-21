@@ -72,6 +72,7 @@ export interface ElectronAPI {
   minimizeToBar: () => Promise<void>;
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
+  getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string }>;
   
   // Events
   onStateChange: (callback: (state: string) => void) => () => void;
@@ -155,6 +156,7 @@ const api: ElectronAPI = {
   minimizeToBar: () => ipcRenderer.invoke('minimize-to-bar'),
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
+  getGpuStatus: () => ipcRenderer.invoke('get-gpu-status'),
   
   onStateChange: (callback) => {
     const handler = (_: any, state: string) => callback(state);

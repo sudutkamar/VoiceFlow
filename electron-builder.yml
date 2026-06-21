@@ -6,8 +6,33 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
+  # Exclude test files
   - "!node_modules/**/{test,tests,__tests__}/**"
+  # Exclude source maps, TypeScript sources, markdown
   - "!node_modules/**/*.{md,ts,map}"
+  # Exclude dev-only packages (not needed at runtime)
+  - "!node_modules/typescript/**"
+  - "!node_modules/concurrently/**"
+  - "!node_modules/wait-on/**"
+  - "!node_modules/cross-env/**"
+  - "!node_modules/@vitejs/**"
+  - "!node_modules/vite/**"
+  - "!node_modules/rollup/**"
+  - "!node_modules/@rollup/**"
+  - "!node_modules/esbuild/**"
+  - "!node_modules/@esbuild/**"
+  - "!node_modules/postcss/**"
+  - "!node_modules/autoprefixer/**"
+  - "!node_modules/tailwindcss/**"
+  - "!node_modules/app-builder-bin/**"
+  - "!node_modules/app-builder-lib/**"
+  - "!node_modules/electron-builder/**"
+  - "!node_modules/electron-publish/**"
+  - "!node_modules/electron-notarize/**"
+  # Exclude large unused dependencies
+  - "!node_modules/date-fns/**"
+  - "!node_modules/rxjs/**"
+  - "!node_modules/@babel/**"
 extraResources:
   - from: resources-whisper-clean
     to: whisper
@@ -17,7 +42,6 @@ win:
   executableName: VoiceFlow
   target:
     - nsis
-    - portable
 nsis:
   artifactName: "VoiceFlow Setup.${ext}"
   oneClick: false

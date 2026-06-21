@@ -94,10 +94,11 @@ export class ModelDownloader {
   }
 
   private getModelsPath(): string {
+    // Always use resources-whisper-clean/models (same path for dev & production)
     if (app.isPackaged) {
       return path.join(process.resourcesPath, 'whisper', 'models');
     }
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+    return path.join(__dirname, '..', '..', 'resources-whisper-clean', 'models');
   }
 
   private cleanupInvalidFiles(): void {

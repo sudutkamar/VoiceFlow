@@ -28,6 +28,7 @@ function Settings({ onSuccess }: SettingsProps) {
   const [newReplacement, setNewReplacement] = useState('');
   const [newTrigger, setNewTrigger] = useState('');
   const [newOutput, setNewOutput] = useState('');
+  const [gpuStatus, setGpuStatus] = useState<{ hasGpu: boolean; mode: string } | null>(null);
   const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup debounce timer on unmount
@@ -35,7 +36,14 @@ function Settings({ onSuccess }: SettingsProps) {
     return () => { if (promptTimerRef.current) clearTimeout(promptTimerRef.current); };
   }, []);
 
-  useEffect(() => { loadData(); loadMics(); }, []);
+  useEffect(() => { loadData(); loadMics(); loadGpuStatus(); }, []);
+
+  const loadGpuStatus = async () => {
+    try {
+      const status = await window.electronAPI.getGpuStatus();
+      setGpuStatus(status);
+    } catch {}
+  };
 
   const loadData = async () => {
     try {
@@ -264,6 +272,22 @@ function Settings({ onSuccess }: SettingsProps) {
 
           <div className="section">
             <div className="section-header">System</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Acceleration</span>
+                <span className="setting-hint">Transcription engine mode</span>
+              </div>
+              <div className={`gpu-badge ${gpuStatus?.hasGpu ? 'gpu-badge-fast' : 'gpu-badge-cpu'}`}>
+                {gpuStatus ? (
+                  <>
+                    <span className="gpu-badge-icon">{gpuStatus.hasGpu ? '🎮' : '🖥️'}</span>
+                    <span className="gpu-badge-text">{gpuStatus.mode}</span>
+                  </>
+                ) : (
+                  <span className="gpu-badge-text">Loading...</span>
+                )}
+              </div>
+            </div>
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Language</span>

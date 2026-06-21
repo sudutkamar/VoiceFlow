@@ -9,6 +9,15 @@ import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC } from './ipc/model.ipc';
 import { setupSnippetIPC } from './ipc/snippet.ipc';
 
+// Fix GPU cache errors on Windows - set cache directory to app's own folder
+const cacheDir = path.join(app.getPath('userData'), 'cache');
+if (!fs.existsSync(cacheDir)) {
+  fs.mkdirSync(cacheDir, { recursive: true });
+}
+app.setPath('cache', cacheDir);
+app.commandLine.appendSwitch('disk-cache-dir', cacheDir);
+app.commandLine.appendSwitch('gpu-cache-dir', path.join(cacheDir, 'gpu'));
+
 // Prevent EPIPE errors from crashing the app (broken pipe when stdout is unavailable)
 process.on('uncaughtException', (err: any) => {
   if (err?.code === 'EPIPE') {
@@ -359,9 +368,39 @@ function setupIPC(): void {
     app.setLoginItemSettings({ openAtLogin: enable, path: app.getPath('exe') });
     return { success: true };
   });
+  ipcMain.handle('get-gpu-status', () => {
+    try {
+      const whisperDir = app.isPackaged
+        ? path.join(process.resourcesPath, 'whisper')
+        : path.join(__dirname, '..', 'resources-whisper-clean');
+      const hasCuda = fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll'));
+      return {
+        hasGpu: hasCuda,
+        mode: hasCuda ? 'GPU (CUDA)' : 'CPU Only',
+        whisperDir,
+      };
+    } catch {
+      return { hasGpu: false, mode: 'CPU Only', whisperDir: '' };
+    }
+  });
 }
 
 // ============ APP LIFECYCLE ============
+// Ensure cache directories exist before app is ready
+const ensureCacheDirs = () => {
+  const dirs = [
+    path.join(app.getPath('userData'), 'cache'),
+    path.join(app.getPath('userData'), 'cache', 'gpu'),
+    path.join(app.getPath('userData'), 'cache', 'code-cache'),
+  ];
+  dirs.forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  });
+};
+ensureCacheDirs();
+
 app.whenReady().then(() => {
   logger = new Logger();
   logger.info('VoiceFlow starting...');

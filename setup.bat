@@ -34,22 +34,21 @@ echo Dependencies installed!
 
 echo.
 echo [3/4] Creating necessary directories...
-if not exist "resources\whisper" mkdir "resources\whisper"
-if not exist "resources\whisper\models" mkdir "resources\whisper\models"
+if not exist "resources-whisper-clean\models" mkdir "resources-whisper-clean\models"
 if not exist "data" mkdir "data"
 if not exist "logs" mkdir "logs"
 echo Directories created!
 
 echo.
 echo [4/4] Checking Whisper...
-if exist "resources\whisper\whisper-cli.exe" (
+if exist "resources-whisper-clean\whisper-cli.exe" (
     echo whisper-cli.exe found!
 ) else (
     echo whisper-cli.exe NOT found.
     echo Please run download-whisper.bat to download it.
 )
 
-if exist "resources\whisper\models\ggml-base.bin" (
+if exist "resources-whisper-clean\models\ggml-base.bin" (
     echo ggml-base.bin model found!
 ) else (
     echo Model NOT found.

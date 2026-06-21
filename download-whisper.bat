@@ -1,64 +1,56 @@
 @echo off
 echo ========================================
-echo VoiceFlow - Download Whisper CLI
+echo VoiceFlow - Download Whisper Engine
 echo ========================================
 echo.
-echo This script will download whisper-cli.exe and required DLLs.
+echo This script will download whisper-cli.exe + all DLLs
+echo (CPU + NVIDIA GPU support)
 echo.
 
-if not exist "resources\whisper" mkdir "resources\whisper"
+if not exist "resources-whisper-clean" mkdir "resources-whisper-clean"
 
 echo Checking for existing whisper-cli.exe...
-if exist "resources\whisper\whisper-cli.exe" (
+if exist "resources-whisper-clean\whisper-cli.exe" (
     echo whisper-cli.exe already exists!
     echo.
     set /p REINSTALL="Re-download? (y/N): "
     if /i not "%REINSTALL%"=="y" (
         echo Skipping download.
-        goto :dlls
+        goto :done
     )
 )
 
 echo.
-echo Downloading whisper-cli.exe...
-echo (This may take a moment)
+echo ========================================
+echo Download Instructions
+echo ========================================
 echo.
-
-:: Try downloading from GitHub Releases (whisper.cpp)
-:: Latest release: https://github.com/ggerganov/whisper.cpp/releases
-echo Please download whisper-cli.exe manually from:
+echo Please download whisper-cli.exe from:
 echo.
 echo   https://github.com/ggerganov/whisper.cpp/releases
 echo.
-echo Look for: whisper-cli.exe (or whisper-main.exe)
+echo Download these files to resources-whisper-clean\:
 echo.
-echo Also download these DLL files to resources\whisper\:
+echo REQUIRED (CPU support):
+echo   - whisper-cli.exe (or whisper-main.exe)
 echo   - whisper.dll
 echo   - ggml.dll
-echo   - ggml-cpu-*.dll
 echo   - ggml-base.dll
-echo   - ggml-cuda.dll (if you have NVIDIA GPU)
-echo   - cublas64_12.dll (if you have NVIDIA GPU)
-echo   - cublasLt64_12.dll (if you have NVIDIA GPU)
-echo   - cudart64_12.dll (if you have NVIDIA GPU)
+echo   - ggml-cpu-*.dll (all CPU variants)
+echo.
+echo OPTIONAL (NVIDIA GPU support - for faster transcription):
+echo   - ggml-cuda.dll
+echo   - cublas64_12.dll
+echo   - cublasLt64_12.dll
+echo   - cudart64_12.dll
+echo.
+echo NOTE: GPU DLLs are ~1.1GB but make transcription 5-10x faster!
+echo       Without them, the app still works but uses CPU only.
 echo.
 
-:dlls
+:done
 echo ========================================
-echo Alternative: Use pre-built package
-echo ========================================
-echo.
-echo You can also download a pre-built package that includes
-echo whisper-cli.exe + all DLLs from:
-echo.
-echo   https://github.com/ggerganov/whisper.cpp/releases
-echo.
-echo Look for: whisper-*.zip or whisper-bin-*.zip
-echo Extract to: resources\whisper\
-echo.
-
-echo ========================================
-echo Done! 
+echo Done!
 echo ========================================
 echo.
 echo After downloading, run: npm run dev

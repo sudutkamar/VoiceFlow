@@ -219,9 +219,10 @@ export function setupDictationIPC(
   });
 
   function getBestAvailableModel(preferredModel: string): string {
+    // Use same path logic as Transcriber/ModelDownloader for consistency
     const modelsDir = app.isPackaged
       ? path.join(process.resourcesPath, 'whisper', 'models')
-      : path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+      : path.join(__dirname, '..', '..', 'resources-whisper-clean', 'models');
 
     const accuracyOrder = [preferredModel, 'ggml-large-v3-turbo-q5_0.bin', 'ggml-base-q5_1.bin', 'ggml-base.bin'];
     for (const model of [...new Set(accuracyOrder)]) {

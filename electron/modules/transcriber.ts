@@ -35,20 +35,52 @@ export class Transcriber {
     this.audioPreprocessor = new AudioPreprocessor(logger);
     this.fuzzyMatcher = new FuzzyMatcher(logger);
     this.confidenceScorer = new ConfidenceScorer(logger);
+    this.logGpuStatus();
+  }
+
+  /**
+   * Check if CUDA/GPU support is available
+   */
+  private logGpuStatus(): void {
+    try {
+      const whisperDir = path.dirname(this.whisperPath);
+      const cudaDllPath = path.join(whisperDir, 'ggml-cuda.dll');
+      const hasGpu = fs.existsSync(cudaDllPath);
+      this.logger.info(`Whisper engine: ${hasGpu ? 'GPU (CUDA)' : 'CPU only'}`, {
+        whisperPath: this.whisperPath,
+        hasCudaDll: hasGpu,
+      });
+    } catch {
+      this.logger.info('Whisper engine: CPU only (detection failed)');
+    }
+  }
+
+  /**
+   * Check if GPU (CUDA) is available for transcription
+   */
+  isGpuAvailable(): boolean {
+    try {
+      const whisperDir = path.dirname(this.whisperPath);
+      return fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll'));
+    } catch {
+      return false;
+    }
   }
 
   private getWhisperPath(): string {
+    // Always use resources-whisper-clean (same binary for dev & production)
     if (app.isPackaged) {
       return path.join(process.resourcesPath, 'whisper', 'whisper-cli.exe');
     }
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'whisper-cli.exe');
+    return path.join(__dirname, '..', '..', 'resources-whisper-clean', 'whisper-cli.exe');
   }
 
   private getModelsPath(): string {
+    // Always use resources-whisper-clean/models (same models for dev & production)
     if (app.isPackaged) {
       return path.join(process.resourcesPath, 'whisper', 'models');
     }
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+    return path.join(__dirname, '..', '..', 'resources-whisper-clean', 'models');
   }
 
   setMainWindow(window: BrowserWindow): void {
