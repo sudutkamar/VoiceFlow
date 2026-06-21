@@ -1,6 +1,7 @@
 import { exec, spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { app, BrowserWindow } from 'electron';
 import { Logger } from './logger';
 import { AudioPreprocessor } from './audioPreprocessor';
@@ -143,18 +144,14 @@ export class Transcriber {
         '-m', modelPath,
         '-f', processedAudioPath,
         '-otxt',
-        '-pc',
         '--no-prints',
-        '-t', '8',
+        '-t', String(Math.max(2, Math.min(8, os.cpus()?.length || 4))),
       ];
 
-      if (language !== 'auto') {
-        args.push('-l', language);
-      } else {
-        args.push('-l', 'id');
-      }
+      // Let Whisper auto-detect when requested. Forcing Indonesian on "auto" hurts mixed ID/EN speech.
+      args.push('-l', language && language !== 'auto' ? language : 'auto');
 
-      this.logger.info('Starting transcription...', { model, language, preprocess, fuzzyMatch });
+      this.logger.info('Starting transcription...', { model, language, preprocess, fuzzyMatch, args: args.filter(a => a !== modelPath && a !== processedAudioPath) });
 
       const whisper = spawn(this.whisperPath, args, {
         windowsHide: true,
@@ -163,14 +160,15 @@ export class Transcriber {
       this.currentProcess = whisper;
 
       let settled = false;
+      const timeoutMs = Math.max(30000, Math.min(180000, (audioDurationMs || 0) * 3 + 20000));
       const timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
         try { whisper.kill(); } catch {}
         this.currentProcess = null;
-        this.logger.error('Whisper timed out');
-        resolve({ success: false, error: 'Transcription timeout. Coba rekam lebih pendek atau gunakan model Tiny/Base.' });
-      }, 30000);
+        this.logger.error('Whisper timed out', { timeoutMs, audioDurationMs });
+        resolve({ success: false, error: 'Transcription timeout. Coba rekam lebih pendek atau gunakan model yang lebih kecil.' });
+      }, timeoutMs);
 
       let stdout = '';
       let stderr = '';

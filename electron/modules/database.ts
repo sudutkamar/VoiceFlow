@@ -49,6 +49,8 @@ export class VoiceFlowDatabase {
       this.updateSetting('cleanup_enabled', 'false');
       this.updateSetting('remove_fillers', 'false');
       this.updateSetting('voice_commands', 'false');
+      this.updateSetting('audio_preprocess', 'false');
+      this.updateSetting('fuzzy_match', 'false');
       this.updateSetting('capitalize_first', 'false');
       this.updateSetting('capitalize_sentences', 'false');
     }
@@ -131,6 +133,8 @@ export class VoiceFlowDatabase {
       remove_fillers: 'false',
       voice_commands: 'false',
       verbatim_mode: 'true',
+      audio_preprocess: 'false',
+      fuzzy_match: 'false',
       auto_start: 'false',
       minimize_to_tray: 'true',
       show_mini_window: 'true',

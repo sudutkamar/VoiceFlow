@@ -76,13 +76,16 @@ export function setupDictationIPC(
 
       // 2. Transcribe
       const model = getBestAvailableModel(database.getSetting('model') || 'ggml-base.bin');
-      const language = database.getSetting('language') || 'id';
+      const language = database.getSetting('language') || 'auto';
+      const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
+      const preprocessAudio = database.getSetting('audio_preprocess') === 'true';
+      const fuzzyMatch = !verbatimMode && database.getSetting('fuzzy_match') === 'true';
       
       hotkeyManager?.setState('transcribing');
-      logger.info('Starting whisper...', { model, language });
+      logger.info('Starting whisper...', { model, language, verbatimMode, preprocessAudio, fuzzyMatch });
       const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
-        preprocess: true,
-        fuzzyMatch: true,
+        preprocess: preprocessAudio,
+        fuzzyMatch,
         confidenceScore: true,
         audioDurationMs: audioData.duration,
       });
@@ -102,17 +105,16 @@ export function setupDictationIPC(
       const snippets = database.getSnippetsMap();
       const removeFillers = database.getSetting('remove_fillers') !== 'false';
       const cleanupEnabled = database.getSetting('cleanup_enabled') !== 'false';
-      const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
 
       let finalText = transcribeResult.text || '';
       if (finalText) {
         if (verbatimMode) {
-          // In verbatim mode: only process spoken punctuation (koma→, titik→.) and voice commands
-          // Do NOT remove fillers, capitalize, or change words
+          // Dictation-first behavior: keep the user's words as close to Whisper output as possible.
+          // Only normalize whitespace; no filler removal, no capitalization, no dictionary/fuzzy changes.
           finalText = textCleaner.clean(finalText, {
             removeFillers: false,
-            handlePunctuation: true,
-            handleVoiceCommands: true,
+            handlePunctuation: false,
+            handleVoiceCommands: false,
             capitalizeFirst: false,
             capitalizeAfterPeriod: false,
             fixSpacing: true,

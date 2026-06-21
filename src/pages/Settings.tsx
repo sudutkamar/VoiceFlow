@@ -322,9 +322,23 @@ function Settings({ onSuccess }: SettingsProps) {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Verbatim Mode</span>
-                <span className="setting-hint">Exact transcription without changes</span>
+                <span className="setting-hint">Most accurate for casual speech: do not rewrite, correct, or formalize words</span>
               </div>
               <div className={`toggle ${settings.verbatim_mode !== 'false' ? 'on' : ''}`} onClick={() => toggle('verbatim_mode')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Audio Preprocessing</span>
+                <span className="setting-hint">Optional noise gate/normalization. Leave off if words sound cut or inaccurate.</span>
+              </div>
+              <div className={`toggle ${settings.audio_preprocess === 'true' ? 'on' : ''}`} onClick={() => toggle('audio_preprocess')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Fuzzy Auto-Correct</span>
+                <span className="setting-hint">Use dictionary-like correction. Disabled in Verbatim Mode.</span>
+              </div>
+              <div className={`toggle ${settings.fuzzy_match === 'true' ? 'on' : ''}`} onClick={() => toggle('fuzzy_match')} />
             </div>
           </div>
 
