@@ -282,6 +282,16 @@ function setupIPC(): void {
   ipcMain.handle('quit-app', () => { isQuitting = true; app.quit(); });
   ipcMain.handle('show-main', () => showMainWindow());
   ipcMain.handle('minimize-to-bar', () => { mainWindow?.hide(); showMiniWindow(); });
+  ipcMain.handle('minimize-window', () => { mainWindow?.minimize(); });
+  ipcMain.handle('maximize-window', () => {
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+    }
+  });
   ipcMain.handle('show-mini-window', () => showMiniWindow());
   ipcMain.handle('hide-mini-window', () => hideMiniWindow());
   

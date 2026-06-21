@@ -60,6 +60,8 @@ export interface ElectronAPI {
   minimizeToTray: () => Promise<void>;
   showMain: () => Promise<void>;
   minimizeToBar: () => Promise<void>;
+  minimizeWindow: () => Promise<void>;
+  maximizeWindow: () => Promise<void>;
   
   // Events
   onStateChange: (callback: (state: string) => void) => () => void;
@@ -130,6 +132,8 @@ const api: ElectronAPI = {
   minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
   showMain: () => ipcRenderer.invoke('show-main'),
   minimizeToBar: () => ipcRenderer.invoke('minimize-to-bar'),
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
   
   onStateChange: (callback) => {
     const handler = (_: any, state: string) => callback(state);

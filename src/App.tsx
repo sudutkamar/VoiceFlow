@@ -17,6 +17,8 @@ declare global {
       quitApp: () => Promise<void>;
       showMain: () => Promise<void>;
       minimizeToBar: () => Promise<void>;
+      minimizeWindow: () => Promise<void>;
+      maximizeWindow: () => Promise<void>;
       miniWindowReady: () => void;
       getTargetApp: () => Promise<string>;
       onStateChange: (callback: (state: string) => void) => () => void;
@@ -320,8 +322,11 @@ function MainApp() {
           </div>
         </div>
         <div className="title-bar-controls">
-          <button className="title-btn minimize" onClick={() => window.electronAPI.minimizeToBar()} title="Minimize">
+          <button className="title-btn minimize" onClick={() => window.electronAPI.minimizeWindow()} title="Minimize">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button className="title-btn maximize" onClick={() => window.electronAPI.maximizeWindow()} title="Maximize">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
           </button>
           <button className="title-btn close" onClick={() => window.electronAPI.quitApp()} title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
