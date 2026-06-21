@@ -66,15 +66,13 @@ function createMainWindow(): void {
   });
 
   mainWindow.on('ready-to-show', () => {
+    mainWindow?.maximize();
     mainWindow?.show();
     mainWindow?.focus();
   });
 
-  // When minimized -> show mini bar
-  mainWindow.on('minimize', () => {
-    mainWindow?.hide();
-    showMiniWindow();
-  });
+  // When minimized -> minimize to taskbar (stay in taskbar)
+  // Don't hide window, just minimize normally
 
   // When closed -> show mini bar instead of quitting
   mainWindow.on('close', (event) => {
@@ -282,9 +280,13 @@ function setupIPC(): void {
   ipcMain.handle('quit-app', () => { isQuitting = true; app.quit(); });
   ipcMain.handle('show-main', () => showMainWindow());
   ipcMain.handle('minimize-to-bar', () => { mainWindow?.hide(); showMiniWindow(); });
-  ipcMain.handle('minimize-window', () => { mainWindow?.minimize(); });
+  ipcMain.handle('minimize-window', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.minimize();
+    }
+  });
   ipcMain.handle('maximize-window', () => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMaximized()) {
         mainWindow.unmaximize();
       } else {
@@ -326,6 +328,10 @@ app.whenReady().then(() => {
   if (mainWindow) {
     hotkeyManager = new HotkeyManager(mainWindow, database, logger, showMiniWindow, hideMiniWindow);
     hotkeyManager.register();
+    
+    // Ensure main window is shown and focused on startup
+    mainWindow.show();
+    mainWindow.focus();
   }
 
   setupIPC();

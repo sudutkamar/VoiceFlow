@@ -27,21 +27,35 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     size: '142 MB',
     sizeBytes: 142000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-    description: 'Seimbang (recommended)',
+    description: 'Seimbang untuk daily use',
   },
   {
     name: 'ggml-small.bin',
     size: '466 MB',
     sizeBytes: 466000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
-    description: 'Lebih akurat, lebih lambat',
+    description: 'Lebih akurat, cocok untuk bahasa campuran',
   },
   {
     name: 'ggml-medium.bin',
     size: '1.5 GB',
     sizeBytes: 1500000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
-    description: 'Sangat akurat, lambat',
+    description: 'Sangat akurat untuk semua bahasa',
+  },
+  {
+    name: 'ggml-large-v3-turbo.bin',
+    size: '1.5 GB',
+    sizeBytes: 1500000000,
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
+    description: '⭐ Akurasi tinggi + cepat (recommended)',
+  },
+  {
+    name: 'ggml-large-v3.bin',
+    size: '3.1 GB',
+    sizeBytes: 3100000000,
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
+    description: 'Akurasi tertinggi, butuh RAM besar',
   },
 ];
 

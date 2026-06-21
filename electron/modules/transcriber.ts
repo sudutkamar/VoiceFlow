@@ -3,10 +3,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow } from 'electron';
 import { Logger } from './logger';
+import { AudioPreprocessor } from './audioPreprocessor';
+import { FuzzyMatcher, DictionaryEntry } from './fuzzyMatcher';
+import { ConfidenceScorer, ConfidenceResult } from './confidenceScorer';
 
 export interface TranscribeResult {
   success: boolean;
   text?: string;
+  rawText?: string;
+  confidence?: ConfidenceResult;
+  fuzzyChanges?: number;
   error?: string;
 }
 
@@ -17,11 +23,17 @@ export class Transcriber {
   private mainWindow: BrowserWindow | null = null;
   private sendToAllFn: ((channel: string, ...args: any[]) => void) | null = null;
   private currentProcess: any = null;
+  private audioPreprocessor: AudioPreprocessor;
+  private fuzzyMatcher: FuzzyMatcher;
+  private confidenceScorer: ConfidenceScorer;
 
   constructor(logger: Logger) {
     this.logger = logger;
     this.whisperPath = this.getWhisperPath();
     this.modelsPath = this.getModelsPath();
+    this.audioPreprocessor = new AudioPreprocessor(logger);
+    this.fuzzyMatcher = new FuzzyMatcher(logger);
+    this.confidenceScorer = new ConfidenceScorer(logger);
   }
 
   private getWhisperPath(): string {
@@ -54,11 +66,32 @@ export class Transcriber {
     }
   }
 
+  /**
+   * Load dictionary for fuzzy matching
+   */
+  loadDictionary(entries: DictionaryEntry[]): void {
+    this.fuzzyMatcher.loadDictionary(entries);
+    this.logger.info('Dictionary loaded into transcriber', { count: entries.length });
+  }
+
   async transcribe(
     audioPath: string,
     model: string = 'ggml-base.bin',
-    language: string = 'auto'
+    language: string = 'auto',
+    options: {
+      preprocess?: boolean;
+      fuzzyMatch?: boolean;
+      confidenceScore?: boolean;
+      audioDurationMs?: number;
+    } = {}
   ): Promise<TranscribeResult> {
+    const {
+      preprocess = true,
+      fuzzyMatch = true,
+      confidenceScore = true,
+      audioDurationMs,
+    } = options;
+
     const modelPath = path.join(this.modelsPath, model);
 
     if (!fs.existsSync(this.whisperPath)) {
@@ -82,28 +115,46 @@ export class Transcriber {
       return { success: false, error: 'File audio tidak ditemukan' };
     }
 
-    const outputPath = audioPath + '.txt';
+    // Step 1: Audio Preprocessing
+    let processedAudioPath = audioPath;
+    if (preprocess) {
+      try {
+        this.logger.info('Starting audio preprocessing...');
+        const audioBuffer = fs.readFileSync(audioPath);
+        const processedBuffer = await this.audioPreprocessor.process(audioBuffer);
+        
+        // Save processed audio to temp file
+        processedAudioPath = audioPath.replace('.wav', '_processed.wav');
+        fs.writeFileSync(processedAudioPath, processedBuffer);
+        this.logger.info('Audio preprocessing complete', {
+          original: audioBuffer.length,
+          processed: processedBuffer.length,
+        });
+      } catch (error: any) {
+        this.logger.warn('Audio preprocessing failed, using original', error);
+        processedAudioPath = audioPath;
+      }
+    }
+
+    const outputPath = processedAudioPath + '.txt';
 
     return new Promise((resolve) => {
-      // Conservative whisper.cpp args: fast, compatible, no hanging on unsupported flags.
       const args = [
         '-m', modelPath,
-        '-f', audioPath,
+        '-f', processedAudioPath,
         '-otxt',
         '-pc',
         '--no-prints',
         '-t', '8',
       ];
 
-      // Language handling
       if (language !== 'auto') {
         args.push('-l', language);
       } else {
-        // Auto-detect with Indonesian bias
         args.push('-l', 'id');
       }
 
-      this.logger.info('Starting transcription...', { model, language });
+      this.logger.info('Starting transcription...', { model, language, preprocess, fuzzyMatch });
 
       const whisper = spawn(this.whisperPath, args, {
         windowsHide: true,
@@ -119,7 +170,7 @@ export class Transcriber {
         this.currentProcess = null;
         this.logger.error('Whisper timed out');
         resolve({ success: false, error: 'Transcription timeout. Coba rekam lebih pendek atau gunakan model Tiny/Base.' });
-      }, 20000);
+      }, 30000);
 
       let stdout = '';
       let stderr = '';
@@ -129,7 +180,6 @@ export class Transcriber {
         const chunk = data.toString();
         stdout += chunk;
         
-        // Extract partial transcript
         const lines = chunk.split('\n');
         for (const line of lines) {
           const match = line.match(/\[.*?\]\s*(.*)/);
@@ -153,6 +203,11 @@ export class Transcriber {
         clearTimeout(timeout);
         this.currentProcess = null;
 
+        // Clean up processed audio file
+        if (preprocess && processedAudioPath !== audioPath) {
+          try { fs.unlinkSync(processedAudioPath); } catch {}
+        }
+
         if (code !== 0) {
           this.logger.error('Whisper exited with code', { code, stderr: stderr.slice(0, 500) });
           resolve({
@@ -164,19 +219,16 @@ export class Transcriber {
 
         let transcript = '';
 
-        // Try output file first
         if (fs.existsSync(outputPath)) {
           transcript = fs.readFileSync(outputPath, 'utf-8').trim();
           try { fs.unlinkSync(outputPath); } catch {}
         }
 
-        // Fallback to stdout parsing
         if (!transcript && stdout) {
           const lines = stdout.split('\n')
             .map(l => l.trim())
             .filter(l => {
               if (!l || l.length < 2) return false;
-              // Filter out whisper metadata
               if (l.startsWith('[') && l.includes(']') && l.match(/^\[\d{2}:\d{2}:\d{2}/)) return false;
               if (l.startsWith('whisper') || l.startsWith('main') || l.startsWith('system_info')) return false;
               if (l.startsWith('sampling') || l.startsWith('auto') || l.startsWith('detected')) return false;
@@ -186,15 +238,13 @@ export class Transcriber {
           transcript = lines.join(' ').trim();
         }
 
-        // Clean up transcript
         if (transcript) {
-          // Remove common artifacts
           transcript = transcript
             .replace(/\[BLANK_AUDIO\]/g, '')
             .replace(/\[MUSIC\]/g, '')
             .replace(/\[silence\]/g, '')
-            .replace(/^\s*[\.\,]\s*/, '')  // Remove leading punctuation
-            .replace(/\s{2,}/g, ' ')       // Normalize spaces
+            .replace(/^\s*[\.\,]\s*/, '')
+            .replace(/\s{2,}/g, ' ')
             .trim();
         }
 
@@ -207,8 +257,56 @@ export class Transcriber {
           return;
         }
 
-        this.logger.info('Transcription complete', { length: transcript.length, text: transcript.substring(0, 50) });
-        resolve({ success: true, text: transcript });
+        const rawText = transcript;
+        let finalText = transcript;
+        let fuzzyChanges = 0;
+
+        // Step 2: Fuzzy Matching
+        if (fuzzyMatch) {
+          try {
+            const fuzzyResult = this.fuzzyMatcher.process(transcript);
+            finalText = fuzzyResult.corrected;
+            fuzzyChanges = fuzzyResult.changes.length;
+            
+            if (fuzzyChanges > 0) {
+              this.logger.info('Fuzzy matching applied', {
+                changes: fuzzyChanges,
+                confidence: fuzzyResult.confidence,
+              });
+            }
+          } catch (error: any) {
+            this.logger.warn('Fuzzy matching failed', error);
+          }
+        }
+
+        // Step 3: Confidence Scoring
+        let confidenceResult: ConfidenceResult | undefined;
+        if (confidenceScore) {
+          try {
+            confidenceResult = this.confidenceScorer.analyze(finalText, audioDurationMs);
+            this.logger.info('Confidence analysis', {
+              overall: confidenceResult.overallConfidence,
+              quality: confidenceResult.quality,
+            });
+          } catch (error: any) {
+            this.logger.warn('Confidence scoring failed', error);
+          }
+        }
+
+        this.logger.info('Transcription complete', {
+          length: finalText.length,
+          rawLength: rawText.length,
+          fuzzyChanges,
+          confidence: confidenceResult?.overallConfidence,
+        });
+
+        resolve({
+          success: true,
+          text: finalText,
+          rawText: rawText !== finalText ? rawText : undefined,
+          confidence: confidenceResult,
+          fuzzyChanges: fuzzyChanges > 0 ? fuzzyChanges : undefined,
+        });
       });
 
       whisper.on('error', (error) => {
@@ -216,6 +314,11 @@ export class Transcriber {
         settled = true;
         clearTimeout(timeout);
         this.currentProcess = null;
+        
+        if (preprocess && processedAudioPath !== audioPath) {
+          try { fs.unlinkSync(processedAudioPath); } catch {}
+        }
+        
         this.logger.error('Whisper process error', error);
         resolve({
           success: false,

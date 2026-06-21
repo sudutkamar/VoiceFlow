@@ -1,4 +1,4 @@
-# VoiceFlow - Voice to Text for Windows
+# VoiceFlow v1.0.0 - Voice to Text for Windows
 
 VoiceFlow adalah aplikasi voice-to-text lokal untuk Windows yang **100% gratis** dan **100% lokal** tanpa memerlukan API atau koneksi internet.
 

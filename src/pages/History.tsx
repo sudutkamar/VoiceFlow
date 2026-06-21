@@ -62,6 +62,19 @@ function History({ onSuccess }: HistoryProps) {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const result = await window.electronAPI.exportHistory();
+      if (result.success) {
+        onSuccess('History exported!');
+      } else if (result.error !== 'Export cancelled') {
+        alert(result.error);
+      }
+    } catch (error) {
+      console.error('Failed to export:', error);
+    }
+  };
+
   const filtered = search
     ? history.filter(item =>
         item.final_text.toLowerCase().includes(search.toLowerCase()) ||
@@ -123,9 +136,14 @@ function History({ onSuccess }: HistoryProps) {
           onChange={(e) => setSearch(e.target.value)}
         />
         {history.length > 0 && (
-          <button className="btn btn-sm btn-danger" onClick={handleClear}>
-            Clear All
-          </button>
+          <>
+            <button className="btn btn-sm" onClick={handleExport}>
+              Export CSV
+            </button>
+            <button className="btn btn-sm btn-danger" onClick={handleClear}>
+              Clear All
+            </button>
+          </>
         )}
       </div>
 

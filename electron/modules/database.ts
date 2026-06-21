@@ -120,7 +120,7 @@ export class VoiceFlowDatabase {
     if (!this.db) throw new Error('Database not initialized');
 
     const defaults: Record<string, string> = {
-      hotkey: 'CommandOrControl+Shift+F9',
+      hotkey: 'CommandOrControl+Shift+Space',
       language: 'auto',
       model: 'ggml-base.bin',
       save_history: 'true',
@@ -134,7 +134,7 @@ export class VoiceFlowDatabase {
       auto_start: 'false',
       minimize_to_tray: 'true',
       show_mini_window: 'true',
-      sound_effects: 'false',
+      sound_effects: 'true',
       selected_mic: '',
       push_to_talk: 'false',
       preview_before_paste: 'false',

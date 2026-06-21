@@ -100,6 +100,8 @@ function Models({ onSuccess }: ModelsProps) {
     if (name.includes('base')) return '⚖️';
     if (name.includes('small')) return '🎯';
     if (name.includes('medium')) return '💎';
+    if (name.includes('large-v3-turbo')) return '🏆';
+    if (name.includes('large')) return '👑';
     return '🧠';
   };
 
@@ -108,6 +110,9 @@ function Models({ onSuccess }: ModelsProps) {
     if (name.includes('base')) return 'Base';
     if (name.includes('small')) return 'Small';
     if (name.includes('medium')) return 'Medium';
+    if (name.includes('large-v3-turbo')) return 'Large v3 Turbo';
+    if (name.includes('large-v3')) return 'Large v3';
+    if (name.includes('large')) return 'Large';
     return name.replace('ggml-', '').replace('.bin', '');
   };
 
@@ -116,6 +121,8 @@ function Models({ onSuccess }: ModelsProps) {
     if (name.includes('base')) return '~2-3s';
     if (name.includes('small')) return '~5-7s';
     if (name.includes('medium')) return '~10-15s';
+    if (name.includes('large-v3-turbo')) return '~8-12s';
+    if (name.includes('large')) return '~15-25s';
     return '';
   };
 
@@ -123,7 +130,9 @@ function Models({ onSuccess }: ModelsProps) {
     if (name.includes('tiny')) return 'Low';
     if (name.includes('base')) return 'Good';
     if (name.includes('small')) return 'Better';
-    if (name.includes('medium')) return 'Best';
+    if (name.includes('medium')) return 'Great';
+    if (name.includes('large-v3-turbo')) return 'Excellent';
+    if (name.includes('large')) return 'Best';
     return '';
   };
 

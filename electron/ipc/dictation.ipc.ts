@@ -80,7 +80,12 @@ export function setupDictationIPC(
       
       hotkeyManager?.setState('transcribing');
       logger.info('Starting whisper...', { model, language });
-      const transcribeResult = await transcriber.transcribe(wavPath, model, language);
+      const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
+        preprocess: true,
+        fuzzyMatch: true,
+        confidenceScore: true,
+        audioDurationMs: audioData.duration,
+      });
       
       // Cleanup temp file
       try { fs.unlinkSync(wavPath); } catch {}
@@ -151,11 +156,19 @@ export function setupDictationIPC(
         : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
 
       send('transcript-ready', {
-        raw: transcribeResult.text,
+        raw: transcribeResult.rawText || transcribeResult.text,
         cleaned: finalText,
         duration: audioData.duration,
         wordCount: textCleaner.getWordCount(finalText),
         charCount: textCleaner.getCharCount(finalText),
+        confidence: transcribeResult.confidence ? {
+          overall: transcribeResult.confidence.overallConfidence,
+          quality: transcribeResult.confidence.quality,
+          words: transcribeResult.confidence.words,
+          suggestions: transcribeResult.confidence.suggestions,
+        } : undefined,
+        fuzzyChanges: transcribeResult.fuzzyChanges,
+        rawText: transcribeResult.rawText,
       });
 
       hotkeyManager?.setState('done');

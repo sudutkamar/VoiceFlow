@@ -291,7 +291,9 @@ function Settings({ onSuccess }: SettingsProps) {
                 <option value="ggml-tiny.bin">⚡ Tiny - Fastest</option>
                 <option value="ggml-base.bin">⚖️ Base - Balanced</option>
                 <option value="ggml-small.bin">🎯 Small - Accurate</option>
-                <option value="ggml-medium.bin">💎 Medium - Best</option>
+                <option value="ggml-medium.bin">💎 Medium - Great</option>
+                <option value="ggml-large-v3-turbo.bin">🏆 Large v3 Turbo - Excellent</option>
+                <option value="ggml-large-v3.bin">👑 Large v3 - Best</option>
               </select>
             </div>
           </div>

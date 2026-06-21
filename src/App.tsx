@@ -46,12 +46,22 @@ declare global {
       getHistory: () => Promise<any[]>;
       deleteHistory: (id: string) => Promise<void>;
       clearHistory: () => Promise<void>;
+      exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
+      searchHistory: (query: string) => Promise<any[]>;
     };
   }
 }
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
 type Page = 'home' | 'settings' | 'models' | 'history';
+
+// Helper functions
+function getConfidenceColor(confidence: number): string {
+  if (confidence >= 0.9) return '#4ade80';
+  if (confidence >= 0.75) return '#4a9eff';
+  if (confidence >= 0.6) return '#fbbf24';
+  return '#f87171';
+}
 
 // Sound feedback
 function playSound(type: 'start' | 'stop' | 'done' | 'error') {
@@ -394,6 +404,9 @@ function HomePage({ settings, onSuccess }: { settings: Record<string, string>; o
   const [levels, setLevels] = useState<number[]>(Array(30).fill(0));
   const [time, setTime] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
+  const [confidence, setConfidence] = useState<any>(null);
+  const [fuzzyChanges, setFuzzyChanges] = useState<number>(0);
+  const [rawText, setRawText] = useState<string>('');
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -411,6 +424,9 @@ function HomePage({ settings, onSuccess }: { settings: Record<string, string>; o
         if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
         const result = d.cleaned || d.raw;
         setText(result);
+        setConfidence(d.confidence || null);
+        setFuzzyChanges(d.fuzzyChanges || 0);
+        setRawText(d.rawText || '');
         setHistory(prev => [result, ...prev].slice(0, 10));
         setState('done');
         playSound('done');
@@ -519,6 +535,34 @@ function HomePage({ settings, onSuccess }: { settings: Record<string, string>; o
         {text && state !== 'recording' && (
           <div className="result-box">
             <p>{text}</p>
+            
+            {/* Confidence Info */}
+            {confidence && (
+              <div className="confidence-info">
+                <div className="confidence-header">
+                  <span className="confidence-label">Confidence:</span>
+                  <span className="confidence-value" style={{ color: getConfidenceColor(confidence.overall) }}>
+                    {Math.round(confidence.overall * 100)}%
+                  </span>
+                  <span className={`confidence-badge ${confidence.quality}`}>
+                    {confidence.quality}
+                  </span>
+                </div>
+                {fuzzyChanges > 0 && (
+                  <div className="fuzzy-info">
+                    <span>✨ {fuzzyChanges} words auto-corrected</span>
+                  </div>
+                )}
+                {confidence.suggestions && confidence.suggestions.length > 0 && (
+                  <div className="suggestions">
+                    {confidence.suggestions.slice(0, 2).map((s: string, i: number) => (
+                      <div key={i} className="suggestion-item">💡 {s}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
             <div className="result-actions">
               <button className="btn-action" onClick={async () => { await window.electronAPI.copyText(text); onSuccess('Copied!'); }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
