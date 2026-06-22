@@ -29,7 +29,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
   const [newReplacement, setNewReplacement] = useState('');
   const [newTrigger, setNewTrigger] = useState('');
   const [newOutput, setNewOutput] = useState('');
-  const [gpuStatus, setGpuStatus] = useState<{ hasGpu: boolean; mode: string } | null>(null);
+  const [gpuStatus, setGpuStatus] = useState<{ hasGpu: boolean; mode: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string } | null>(null);
   const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup debounce timer on unmount
@@ -282,12 +282,14 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 <span className="setting-name">Acceleration</span>
                 <span className="setting-hint">
                   {gpuStatus?.hasGpu
-                    ? 'GPU detected (CUDA). Choose processing device.'
+                    ? gpuStatus?.cudaDllsPresent
+                      ? 'GPU detected (CUDA). Choose processing device.'
+                      : 'GPU detected. CUDA perlu di-download.'
                     : 'No GPU detected. CPU only.'}
                 </span>
               </div>
               <div className="setting-control">
-                {gpuStatus?.hasGpu ? (
+                {gpuStatus?.hasGpu && gpuStatus?.cudaDllsPresent ? (
                   <select
                     value={settings.whisper_device || 'auto'}
                     onChange={(e) => {
@@ -296,10 +298,22 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                       onSuccess(`Device: ${labels[e.target.value] || e.target.value}`);
                     }}
                   >
-                    <option value="auto">⚡ Auto (GPU if available)</option>
-                    <option value="gpu">🎮 Force GPU</option>
-                    <option value="cpu">🖥️ Force CPU</option>
+                    <option value="auto">Auto (GPU)</option>
+                    <option value="gpu">Force GPU</option>
+                    <option value="cpu">Force CPU</option>
                   </select>
+                ) : gpuStatus?.hasGpu && gpuStatus?.needsDownload ? (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      if (gpuStatus?.downloadUrl) {
+                        window.open(gpuStatus.downloadUrl, '_blank');
+                        onSuccess('Download CUDA, lalu extract ke folder yang ditunjukkan');
+                      }
+                    }}
+                  >
+                    Download CUDA
+                  </button>
                 ) : (
                   <div className="gpu-badge gpu-badge-cpu">
                     <span className="gpu-badge-icon">🖥️</span>

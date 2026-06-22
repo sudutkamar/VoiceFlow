@@ -43,15 +43,18 @@ export class Transcriber {
 
   /**
    * Check if CUDA/GPU support is available
+   * Checks both resources and user data cuda folder
    */
   private logGpuStatus(): void {
     try {
       const whisperDir = path.dirname(this.whisperPath);
       const cudaDllPath = path.join(whisperDir, 'ggml-cuda.dll');
-      const hasGpu = fs.existsSync(cudaDllPath);
+      const userCudaPath = path.join(app.getPath('userData'), 'cuda', 'ggml-cuda.dll');
+      const hasGpu = fs.existsSync(cudaDllPath) || fs.existsSync(userCudaPath);
       this.logger.info(`Whisper engine: ${hasGpu ? 'GPU (CUDA)' : 'CPU only'}`, {
         whisperPath: this.whisperPath,
-        hasCudaDll: hasGpu,
+        hasCudaDll: fs.existsSync(cudaDllPath),
+        hasCudaInUserData: fs.existsSync(userCudaPath),
       });
     } catch {
       this.logger.info('Whisper engine: CPU only (detection failed)');
@@ -64,7 +67,8 @@ export class Transcriber {
   isGpuAvailable(): boolean {
     try {
       const whisperDir = path.dirname(this.whisperPath);
-      return fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll'));
+      const userCudaPath = path.join(app.getPath('userData'), 'cuda', 'ggml-cuda.dll');
+      return fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll')) || fs.existsSync(userCudaPath);
     } catch {
       return false;
     }
@@ -180,7 +184,8 @@ export class Transcriber {
     return new Promise((resolve) => {
       // Check if GPU is available for CUDA acceleration
       const whisperDir = path.dirname(this.whisperPath);
-      const hasCuda = fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll'));
+      const userCudaPath = path.join(app.getPath('userData'), 'cuda');
+      const hasCuda = fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll')) || fs.existsSync(path.join(userCudaPath, 'ggml-cuda.dll'));
 
       const args = [
         '-m', modelPath,

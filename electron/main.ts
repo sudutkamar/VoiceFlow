@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { VoiceFlowDatabase as Database } from './modules/database';
 import { Logger } from './modules/logger';
 import { HotkeyManager } from './modules/hotkeyManager';
+import { CudaDownloader } from './modules/cudaDownloader';
 import { setupDictationIPC } from './ipc/dictation.ipc';
 import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC } from './ipc/model.ipc';
@@ -41,6 +42,7 @@ let tray: Tray | null = null;
 let database: Database;
 let logger: Logger;
 let hotkeyManager: HotkeyManager;
+let cudaDownloader: CudaDownloader;
 let isQuitting = false;
 let isPasting = false;
 
@@ -310,6 +312,19 @@ function createTray(): void {
 function setupIPC(): void {
   if (!mainWindow || !database || !logger) return;
 
+  // Initialize CUDA downloader
+  cudaDownloader = new CudaDownloader(logger);
+  cudaDownloader.checkStatus().then(status => {
+    logger.info('CUDA status', status);
+    // If GPU exists but CUDA DLLs not in resources, try copy from bundled
+    if (status.needsDownload) {
+      const copied = cudaDownloader.copyFromResources();
+      if (copied) {
+        logger.info('CUDA DLLs copied from resources to user data');
+      }
+    }
+  }).catch(err => logger.warn('CUDA check failed', err));
+
   setupDictationIPC(mainWindow, database, logger, hotkeyManager, hideAllForPaste, showAfterPaste);
   setupSettingsIPC(mainWindow, database, logger, hotkeyManager);
   setupModelIPC(mainWindow, database, logger);
@@ -374,19 +389,23 @@ function setupIPC(): void {
     app.setLoginItemSettings({ openAtLogin: enable, path: app.getPath('exe') });
     return { success: true };
   });
-  ipcMain.handle('get-gpu-status', () => {
+  ipcMain.handle('get-gpu-status', async () => {
     try {
+      const status = await cudaDownloader.checkStatus();
       const whisperDir = app.isPackaged
         ? path.join(process.resourcesPath, 'whisper')
         : path.join(__dirname, '..', 'resources-whisper-clean');
-      const hasCuda = fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll'));
       return {
-        hasGpu: hasCuda,
-        mode: hasCuda ? 'GPU (CUDA)' : 'CPU Only',
+        hasGpu: status.hasNvidiaGpu,
+        cudaDllsPresent: status.cudaDllsPresent,
+        mode: status.hasNvidiaGpu ? (status.cudaDllsPresent ? 'GPU (CUDA)' : 'GPU (needs download)') : 'CPU Only',
         whisperDir,
+        cudaPath: status.cudaPath,
+        needsDownload: status.needsDownload,
+        downloadUrl: status.needsDownload ? cudaDownloader.getDownloadUrl() : null,
       };
     } catch {
-      return { hasGpu: false, mode: 'CPU Only', whisperDir: '' };
+      return { hasGpu: false, mode: 'CPU Only', whisperDir: '', cudaDllsPresent: false, needsDownload: false };
     }
   });
   
