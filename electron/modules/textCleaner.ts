@@ -45,6 +45,7 @@ const PUNCTUATION_MAP: Record<string, string> = {
 };
 
 const VOICE_COMMANDS: Record<string, string> = {
+  // English commands - punctuation (specific enough to not conflict)
   'new paragraph': '\n\n', 'new line': '\n', 'newline': '\n', 'enter': '\n',
   'tab': '\t', 'period': '.', 'comma': ',', 'question mark': '?',
   'exclamation mark': '!', 'exclamation point': '!', 'colon': ':',
@@ -54,9 +55,31 @@ const VOICE_COMMANDS: Record<string, string> = {
   'open quote': '"', 'close quote': '"', 'single quote': "'",
   'apostrophe': "'", 'ellipsis': '...', 'ampersand': '&',
   'at sign': '@', 'hash': '#', 'dollar sign': '$', 'percent': '%',
-  'asterisk': '*', 'plus sign': '+', 'equals': '=', 'underscore': '_',
-  'tilde': '~', 'backtick': '`', 'pipe': '|', 'backslash': '\\',
+  'asterisk': '*', 'plus sign': '+', 'equals sign': '=', 'underscore': '_',
+  'tilde': '~', 'backtick': '`', 'pipe symbol': '|', 'backslash': '\\',
   'less than': '<', 'greater than': '>', 'caret': '^',
+  // Short English aliases (explicit, won't conflict with normal speech)
+  'times symbol': '*', 'divide symbol': '/',
+  'not equal': '!=',
+  'open curly': '{', 'close curly': '}',
+  'open square': '[', 'close square': ']',
+  // Indonesian commands - punctuation (specific multi-word phrases)
+  'koma': ',', 'titik': '.', 'tanda tanya': '?', 'tanda seru': '!',
+  'titik koma': ';', 'titik dua': ':', 'petik dua': '"', 'petik satu': "'",
+  'kurung buka': '(', 'kurung tutup': ')',
+  'kurung siku buka': '[', 'kurung siku tutup': ']',
+  'kurung kurawal buka': '{', 'kurung kurawal tutup': '}',
+  // Indonesian commands - symbols (ONLY specific multi-word to avoid false matches)
+  'simbol tambah': '+', 'simbol kurang': '-',
+  'simbol kali': '*', 'simbol bagi': '/',
+  'sama dengan': '=', 'tidak sama dengan': '!=',
+  'lebih besar dari': '>', 'lebih kecil dari': '<',
+  'lebih besar sama dengan': '>=', 'lebih kecil sama dengan': '<=',
+  'simbol dan': '&&', 'simbol atau': '||',
+  'tagar': '#',
+  'et': '@',
+  // Indonesian commands - actions
+  'paragraf baru': '\n\n', 'baris baru': '\n',
 };
 
 const FORMATTING_COMMANDS: Record<string, { prefix: string; suffix: string }> = {
@@ -296,8 +319,12 @@ export class TextCleaner {
 
     switch (mode) {
       case 'raw':
-        // Preserve Whisper output as-is, only normalize whitespace
-        return this.normalizeWhitespace(input.trim());
+        // In raw mode, still apply voice commands for symbols (always enabled)
+        // This allows users to dictate symbols like "plus", "koma", etc.
+        let rawResult = this.normalizeWhitespace(input.trim());
+        // Always process voice commands in raw mode for symbol support
+        rawResult = this.processVoiceCommands(rawResult);
+        return rawResult;
 
       case 'natural':
         // Light cleanup: spoken punctuation + whitespace, nothing else

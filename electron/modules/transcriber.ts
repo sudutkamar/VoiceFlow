@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { app, BrowserWindow } from 'electron';
+
+// Detect available CPU threads for optimal performance
+const CPU_THREADS = Math.max(1, os.cpus().length - 1); // Use all cores minus 1
 import { Logger } from './logger';
 import { AudioPreprocessor } from './audioPreprocessor';
 import { FuzzyMatcher, DictionaryEntry } from './fuzzyMatcher';
@@ -174,13 +177,28 @@ export class Transcriber {
     const outputPath = processedAudioPath + '.txt';
 
     return new Promise((resolve) => {
+      // Check if GPU is available for CUDA acceleration
+      const whisperDir = path.dirname(this.whisperPath);
+      const hasCuda = fs.existsSync(path.join(whisperDir, 'ggml-cuda.dll'));
+
       const args = [
         '-m', modelPath,
         '-f', processedAudioPath,
         '-otxt',
         '--no-prints',
-        '-t', '4',
+        '--no-timestamps',
+        '-t', String(CPU_THREADS),
+        '--best-of', '5',          // Pick best of 5 for maximum accuracy
+        '--beam-size', '5',         // Beam search with width 5 for better accuracy
+        '--entropy-thold', '2.4',   // Balanced complexity threshold
+        '--logprob-thold', '-1.0',  // Slightly more lenient word selection
+        '--no-speech-thold', '0.4', // Balanced silence detection
       ];
+
+      // If CUDA is available, whisper will auto-use it via ggml-cuda.dll
+      if (hasCuda) {
+        this.logger.info('GPU acceleration enabled via CUDA');
+      }
 
       args.push('-l', language && language !== 'auto' ? language : 'auto');
 
@@ -197,7 +215,8 @@ export class Transcriber {
       this.currentProcess = whisper;
 
       let settled = false;
-      const timeoutMs = Math.max(15000, Math.min(45000, (audioDurationMs || 0) * 4 + 10000));
+      // Timeout: 4x audio duration + 10s buffer, min 15s, max 60s (for accurate beam search)
+      const timeoutMs = Math.max(15000, Math.min(60000, (audioDurationMs || 0) * 4 + 10000));
       const timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
@@ -278,16 +297,38 @@ export class Transcriber {
             .replace(/\[BLANK_AUDIO\]/g, '')
             .replace(/\[MUSIC\]/g, '')
             .replace(/\[silence\]/g, '')
+            .replace(/\[SOUND\]/g, '')
+            .replace(/\[NOISE\]/g, '')
             .replace(/^\s*[\.\,]\s*/, '')
             .replace(/\s{2,}/g, ' ')
             .trim();
+        }
+
+        // Filter out garbage/hallucination text (common whisper issues)
+        const garbagePatterns = [
+          /^\s*\.{2,}\s*$/,  // Only dots
+          /^(thank you|thanks for watching|subscribe|like and subscribe)\s*\.?\s*$/i,
+          /^(halo|hai|hey|hello|hi)\s*\.?\s*$/i,
+          /^[\.\.\?\!\s]+$/,  // Only punctuation
+          /^(yeah|ya|yep|nope|ok|okay|hm|hmm|umm|uhh|ahh)\s*\.?\s*$/i,
+          /^(sub indo|sub English|English subtitles)\s*\.?\s*$/i,
+        ];
+
+        const isGarbage = garbagePatterns.some(p => p.test(transcript));
+        if (isGarbage) {
+          this.logger.info('Detected garbage/hallucination text, treating as empty', { text: transcript });
+          resolve({
+            success: false,
+            error: '__NO_SPEECH__',  // Special error code for no speech
+          });
+          return;
         }
 
         if (!transcript || transcript.length < 2) {
           this.logger.warn('Empty transcription result');
           resolve({
             success: false,
-            error: 'Transkripsi kosong. Coba bicara lebih jelas atau lebih lama.',
+            error: '__NO_SPEECH__',
           });
           return;
         }

@@ -73,6 +73,7 @@ export interface ElectronAPI {
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
   getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string }>;
+  clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
   
   // Events
   onStateChange: (callback: (state: string) => void) => () => void;
@@ -157,6 +158,7 @@ const api: ElectronAPI = {
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
   getGpuStatus: () => ipcRenderer.invoke('get-gpu-status'),
+  clearCache: () => ipcRenderer.invoke('clear-cache'),
   
   onStateChange: (callback) => {
     const handler = (_: any, state: string) => callback(state);

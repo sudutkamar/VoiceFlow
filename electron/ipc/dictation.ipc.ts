@@ -102,6 +102,16 @@ export function setupDictationIPC(
       try { fs.unlinkSync(wavPath); } catch {}
 
       if (!transcribeResult.success) {
+        // Handle no-speech case specially
+        if (transcribeResult.error === '__NO_SPEECH__') {
+          logger.info('No speech detected - empty or garbage audio');
+          hotkeyManager?.setState('idle');
+          const sendMsg = hotkeyManager
+            ? (msg: string) => hotkeyManager.sendToAll('error', msg)
+            : (msg: string) => mainWindow.webContents.send('error', msg);
+          sendMsg('__NO_SPEECH__');  // Special code for UI to handle silently
+          return;
+        }
         throw new Error(transcribeResult.error || 'Transcription failed');
       }
 

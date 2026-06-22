@@ -111,14 +111,14 @@ function createMainWindow(showInitially: boolean = true): void {
 function createMiniWindow(): void {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   const miniWidth = Math.min(460, sw - 40);
-  const miniHeight = 64;
+  const miniHeight = 120; // Larger to accommodate tooltips without resize glitches
   const taskbarHeight = sh; // workArea already excludes taskbar
 
   miniWindow = new BrowserWindow({
     width: miniWidth,
     height: miniHeight,
     x: Math.round((sw - miniWidth) / 2),
-    y: taskbarHeight - miniHeight - 10, // 10px above taskbar bottom
+    y: taskbarHeight - miniHeight - 10,
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -137,6 +137,9 @@ function createMiniWindow(): void {
     hasShadow: false,
     focusable: true,
   });
+
+  // Set always on top with highest level to prevent other windows from covering it
+  miniWindow.setAlwaysOnTop(true, 'screen-saver');
 
   miniWindow.on('blur', () => {
     // Notify renderer to close dropdown when clicking outside
@@ -170,7 +173,8 @@ function createMiniWindow(): void {
 
 function showMiniWindow(): void {
   logger?.info('showMiniWindow called, miniWindow exists: ' + !!miniWindow);
-  if (!miniWindow) {
+  if (!miniWindow || miniWindow.isDestroyed()) {
+    miniWindow = null;
     createMiniWindow();
     logger?.info('Created new miniWindow');
   }
@@ -180,6 +184,8 @@ function showMiniWindow(): void {
   }
   // Show without stealing focus, so user's cursor stays in the target app.
   miniWindow?.showInactive();
+  // Ensure always on top after showing
+  miniWindow?.setAlwaysOnTop(true, 'screen-saver');
   logger?.info('Mini window shown inactive');
 }
 
@@ -381,6 +387,57 @@ function setupIPC(): void {
       };
     } catch {
       return { hasGpu: false, mode: 'CPU Only', whisperDir: '' };
+    }
+  });
+  
+  ipcMain.handle('clear-cache', async () => {
+    try {
+      const cacheDir = path.join(app.getPath('userData'), 'cache');
+      const tempDir = path.join(app.getPath('userData'), 'temp');
+      let cleared = 0;
+      
+      // Clear GPU/cache directory
+      if (fs.existsSync(cacheDir)) {
+        const deleteDir = (dirPath: string) => {
+          try {
+            const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path.join(dirPath, entry.name);
+              if (entry.isDirectory()) {
+                deleteDir(fullPath);
+                try { fs.rmdirSync(fullPath); } catch {}
+              } else {
+                try { fs.unlinkSync(fullPath); cleared++; } catch {}
+              }
+            }
+          } catch {}
+        };
+        deleteDir(cacheDir);
+      }
+      
+      // Clear temp directory
+      if (fs.existsSync(tempDir)) {
+        try {
+          const entries = fs.readdirSync(tempDir);
+          for (const entry of entries) {
+            try {
+              fs.unlinkSync(path.join(tempDir, entry));
+              cleared++;
+            } catch {}
+          }
+        } catch {}
+      }
+      
+      // Recreate directories
+      [cacheDir, path.join(cacheDir, 'gpu'), path.join(cacheDir, 'code-cache'), tempDir].forEach(dir => {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      });
+      
+      logger.info(`Cache cleared: ${cleared} files removed`);
+      return { success: true, filesCleared: cleared };
+    } catch (error: any) {
+      logger.error('Failed to clear cache', error);
+      return { success: false, error: error.message };
     }
   });
 }

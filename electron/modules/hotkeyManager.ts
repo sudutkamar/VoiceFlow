@@ -31,6 +31,10 @@ const VALID_KEYS = new Set([
 
 const VALID_MODIFIERS = new Set(['CommandOrControl', 'Ctrl', 'Alt', 'Shift', 'Super', 'Meta', 'Cmd']);
 
+function formatHotkeyForDisplay(hotkey: string): string {
+  return hotkey.replace('CommandOrControl', 'Ctrl').split('+').map(k => k.trim()).join('+');
+}
+
 function isValidHotkey(hotkey: string): boolean {
   if (!hotkey) return false;
   const parts = hotkey.split('+');
@@ -111,33 +115,50 @@ export class HotkeyManager {
     const defaultHotkey = 'CommandOrControl+Shift+F9';
     const configuredHotkey = isValidHotkey(this.hotkey) ? this.hotkey : defaultHotkey;
     
-    // Try the configured hotkey first, then fallbacks
-    const hotkeysToTry = [
-      configuredHotkey,
+    // Try configured hotkey first
+    try {
+      const success = globalShortcut.register(configuredHotkey, () => {
+        this.onHotkeyPressed();
+      });
+      if (success) {
+        this.hotkey = configuredHotkey;
+        // Only update DB if it differs from stored value
+        if (this.database.getSetting('hotkey') !== configuredHotkey) {
+          this.database.updateSetting('hotkey', configuredHotkey);
+        }
+        this.logger.info(`Hotkey registered: ${configuredHotkey}`);
+        this.sendToAll('hotkey-registered', configuredHotkey);
+        return true;
+      } else {
+        this.logger.warn(`Failed to register configured hotkey: ${configuredHotkey} (may be in use by another app)`);
+      }
+    } catch (error) {
+      this.logger.error(`Hotkey ${configuredHotkey} registration error`, error);
+    }
+
+    // Fallbacks - try but do NOT overwrite user's saved hotkey
+    const fallbacks = [
       'CommandOrControl+Shift+F9',
       'CommandOrControl+Shift+F10',
       'CommandOrControl+Shift+F11',
       'CommandOrControl+Alt+Space',
     ];
 
-    // Remove duplicates
-    const uniqueHotkeys = [...new Set(hotkeysToTry)];
-
-    for (const hotkey of uniqueHotkeys) {
+    for (const hotkey of fallbacks) {
+      if (hotkey === configuredHotkey) continue; // skip already tried
       try {
         const success = globalShortcut.register(hotkey, () => {
           this.onHotkeyPressed();
         });
-
         if (success) {
           this.hotkey = hotkey;
-          this.database.updateSetting('hotkey', hotkey);
-          this.logger.info(`Hotkey registered: ${hotkey}`);
+          // Do NOT save fallback to DB - keep user's choice intact
+          this.logger.info(`Fallback hotkey registered: ${hotkey} (user's ${configuredHotkey} unavailable)`);
           this.sendToAll('hotkey-registered', hotkey);
           return true;
         }
       } catch (error) {
-        this.logger.error(`Hotkey ${hotkey} registration error`, error);
+        // silent
       }
     }
 
@@ -153,11 +174,11 @@ export class HotkeyManager {
     this.logger.info('Hotkey unregistered');
   }
 
-  updateHotkey(newHotkey: string): boolean {
+  updateHotkey(newHotkey: string): { success: boolean; error?: string } {
     // Validate the new hotkey
     if (!isValidHotkey(newHotkey)) {
       this.logger.warn(`Invalid hotkey format: ${newHotkey}`);
-      return false;
+      return { success: false, error: `Format hotkey tidak valid: ${newHotkey}` };
     }
     
     // Unregister old hotkey
@@ -179,18 +200,18 @@ export class HotkeyManager {
         this.database.updateSetting('hotkey', newHotkey);
         this.logger.info(`Hotkey updated and registered: ${newHotkey}`);
         this.sendToAll('hotkey-registered', newHotkey);
-        return true;
+        return { success: true };
       } else {
         this.logger.warn(`Failed to register hotkey: ${newHotkey}, rolling back to ${oldHotkey}`);
         this.hotkey = oldHotkey;
         this.register();
-        return false;
+        return { success: false, error: `Gagal mendaftarkan ${formatHotkeyForDisplay(newHotkey)}. Mungkin sudah dipakai aplikasi lain.` };
       }
     } catch (error) {
       this.logger.error(`Hotkey registration error: ${newHotkey}`, error);
       this.hotkey = oldHotkey;
       this.register();
-      return false;
+      return { success: false, error: `Error mendaftarkan hotkey: ${String(error)}` };
     }
   }
 
@@ -251,8 +272,8 @@ export class HotkeyManager {
   }
 
   private captureTargetWindowHandle(): void {
-    try {
-      const script = `
+    // Use async execFile to avoid blocking the main thread
+    const script = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -277,24 +298,27 @@ $procName = ''
 try { $procName = (Get-Process -Id $targetPid).ProcessName } catch {}
 Write-Output "$($hwnd.ToInt64())|$($sb.ToString())|$procName"
 `;
-      const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 1500,
-      }).trim();
-      const parts = out.split('|');
-      const hwnd = parts[0] || '';
-      const title = parts[1] || '';
-      const procName = parts[2] || '';
-      this.targetWindowHandle = /^\d+$/.test(hwnd) && hwnd !== '0' ? hwnd : null;
-      this.targetAppName = (title || procName || '').trim();
-      this.logger.info('Captured target window', { hwnd: this.targetWindowHandle, app: this.targetAppName });
-      this.sendToAll('target-app-changed', this.targetAppName);
-    } catch (error) {
-      this.targetWindowHandle = null;
-      this.targetAppName = '';
-      this.logger.warn('Failed to capture target window handle', error);
-    }
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 800,  // Reduced from 1500ms to 800ms
+    }, (error, stdout) => {
+      try {
+        if (error) {
+          this.targetWindowHandle = null;
+          this.targetAppName = '';
+          return;
+        }
+        const out = (stdout || '').trim();
+        const parts = out.split('|');
+        const hwnd = parts[0] || '';
+        const title = parts[1] || '';
+        const procName = parts[2] || '';
+        this.targetWindowHandle = /^\d+$/.test(hwnd) && hwnd !== '0' ? hwnd : null;
+        this.targetAppName = (title || procName || '').trim();
+        this.sendToAll('target-app-changed', this.targetAppName);
+      } catch {}
+    });
   }
 
   simulateHotkey(): void {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface SettingsProps {
   onSuccess: (message: string) => void;
+  onError: (message: string) => void;
 }
 
 interface DictEntry {
@@ -16,7 +17,7 @@ interface SnippetEntry {
   output_text: string;
 }
 
-function Settings({ onSuccess }: SettingsProps) {
+function Settings({ onSuccess, onError }: SettingsProps) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [dict, setDict] = useState<DictEntry[]>([]);
   const [snippets, setSnippets] = useState<SnippetEntry[]>([]);
@@ -103,8 +104,12 @@ function Settings({ onSuccess }: SettingsProps) {
         if (result.success) {
           setSettings(prev => ({ ...prev, hotkey }));
           onSuccess('Hotkey updated');
+        } else if (result.error) {
+          onError(result.error);
         }
-      } catch {}
+      } catch {
+        onError('Gagal mengupdate hotkey');
+      }
       setEditingHotkey(false);
     }
   };
@@ -303,6 +308,26 @@ function Settings({ onSuccess }: SettingsProps) {
                 <span className="setting-hint">Save transcription history locally</span>
               </div>
               <div className={`toggle ${settings.save_history !== 'false' ? 'on' : ''}`} onClick={() => toggle('save_history')} />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Clear Cache</span>
+                <span className="setting-hint">Remove GPU cache & temp files to fix errors</span>
+              </div>
+              <button className="btn btn-sm" onClick={async () => {
+                try {
+                  const result = await window.electronAPI.clearCache();
+                  if (result.success) {
+                    onSuccess(`Cache cleared! ${result.filesCleared || 0} files removed`);
+                  } else {
+                    onError(result.error || 'Failed to clear cache');
+                  }
+                } catch (err: any) {
+                  onError(err.message || 'Failed to clear cache');
+                }
+              }}>
+                🗑️ Clear Cache
+              </button>
             </div>
           </div>
         </div>

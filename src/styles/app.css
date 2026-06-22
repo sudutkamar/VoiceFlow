@@ -2000,8 +2000,7 @@ body.mini-mode, html.mini-mode { background: transparent; }
 
 .mini-bar:hover,
 .mini-bar.recording,
-.mini-bar.processing,
-.mini-bar.done {
+.mini-bar.processing {
   width: 432px;
   min-width: 340px;
   padding: 0 10px;
@@ -2835,12 +2834,12 @@ body.mini-mode, html.mini-mode { background: transparent; }
   box-shadow: none;
   transform: none;
   isolation: isolate;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease; /* Only transition visual effects, not layout */
 }
 
 .mini-bar:hover,
 .mini-bar.recording,
-.mini-bar.processing,
-.mini-bar.done {
+.mini-bar.processing {
   width: auto;
   min-width: 0;
   padding: 4px 6px;
@@ -2848,6 +2847,7 @@ body.mini-mode, html.mini-mode { background: transparent; }
   border-color: transparent;
   transform: none;
   box-shadow: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .mini-bar::before {

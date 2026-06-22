@@ -154,8 +154,7 @@ export function setupSettingsIPC(
         database.updateSetting('hotkey', newHotkey);
         return { success: true };
       }
-      const success = hotkeyManager.updateHotkey(newHotkey);
-      return { success };
+      return hotkeyManager.updateHotkey(newHotkey);
     } catch (error) {
       logger.error('Failed to update hotkey', error);
       return { success: false, error: String(error) };

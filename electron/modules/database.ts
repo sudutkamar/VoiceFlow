@@ -31,29 +31,10 @@ export class VoiceFlowDatabase {
       this.createTables();
       this.insertDefaultSettings();
       this.fixInvalidHotkey();
-      this.ensureVerbatimModeDefaults();
       this.logger.info('Database initialized');
     } catch (error) {
       this.logger.error('Failed to initialize database', error);
       throw error;
-    }
-  }
-
-  private ensureVerbatimModeDefaults(): void {
-    if (!this.db) return;
-
-    // Current product behavior is dictation/verbatim-first: do not alter user's spoken words.
-    const verbatim = this.getSetting('verbatim_mode');
-    if (verbatim !== 'false') {
-      this.updateSetting('verbatim_mode', 'true');
-      this.updateSetting('cleanup_enabled', 'false');
-      this.updateSetting('remove_fillers', 'false');
-      this.updateSetting('voice_commands', 'false');
-      this.updateSetting('audio_preprocess', 'false');
-      this.updateSetting('fuzzy_match', 'false');
-      this.updateSetting('processing_mode', 'natural');
-      this.updateSetting('capitalize_first', 'false');
-      this.updateSetting('capitalize_sentences', 'false');
     }
   }
 
@@ -65,6 +46,37 @@ export class VoiceFlowDatabase {
     
     // Valid modifiers
     const validModifiers = ['CommandOrControl', 'Ctrl', 'Alt', 'Shift', 'Super', 'Meta', 'Cmd'];
+    
+    // Valid keys (single letters, numbers, function keys, special keys)
+    const validKeys = new Set([
+      // Letters
+      'A','B','C','D','E','F','G','H','I','J','K','L','M',
+      'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+      // Numbers
+      '0','1','2','3','4','5','6','7','8','9',
+      // Function keys
+      'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+      'F13','F14','F15','F16','F17','F18','F19','F20','F21','F22','F23','F24',
+      // Special keys
+      'Space','Tab','Backspace','Delete','Insert','Enter','Return',
+      'Up','Down','Left','Right','Home','End','PageUp','PageDown',
+      'Escape','CapsLock','NumLock','ScrollLock',
+      'Plus','-', '=', '[', ']', '\\', ';', "'", ',', '.', '/', '`',
+      // Numpad
+      'num0','num1','num2','num3','num4','num5','num6','num7','num8','num9',
+      'numadd','numsub','nummult','numdiv','numdec',
+      // Media
+      'MediaNextTrack','MediaPreviousTrack','MediaStop','MediaPlayPause',
+      'VolumeUp','VolumeDown','VolumeMute',
+    ]);
+    
+    // Map modifier aliases to canonical form
+    const modifierMap: Record<string, string> = {
+      'Ctrl': 'CommandOrControl',
+      'Cmd': 'CommandOrControl',
+      'Command': 'CommandOrControl',
+      'Control': 'CommandOrControl',
+    };
     
     const parts = hotkey.split('+');
     if (parts.length < 2) {
@@ -80,6 +92,28 @@ export class VoiceFlowDatabase {
       this.updateSetting('hotkey', 'CommandOrControl+Shift+F9');
       this.logger.warn(`Invalid hotkey '${hotkey}' (missing key) reset to default`);
       return;
+    }
+    
+    // Check if last key is a valid key
+    if (!validKeys.has(lastKey)) {
+      this.updateSetting('hotkey', 'CommandOrControl+Shift+F9');
+      this.logger.warn(`Invalid hotkey '${hotkey}' (invalid key '${lastKey}') reset to default`);
+      return;
+    }
+    
+    // Normalize: fix modifier aliases + ensure key is uppercase
+    const normalizedParts = parts.map((p, i) => {
+      const trimmed = p.trim();
+      if (i < parts.length - 1) {
+        // Modifier - normalize alias
+        return modifierMap[trimmed] || trimmed;
+      }
+      return trimmed; // Keep key as-is (Electron handles case)
+    });
+    const normalized = normalizedParts.join('+');
+    if (normalized !== hotkey) {
+      this.updateSetting('hotkey', normalized);
+      this.logger.info(`Hotkey normalized: '${hotkey}' -> '${normalized}'`);
     }
   }
 

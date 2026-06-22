@@ -42,7 +42,6 @@ declare global {
       copyText: (text: string) => Promise<{ success: boolean; error?: string }>; 
       pasteText: (text: string) => Promise<{ success: boolean; error?: string }>;
       getAvailableModels: () => Promise<any[]>;
-      getDownloadedModels: () => Promise<string[]>;
       downloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
       forceDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
       pauseDownload: () => Promise<{ success: boolean; error?: string }>;
@@ -66,6 +65,15 @@ declare global {
       clearHistory: () => Promise<void>;
       exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
       searchHistory: (query: string) => Promise<any[]>;
+      clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
+      getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string }>;
+      isAutoStart: () => Promise<boolean>;
+      getVersion: () => Promise<string>;
+      onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
+      onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
+      onWpmUpdate: (callback: (wpm: number) => void) => () => void;
+      getDownloadedModels: () => Promise<string[]>;
+      isModelDownloaded: (model: string) => Promise<boolean>;
     };
   }
 }
@@ -253,15 +261,21 @@ function MiniBar() {
       window.electronAPI.onStopRecording(() => { if (wavRecorderRef.current) stopRec(); }),
       window.electronAPI.onTranscriptReady((d) => {
         if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
+        // Just update text silently — no state changes, no visual refresh
         setText(d.cleaned || d.raw);
-        setState('done');
-        playSound('done');
-        setTimeout(() => setState('idle'), 2500);
+        // Stay in idle state, don't transition through 'done'
+        setState('idle');
       }),
       window.electronAPI.onPartialTranscript((p) => setPartial(p)),
       window.electronAPI.onError((e) => { 
         if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-        setError(e); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); 
+        // No-speech: silently return to idle, no message, no error, no sound
+        if (e === '__NO_SPEECH__') {
+          setState('idle');
+          return;
+        }
+        // Other errors: show briefly then clear (no sound to avoid annoyance)
+        setError(e); setState('idle'); setTimeout(() => setError(''), 3000); 
       }),
       window.electronAPI.onTargetAppChanged((appName) => setTargetApp(appName)),
       window.electronAPI.onHotkeyRegistered?.((hotkey) => setSettings(prev => ({ ...prev, hotkey }))),
@@ -293,17 +307,8 @@ function MiniBar() {
 
   const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
 
-  // Resize once for the tooltip zone; delay shrinking to avoid jitter while moving fast.
-  useEffect(() => {
-    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-    window.electronAPI.setMiniWindowFocusable?.(true);
-    if (barHover) {
-      window.electronAPI.resizeMiniWindow?.(116);
-    } else {
-      resizeTimerRef.current = setTimeout(() => window.electronAPI.resizeMiniWindow?.(64), 520);
-    }
-    return () => { if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current); };
-  }, [barHover]);
+  // No window resize on hover — CSS handles all visual transitions smoothly.
+  // This prevents the glitch/flicker caused by Electron window bounds changing on hover.
 
   const startRec = useCallback(async () => {
     if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
@@ -315,7 +320,8 @@ function MiniBar() {
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();
       setState('recording');
-      setPartial(''); setText(''); setTime(0); setClipPeak(0); setMicLevel(0);
+      setPartial(''); setTime(0); setClipPeak(0); setMicLevel(0);
+      // Don't clear text here — keep previous text visible during recording
       playSound('start');
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 200);
       const viz = () => {
@@ -341,8 +347,18 @@ function MiniBar() {
       };
       viz();
     } catch (err: any) {
-      setError(err.name === 'NotAllowedError' ? 'Mic denied' : 'Mic not found');
-      playSound('error'); setTimeout(() => setError(''), 3000);
+      console.error('[MiniBar] Recording error:', err);
+      let errorMsg = 'Mic error';
+      if (err.name === 'NotAllowedError') {
+        errorMsg = 'Mic access denied';
+      } else if (err.name === 'NotReadableError') {
+        errorMsg = 'Mic in use by other app';
+      } else if (err.message) {
+        // Show actual error for debugging
+        errorMsg = err.message.substring(0, 60);
+      }
+      setError(errorMsg);
+      playSound('error'); setTimeout(() => setError(''), 5000);
     }
   }, [settings]);
 
@@ -363,7 +379,7 @@ function MiniBar() {
     }
   }, []);
 
-  const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'hover' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
+  const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'hover') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
   const langs = [
     { c: 'auto', f: '🌐', l: 'Auto Detect', s: 'AUTO' },
@@ -415,10 +431,10 @@ function MiniBar() {
           title={state === 'recording' ? 'Stop recording' : 'Start recording'}
         >
           <div className="m-btn-tooltip m-dictate-tooltip">
-            {state === 'recording' ? 'Stop' : <><span>Dictate</span><strong>{hotkeyLabel}</strong></>}
+            {state === 'recording' ? 'Stop' : <><span>Dictate </span><strong>{hotkeyLabel}</strong></>}
           </div>
           {(state === 'idle' || state === 'hover') && (
-            <svg className="m-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="m-voice-icon" viewBox="0 0[Memasih] 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3.5 3.5 0 0 0-3.5 3.5v6a3.5 3.5 0 0 0 7 0v-6A3.5 3.5 0 0 0 12 2Z"/>
               <path d="M19 10.5v1a7 7 0 0 1-14 0v-1"/>
               <path d="M12 18.5V22"/>
@@ -618,7 +634,7 @@ function MainApp() {
           {currentPage === 'models' && <Models onSuccess={showSuccess} onError={showError} />}
           {currentPage === 'history' && <History onSuccess={showSuccess} />}
           {currentPage === 'benchmark' && <Benchmark />}
-          {currentPage === 'settings' && <Settings onSuccess={showSuccess} />}
+          {currentPage === 'settings' && <Settings onSuccess={showSuccess} onError={showError} />}
         </main>
       </div>
     </div>
@@ -680,6 +696,13 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
       window.electronAPI.onPartialTranscript((p) => setPartial(p)),
       window.electronAPI.onError((e) => { 
         if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
+        // Handle no-speech: show message briefly then return to idle
+        if (e === '__NO_SPEECH__') {
+          setError('Tidak terdeteksi suara');
+          setState('idle');
+          setTimeout(() => setError(''), 2000);
+          return;
+        }
         setError(e); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); 
       }),
     ];
@@ -711,8 +734,17 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
       };
       viz();
     } catch (err: any) {
-      setError(err.name === 'NotAllowedError' ? 'Microphone access denied' : 'Microphone not found');
-      playSound('error'); setTimeout(() => setError(''), 3000);
+      console.error('[HomePage] Recording error:', err);
+      let errorMsg = 'Microphone error';
+      if (err.name === 'NotAllowedError') {
+        errorMsg = 'Microphone access denied';
+      } else if (err.name === 'NotReadableError') {
+        errorMsg = 'Microphone in use by another app';
+      } else if (err.message) {
+        errorMsg = err.message.substring(0, 80);
+      }
+      setError(errorMsg);
+      playSound('error'); setTimeout(() => setError(''), 5000);
     }
   }, [settings]);
 
