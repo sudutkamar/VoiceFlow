@@ -82,6 +82,7 @@ export function setupDictationIPC(
       const initialPrompt = database.getSetting('initial_prompt') || '';
       const preprocessAudio = database.getSetting('audio_preprocess') === 'true';
       const fuzzyMatch = !verbatimMode && database.getSetting('fuzzy_match') === 'true';
+      const whisperDevice = database.getSetting('whisper_device') || 'auto';
       const send = hotkeyManager
         ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
         : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
@@ -89,13 +90,14 @@ export function setupDictationIPC(
       hotkeyManager?.setState('transcribing');
       logger.info('Starting whisper...', { model, language, verbatimMode, processingMode });
 
-      // Single pass: accurate transcription with selected model + GPU
+      // Single pass: accurate transcription with selected model + GPU/CPU
       const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
         preprocess: preprocessAudio,
         fuzzyMatch,
         confidenceScore: true,
         audioDurationMs: audioData.duration,
         initialPrompt: initialPrompt || undefined,
+        device: whisperDevice,
       });
 
       // Cleanup temp file

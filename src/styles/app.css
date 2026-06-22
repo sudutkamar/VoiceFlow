@@ -3005,19 +3005,19 @@ body.mini-mode, html.mini-mode { background: transparent; }
   transform: translateX(-50%) translateY(0);
 }
 
-.m-dictate-tooltip {
+.m-speak-tooltip {
   font-size: 14px;
   font-weight: 650;
   padding: 7px 13px;
   border-radius: 999px;
 }
 
-.m-dictate-tooltip span {
+.m-speak-tooltip span {
   color: rgba(255, 255, 255, 0.92);
   font-weight: 700;
 }
 
-.m-dictate-tooltip strong {
+.m-speak-tooltip strong {
   color: #c084fc;
   font-weight: 850;
 }
@@ -3454,4 +3454,90 @@ body.mini-mode, html.mini-mode { background: transparent; }
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* ============ CANCEL BUTTON (Mini Bar) ============ */
+.m-cancel-btn {
+  -webkit-app-region: no-drag;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 36%),
+    linear-gradient(180deg, #1a0a0a 0%, #0a0000 100%);
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  color: rgba(248, 113, 113, 0.85);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.36),
+    0 1px 0 rgba(248, 113, 113, 0.08) inset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.m-cancel-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(248, 113, 113, 0.45);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.46),
+    0 0 0 4px rgba(248, 113, 113, 0.12),
+    0 2px 0 rgba(248, 113, 113, 0.08) inset;
+  color: #f87171;
+}
+
+.m-cancel-btn:active {
+  transform: translateY(0) scale(0.95);
+}
+
+.m-cancel-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ============ CANCEL BUTTON (Main App) ============ */
+.cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: var(--radius-full);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  margin-top: 8px;
+}
+
+.cancel-btn:hover {
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}
+
+.cancel-btn:active {
+  transform: scale(0.97);
+}
+
+.cancel-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.cancel-key {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  background: rgba(248, 113, 113, 0.12);
+  border-radius: 3px;
+  color: rgba(248, 113, 113, 0.7);
+  margin-left: 2px;
 }

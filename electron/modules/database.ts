@@ -182,6 +182,7 @@ export class VoiceFlowDatabase {
       push_to_talk: 'false',
       preview_before_paste: 'false',
       show_target_app: 'true',
+      whisper_device: 'auto',
     };
 
     const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

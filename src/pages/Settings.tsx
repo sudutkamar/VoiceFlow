@@ -280,16 +280,31 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Acceleration</span>
-                <span className="setting-hint">Transcription engine mode</span>
+                <span className="setting-hint">
+                  {gpuStatus?.hasGpu
+                    ? 'GPU detected (CUDA). Choose processing device.'
+                    : 'No GPU detected. CPU only.'}
+                </span>
               </div>
-              <div className={`gpu-badge ${gpuStatus?.hasGpu ? 'gpu-badge-fast' : 'gpu-badge-cpu'}`}>
-                {gpuStatus ? (
-                  <>
-                    <span className="gpu-badge-icon">{gpuStatus.hasGpu ? '🎮' : '🖥️'}</span>
-                    <span className="gpu-badge-text">{gpuStatus.mode}</span>
-                  </>
+              <div className="setting-control">
+                {gpuStatus?.hasGpu ? (
+                  <select
+                    value={settings.whisper_device || 'auto'}
+                    onChange={(e) => {
+                      save('whisper_device', e.target.value);
+                      const labels: Record<string, string> = { auto: 'Auto (GPU)', gpu: 'Force GPU', cpu: 'Force CPU' };
+                      onSuccess(`Device: ${labels[e.target.value] || e.target.value}`);
+                    }}
+                  >
+                    <option value="auto">⚡ Auto (GPU if available)</option>
+                    <option value="gpu">🎮 Force GPU</option>
+                    <option value="cpu">🖥️ Force CPU</option>
+                  </select>
                 ) : (
-                  <span className="gpu-badge-text">Loading...</span>
+                  <div className="gpu-badge gpu-badge-cpu">
+                    <span className="gpu-badge-icon">🖥️</span>
+                    <span className="gpu-badge-text">CPU Only</span>
+                  </div>
                 )}
               </div>
             </div>

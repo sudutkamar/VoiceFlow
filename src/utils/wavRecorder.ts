@@ -61,6 +61,21 @@ export class WavRecorder {
     return { buffer: wavBuffer, duration };
   }
 
+  /**
+   * Cancel recording — stop mic and discard all audio without encoding.
+   */
+  async cancel(): Promise<void> {
+    this.recording = false;
+
+    if (this.processor) { this.processor.disconnect(); this.processor = null; }
+    if (this.source) { this.source.disconnect(); this.source = null; }
+    if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    if (this.audioContext) { await this.audioContext.close(); this.audioContext = null; }
+
+    this.chunks = [];
+    this.analyser = null;
+  }
+
   private encodeWav(channels: Float32Array[], sampleRate: number): ArrayBuffer {
     let totalLength = 0;
     for (const chunk of channels) totalLength += chunk.length;

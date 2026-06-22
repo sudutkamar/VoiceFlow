@@ -82,6 +82,7 @@ export interface ElectronAPI {
   onRecordingTime: (callback: (time: number) => void) => () => void;
   onStartRecording: (callback: () => void) => () => void;
   onStopRecording: (callback: (duration: number) => void) => () => void;
+  onCancelRecording: (callback: () => void) => () => void;
   onNavigate: (callback: (page: string) => void) => () => void;
   onPartialTranscript: (callback: (text: string) => void) => () => void;
   onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
@@ -189,6 +190,11 @@ const api: ElectronAPI = {
     const handler = (_: any, duration: number) => callback(duration);
     ipcRenderer.on('stop-recording-request', handler);
     return () => ipcRenderer.removeListener('stop-recording-request', handler);
+  },
+  onCancelRecording: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('cancel-recording', handler);
+    return () => ipcRenderer.removeListener('cancel-recording', handler);
   },
   onNavigate: (callback) => {
     const handler = (_: any, page: string) => callback(page);

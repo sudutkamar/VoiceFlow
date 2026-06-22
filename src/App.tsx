@@ -35,6 +35,7 @@ declare global {
       onError: (callback: (error: string) => void) => () => void;
       onStartRecording: (callback: () => void) => () => void;
       onStopRecording: (callback: (duration: number) => void) => () => void;
+      onCancelRecording: (callback: () => void) => () => void;
       onPartialTranscript: (callback: (text: string) => void) => () => void;
       onTargetAppChanged: (callback: (appName: string) => void) => () => void;
       onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
@@ -379,6 +380,53 @@ function MiniBar() {
     }
   }, []);
 
+  const cancelRec = useCallback(async () => {
+    // Guard: if already processing or idle, just reset state
+    if (stateRef.current !== 'recording') {
+      if (stateRef.current === 'processing') {
+        // Audio already sent — can't cancel, just reset UI
+        setState('idle');
+        setPartial('');
+        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
+      }
+      return;
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    cancelAnimationFrame(animRef.current);
+    analyserRef.current = null;
+    setMicLevel(0);
+    setLevels(Array(15).fill(0));
+    if (wavRecorderRef.current) {
+      try { await wavRecorderRef.current.cancel(); } catch {}
+      wavRecorderRef.current = null;
+    }
+    setState('idle');
+    setPartial('');
+  }, []);
+
+  // Escape key to cancel recording (local fallback for focused window)
+  useEffect(() => {
+    if (state !== 'recording') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelRec();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state, cancelRec]);
+
+  // Global cancel-recording from main process (works even when not focused)
+  useEffect(() => {
+    const unsub = window.electronAPI.onCancelRecording?.(() => {
+      if (stateRef.current === 'recording') {
+        cancelRec();
+      }
+    });
+    return () => { unsub?.(); };
+  }, [cancelRec]);
+
   const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'hover') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
   const langs = [
@@ -430,8 +478,8 @@ function MiniBar() {
           disabled={state === 'processing'}
           title={state === 'recording' ? 'Stop recording' : 'Start recording'}
         >
-          <div className="m-btn-tooltip m-dictate-tooltip">
-            {state === 'recording' ? 'Stop' : <><span>Dictate </span><strong>{hotkeyLabel}</strong></>}
+          <div className="m-btn-tooltip m-speak-tooltip">
+            {state === 'recording' ? 'Stop' : <><span>Speak </span><strong>{hotkeyLabel}</strong></>}
           </div>
           {(state === 'idle' || state === 'hover') && (
             <svg className="m-voice-icon" viewBox="0 0[Memasih] 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -459,6 +507,20 @@ function MiniBar() {
             </div>
           )}
         </button>
+
+        {state === 'recording' && (
+          <button
+            className="m-orb-btn m-cancel-btn"
+            onClick={cancelRec}
+            title="Cancel recording (Esc)"
+          >
+            <div className="m-btn-tooltip">Cancel <strong>Esc</strong></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        )}
 
         <button
           className={`m-orb-btn m-spark-btn ${text ? 'ready copy-mode' : ''}`}
@@ -764,6 +826,54 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
     }
   }, []);
 
+  const cancelRec = useCallback(async () => {
+    // Guard: if already processing or idle, just reset state
+    if (stateRef.current !== 'recording') {
+      if (stateRef.current === 'processing') {
+        setState('idle');
+        setPartial('');
+        setError('');
+        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
+      }
+      return;
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    cancelAnimationFrame(animRef.current);
+    analyserRef.current = null;
+    setMicLevel(0);
+    setLevels(Array(30).fill(0));
+    if (wavRecorderRef.current) {
+      try { await wavRecorderRef.current.cancel(); } catch {}
+      wavRecorderRef.current = null;
+    }
+    setState('idle');
+    setPartial('');
+    setError('');
+  }, []);
+
+  // Escape key to cancel recording (local fallback for focused window)
+  useEffect(() => {
+    if (state !== 'recording') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelRec();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state, cancelRec]);
+
+  // Global cancel-recording from main process (works even when not focused)
+  useEffect(() => {
+    const unsub = window.electronAPI.onCancelRecording?.(() => {
+      if (stateRef.current === 'recording') {
+        cancelRec();
+      }
+    });
+    return () => { unsub?.(); };
+  }, [cancelRec]);
+
   const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
 
@@ -794,6 +904,17 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
             {state === 'processing' && <span className="processing-text">{partial ? partial.substring(0, 50) + (partial.length > 50 ? '...' : '') : 'Processing audio...'}</span>}
             {state === 'done' && <span className="done-text">✓ Complete</span>}
           </div>
+          
+          {state === 'recording' && (
+            <button className="cancel-btn" onClick={cancelRec} title="Cancel recording (Esc)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              <span>Cancel</span>
+              <span className="cancel-key">Esc</span>
+            </button>
+          )}
         </div>
 
         {/* Professional Waveform Visualizer */}

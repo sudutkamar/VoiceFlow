@@ -120,6 +120,7 @@ export class Transcriber {
       confidenceScore?: boolean;
       audioDurationMs?: number;
       initialPrompt?: string;
+      device?: string; // 'auto' | 'gpu' | 'cpu'
     } = {}
   ): Promise<TranscribeResult> {
     const {
@@ -195,9 +196,33 @@ export class Transcriber {
         '--no-speech-thold', '0.4', // Balanced silence detection
       ];
 
-      // If CUDA is available, whisper will auto-use it via ggml-cuda.dll
-      if (hasCuda) {
-        this.logger.info('GPU acceleration enabled via CUDA');
+      // Determine GPU/CPU mode based on user setting
+      const deviceSetting = options.device || 'auto';
+      let useGpu = hasCuda; // Default: use GPU if available
+      
+      if (deviceSetting === 'cpu') {
+        useGpu = false;
+        this.logger.info('GPU disabled by user setting — using CPU');
+      } else if (deviceSetting === 'gpu') {
+        if (hasCuda) {
+          useGpu = true;
+          this.logger.info('GPU forced by user setting');
+        } else {
+          useGpu = false;
+          this.logger.warn('GPU requested but CUDA not available — falling back to CPU');
+        }
+      } else {
+        // auto: use GPU if available
+        if (hasCuda) {
+          this.logger.info('GPU acceleration enabled via CUDA (auto)');
+        } else {
+          this.logger.info('CUDA not available — using CPU (auto)');
+        }
+      }
+
+      // Pass --gpu flag to whisper-cli: -1 = CPU only, 0+ = GPU device
+      if (!useGpu) {
+        args.push('-ng');
       }
 
       args.push('-l', language && language !== 'auto' ? language : 'auto');
