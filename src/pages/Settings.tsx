@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import appLogo from '../assets/logo.png';
 
 interface SettingsProps {
   onSuccess: (message: string) => void;
@@ -384,10 +385,17 @@ function Settings({ onSuccess, onError }: SettingsProps) {
 
           <div className="section">
             <div className="section-header">About</div>
+            <div className="about-logo-section">
+              <img src={appLogo} alt="VoiceFlow" className="about-logo-img" />
+              <div className="about-logo-text">
+                <span className="about-logo-name">VoiceFlow</span>
+                <span className="about-logo-desc">Local voice-to-text powered by Whisper AI</span>
+              </div>
+            </div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-name">VoiceFlow</span>
-                <span className="setting-hint">Local voice-to-text powered by Whisper AI</span>
+                <span className="setting-name">Version</span>
+                <span className="setting-hint">Current app version</span>
               </div>
               <span className="setting-value">{appVersion || '1.0.0'}</span>
             </div>
