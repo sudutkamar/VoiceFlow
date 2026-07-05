@@ -1,7 +1,14 @@
 /**
  * WAV Recorder - Optimized for speed
  * Records directly in 16kHz mono 16-bit PCM
+ * Includes mini VAD (Voice Activity Detection) for auto-stop on silence.
  */
+
+export interface VadOptions {
+  enabled: boolean;
+  silenceThreshold: number;  // RMS level below this = silence (0-1, default 0.01)
+  silenceDurationMs: number; // How long silence must last before auto-stop (default 3000ms)
+}
 
 export class WavRecorder {
   private audioContext: AudioContext | null = null;
@@ -13,7 +20,13 @@ export class WavRecorder {
   private recording: boolean = false;
   private analyser: AnalyserNode | null = null;
 
-  async start(deviceId?: string): Promise<void> {
+  // VAD state
+  private vadOptions: VadOptions = { enabled: false, silenceThreshold: 0.01, silenceDurationMs: 3000 };
+  private onSilenceCallback: (() => void) | null = null;
+  private silenceStartTime: number = 0;
+  private isSilent: boolean = false;
+
+  async start(deviceId?: string, vadOptions?: Partial<VadOptions>): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -36,13 +49,63 @@ export class WavRecorder {
     this.startTime = Date.now();
     this.recording = true;
 
+    // Reset VAD state
+    this.silenceStartTime = 0;
+    this.isSilent = false;
+    if (vadOptions) {
+      this.vadOptions = {
+        enabled: vadOptions.enabled ?? false,
+        silenceThreshold: vadOptions.silenceThreshold ?? 0.01,
+        silenceDurationMs: vadOptions.silenceDurationMs ?? 3000,
+      };
+    }
+
     this.processor.onaudioprocess = (e) => {
       if (!this.recording) return;
-      this.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      const channelData = e.inputBuffer.getChannelData(0);
+      this.chunks.push(new Float32Array(channelData));
+
+      // Mini VAD: check silence level
+      if (this.vadOptions.enabled && this.onSilenceCallback) {
+        this.detectSilence(channelData);
+      }
     };
 
     this.source.connect(this.processor);
     this.processor.connect(this.audioContext.destination);
+  }
+
+  /**
+   * Simple VAD: calculate RMS of current audio chunk and detect sustained silence.
+   */
+  private detectSilence(samples: Float32Array): void {
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) {
+      sum += samples[i] * samples[i];
+    }
+    const rms = Math.sqrt(sum / samples.length);
+    const now = Date.now();
+
+    if (rms < this.vadOptions.silenceThreshold) {
+      // Audio is below threshold
+      if (!this.isSilent) {
+        // Just became silent — start tracking
+        this.isSilent = true;
+        this.silenceStartTime = now;
+      } else if (now - this.silenceStartTime >= this.vadOptions.silenceDurationMs) {
+        // Silence持续足够久 — trigger auto-stop
+        this.isSilent = false;
+        this.onSilenceCallback?.();
+      }
+    } else {
+      // Audio is above threshold — reset silence tracking
+      this.isSilent = false;
+      this.silenceStartTime = 0;
+    }
+  }
+
+  onSilence(callback: () => void): void {
+    this.onSilenceCallback = callback;
   }
 
   async stop(): Promise<{ buffer: ArrayBuffer; duration: number }> {

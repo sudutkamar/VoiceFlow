@@ -30,6 +30,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
   const [totalBytes, setTotalBytes] = useState(0);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [modelsPath, setModelsPath] = useState<string>('');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const notif = useNotification();
   const downloadingRef = useRef<string | null>(null);
 
@@ -257,6 +258,12 @@ function Models({ onSuccess, onError }: ModelsProps) {
   };
 
   const handleDelete = async (modelName: string) => {
+    setConfirmDelete(modelName);
+  };
+
+  const confirmDeleteModel = async () => {
+    if (!confirmDelete) return;
+    const modelName = confirmDelete;
     const isCurrentActive = selectedModel === modelName;
     
     try {
@@ -274,6 +281,8 @@ function Models({ onSuccess, onError }: ModelsProps) {
       loadModels(false);
     } catch (error) {
       notif.error('Gagal menghapus model');
+    } finally {
+      setConfirmDelete(null);
     }
   };
 
@@ -538,6 +547,22 @@ function Models({ onSuccess, onError }: ModelsProps) {
           <li>If a model shows as "Corrupt", click "Re-download" to fix it</li>
         </ul>
       </div>
+      {/* Delete Confirmation Modal */}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Delete Model</h3>
+            <p>Are you sure you want to delete <strong>{confirmDelete}</strong>?</p>
+            {selectedModel === confirmDelete && (
+              <p className="text-warning">This is your active model. It will be replaced with Base.</p>
+            )}
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDeleteModel}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 interface HistoryProps {
   onSuccess: (message: string) => void;
@@ -13,10 +13,49 @@ interface HistoryItem {
   created_at: string;
 }
 
+interface DateGroup {
+  label: string;
+  items: HistoryItem[];
+}
+
+function getDateGroups(items: HistoryItem[]): DateGroup[] {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const weekAgo = new Date(today.getTime() - 7 * 86400000);
+
+  const groups: Record<string, HistoryItem[]> = {
+    'Today': [],
+    'Yesterday': [],
+    'This Week': [],
+    'Earlier': [],
+  };
+
+  for (const item of items) {
+    const d = new Date(item.created_at);
+    const itemDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    if (itemDate.getTime() >= today.getTime()) {
+      groups['Today'].push(item);
+    } else if (itemDate.getTime() >= yesterday.getTime()) {
+      groups['Yesterday'].push(item);
+    } else if (itemDate.getTime() >= weekAgo.getTime()) {
+      groups['This Week'].push(item);
+    } else {
+      groups['Earlier'].push(item);
+    }
+  }
+
+  return Object.entries(groups)
+    .filter(([, items]) => items.length > 0)
+    .map(([label, items]) => ({ label, items }));
+}
+
 function History({ onSuccess }: HistoryProps) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => { loadHistory(); }, []);
 
@@ -43,7 +82,7 @@ function History({ onSuccess }: HistoryProps) {
   };
 
   const handleClear = async () => {
-    if (!confirm('Clear all history?')) return;
+    if (!confirm('Clear all history? This cannot be undone.')) return;
     try {
       await window.electronAPI.clearHistory();
       setHistory([]);
@@ -53,10 +92,12 @@ function History({ onSuccess }: HistoryProps) {
     }
   };
 
-  const handleCopy = async (text: string) => {
+  const handleCopy = async (text: string, id: string) => {
     try {
       await window.electronAPI.copyText(text);
+      setCopiedId(id);
       onSuccess('Copied!');
+      setTimeout(() => setCopiedId(null), 1500);
     } catch (error) {
       console.error('Failed to copy:', error);
     }
@@ -75,12 +116,16 @@ function History({ onSuccess }: HistoryProps) {
     }
   };
 
-  const filtered = search
-    ? history.filter(item =>
-        item.final_text.toLowerCase().includes(search.toLowerCase()) ||
-        item.raw_text.toLowerCase().includes(search.toLowerCase())
-      )
-    : history;
+  const filtered = useMemo(() => {
+    if (!search) return history;
+    const q = search.toLowerCase();
+    return history.filter(item =>
+      item.final_text.toLowerCase().includes(q) ||
+      item.raw_text.toLowerCase().includes(q)
+    );
+  }, [history, search]);
+
+  const dateGroups = useMemo(() => getDateGroups(filtered), [filtered]);
 
   const timeAgo = (dateStr: string) => {
     try {
@@ -89,13 +134,11 @@ function History({ onSuccess }: HistoryProps) {
       const diff = now.getTime() - date.getTime();
       const mins = Math.floor(diff / 60000);
       const hours = Math.floor(diff / 3600000);
-      const days = Math.floor(diff / 86400000);
 
       if (mins < 1) return 'Just now';
       if (mins < 60) return `${mins}m ago`;
       if (hours < 24) return `${hours}h ago`;
-      if (days < 7) return `${days}d ago`;
-      return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
     } catch {
       return '';
     }
@@ -148,30 +191,44 @@ function History({ onSuccess }: HistoryProps) {
       </div>
 
       {/* History List */}
-      {filtered.length > 0 ? (
-        <div className="card-list">
-          {filtered.map((item) => (
-            <div key={item.id} className="card card-hover">
-              <div className="card-body-full">
-                <div className="card-text">{item.final_text || item.raw_text}</div>
-                <div className="card-footer">
-                  <div className="card-meta">
-                    <span>{timeAgo(item.created_at)}</span>
-                    {item.duration_ms > 0 && <span>{formatDuration(item.duration_ms)}</span>}
-                    {item.word_count > 0 && <span>{item.word_count} words</span>}
+      {dateGroups.length > 0 ? (
+        <div className="history-groups">
+          {dateGroups.map((group) => (
+            <div key={group.label} className="history-group">
+              <div className="history-group-label">{group.label}</div>
+              <div className="card-list">
+                {group.items.map((item) => (
+                  <div key={item.id} className="card card-hover">
+                    <div className="card-body-full">
+                      <div
+                        className="card-text history-clickable"
+                        onClick={() => handleCopy(item.final_text || item.raw_text, item.id)}
+                        title="Click to copy"
+                      >
+                        {item.final_text || item.raw_text}
+                        {copiedId === item.id && <span className="history-copied-badge">Copied!</span>}
+                      </div>
+                      <div className="card-footer">
+                        <div className="card-meta">
+                          <span>{timeAgo(item.created_at)}</span>
+                          {item.duration_ms > 0 && <span>{formatDuration(item.duration_ms)}</span>}
+                          {item.word_count > 0 && <span>{item.word_count} words</span>}
+                        </div>
+                        <div className="card-actions">
+                          <button className="btn btn-sm" onClick={() => handleCopy(item.final_text || item.raw_text, item.id)}>
+                            {copiedId === item.id ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button className="btn btn-sm btn-icon" onClick={() => handleDelete(item.id)} title="Delete">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="card-actions">
-                    <button className="btn btn-sm" onClick={() => handleCopy(item.final_text || item.raw_text)}>
-                      Copy
-                    </button>
-                    <button className="btn btn-sm btn-icon" onClick={() => handleDelete(item.id)} title="Delete">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           ))}

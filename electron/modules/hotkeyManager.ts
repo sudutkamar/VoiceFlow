@@ -140,6 +140,7 @@ export class HotkeyManager {
   private wpmInterval: NodeJS.Timeout | null = null;
   private wordCount: number = 0;
   private targetWindowHandle: string | null = null;
+  private targetWindowThread: number = 0;
   private targetAppName: string = '';
   private pushToTalk: boolean = false;
 
@@ -507,6 +508,7 @@ export class HotkeyManager {
   }
 
   getTargetWindowHandle(): string | null { return this.targetWindowHandle; }
+  getTargetWindowThread(): number { return this.targetWindowThread; }
   getTargetAppName(): string { return this.targetAppName; }
   isPushToTalk(): boolean { return this.pushToTalk; }
 
@@ -520,8 +522,9 @@ export class HotkeyManager {
     }
   }
 
-  private captureTargetWindowHandle(): void {
-    const script = `
+  private captureTargetWindowHandle(): Promise<void> {
+    return new Promise((resolve) => {
+      const script = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -541,23 +544,27 @@ $len = [NativeWin]::GetWindowTextLength($hwnd)
 $sb = New-Object System.Text.StringBuilder($len + 1)
 [NativeWin]::GetWindowText($hwnd, $sb, $sb.Capacity) | Out-Null
 [uint32]$targetPid = 0
-[NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$targetPid) | Out-Null
+$tid = [NativeWin]::GetWindowThreadProcessId($hwnd, [ref]$targetPid)
 $procName = ''
 try { $procName = (Get-Process -Id $targetPid).ProcessName } catch {}
-Write-Output "$($hwnd.ToInt64())|$($sb.ToString())|$procName"
+Write-Output "$($hwnd.ToInt64())|$($tid)|$($sb.ToString())|$procName"
 `;
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-      encoding: 'utf8', windowsHide: true, timeout: 800,
-    }, (error, stdout) => {
-      try {
-        if (error) { this.targetWindowHandle = null; this.targetAppName = ''; return; }
-        const out = (stdout || '').trim();
-        const parts = out.split('|');
-        const hwnd = parts[0] || '';
-        this.targetWindowHandle = /^\d+$/.test(hwnd) && hwnd !== '0' ? hwnd : null;
-        this.targetAppName = ((parts[1] || '') || (parts[2] || '')).trim();
-        this.sendToAll('target-app-changed', this.targetAppName);
-      } catch {}
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        encoding: 'utf8', windowsHide: true, timeout: 800,
+      }, (error, stdout) => {
+        try {
+          if (error) { this.targetWindowHandle = null; this.targetWindowThread = 0; this.targetAppName = ''; resolve(); return; }
+          const out = (stdout || '').trim();
+          const parts = out.split('|');
+          const hwnd = parts[0] || '';
+          const tid = parseInt(parts[1] || '0', 10) || 0;
+          this.targetWindowHandle = /^\d+$/.test(hwnd) && hwnd !== '0' ? hwnd : null;
+          this.targetWindowThread = tid;
+          this.targetAppName = ((parts[2] || '') || (parts[3] || '')).trim();
+          this.sendToAll('target-app-changed', this.targetAppName);
+        } catch {}
+        resolve();
+      });
     });
   }
 
@@ -567,13 +574,13 @@ Write-Output "$($hwnd.ToInt64())|$($sb.ToString())|$procName"
   //  Recording flow (shared by toggle and push-to-talk)
   // ──────────────────────────────────────────────────────────────────
 
-  private startRecordingFlow(): void {
+  private async startRecordingFlow(): Promise<void> {
     if (this.state !== 'idle') {
       this.logger.info('Ignoring start — not idle', { state: this.state });
       return;
     }
     this.logger.info('Starting recording flow...');
-    this.captureTargetWindowHandle();
+    await this.captureTargetWindowHandle();
     const showMini = this.database.getSetting('show_mini_window') !== 'false';
     if (showMini) this.showMini();
     this.setState('recording');

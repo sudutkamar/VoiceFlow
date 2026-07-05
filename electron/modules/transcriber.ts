@@ -354,6 +354,7 @@ export class Transcriber {
       device?: string;
       profile?: string;
       autoModel?: boolean;
+      formalMode?: boolean;  // When true, convert informal words to formal
     } = {}
   ): Promise<TranscribeResult> {
     const startTime = Date.now();
@@ -365,6 +366,7 @@ export class Transcriber {
       initialPrompt,
       profile: forceProfile,
       autoModel = false,
+      formalMode = false,
     } = options;
 
     // --- Validate ---
@@ -395,6 +397,15 @@ export class Transcriber {
       try {
         const audioBuffer = fs.readFileSync(audioPath);
         audioQuality = this.analyzeAudioQuality(audioBuffer);
+
+        // If audio is too quiet, skip transcription entirely
+        if (audioQuality.isQuiet && audioQuality.durationMs < 5000) {
+          this.logger.info('Audio too quiet, skipping transcription', {
+            rms: audioQuality.rmsLevel.toFixed(4),
+            duration: audioQuality.durationMs,
+          });
+          return { success: false, error: '__NO_SPEECH__' };
+        }
 
         // ALWAYS preprocess for best accuracy
         const processedBuffer = await this.audioPreprocessor.process(audioBuffer);
@@ -432,15 +443,27 @@ export class Transcriber {
     // --- Run whisper with retry for accuracy ---
     let lastError = '';
     const maxRetries = 2;
+    // Model downgrade chain: if current model fails, try smaller one
+    const modelDowngradeChain: Record<string, string> = {
+      'ggml-large-v3.bin': 'ggml-large-v3-turbo.bin',
+      'ggml-large-v3-turbo.bin': 'ggml-medium.bin',
+      'ggml-medium.bin': 'ggml-small.bin',
+      'ggml-small.bin': 'ggml-base.bin',
+      'ggml-base.bin': 'ggml-base.bin', // no further downgrade
+    };
+
+    let currentModel = selectedModel;
+    let currentModelPath = modelPath;
+    let currentProfile = profile;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const result = await this.runWhisper(
           processedAudioPath,
-          modelPath,
-          selectedModel,
+          currentModelPath,
+          currentModel,
           language,
-          profile,
+          currentProfile,
           fullPrompt,
           options,
           audioDurationMs || audioQuality.durationMs
@@ -453,31 +476,49 @@ export class Transcriber {
 
         // Success
         if (result.success && result.text) {
-          const postResult = await this.postProcess(result.text, fuzzyMatch, confidenceScore, audioDurationMs);
+          const postResult = await this.postProcess(result.text, fuzzyMatch, confidenceScore, audioDurationMs, formalMode);
           const processingMs = Date.now() - startTime;
 
           this.logger.info('🎯 Transcription complete', {
-            model: selectedModel,
-            profile: profile.name,
+            model: currentModel,
+            profile: currentProfile.name,
             attempt: attempt + 1,
             processingMs,
             textLength: postResult.text?.length || 0,
           });
 
-          return { ...result, ...postResult, usedModel: selectedModel, processingMs };
+          return { ...result, ...postResult, usedModel: currentModel, processingMs };
         }
 
-        // No speech
+        // No speech — don't retry, just return
         if (result.error === '__NO_SPEECH__') {
-          return { ...result, usedModel: selectedModel, processingMs: Date.now() - startTime };
+          return { ...result, usedModel: currentModel, processingMs: Date.now() - startTime };
         }
 
         lastError = result.error || 'Unknown error';
         this.logger.warn(`Attempt ${attempt + 1} failed: ${lastError}`);
 
-        // Retry with more accurate settings
+        // Retry strategy: downgrade model + exponential backoff
         if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 500));
+          const backoffMs = Math.min(2000, 500 * Math.pow(2, attempt));
+          await new Promise(r => setTimeout(r, backoffMs));
+
+          // On timeout or crash, downgrade model for next attempt
+          if (lastError.includes('Timeout') || lastError.includes('Failed') || lastError.includes('error')) {
+            const nextModel = modelDowngradeChain[currentModel] || currentModel;
+            if (nextModel !== currentModel) {
+              const nextModelPath = path.join(this.modelsPath, nextModel);
+              if (fs.existsSync(nextModelPath)) {
+                this.logger.info(`Downgrading model: ${currentModel} → ${nextModel}`);
+                currentModel = nextModel;
+                currentModelPath = nextModelPath;
+                // Also downgrade profile for faster processing
+                if (currentProfile.name === 'accurate') {
+                  currentProfile = PROFILES.balanced;
+                }
+              }
+            }
+          }
         }
       } catch (error: any) {
         lastError = error.message;
@@ -531,8 +572,10 @@ export class Transcriber {
         args.push('-ng');
       }
 
-      // Language
-      args.push('-l', language && language !== 'auto' ? language : 'auto');
+      // Language — whisper does NOT support "-l auto". Omit flag entirely for auto-detect.
+      if (language && language !== 'auto') {
+        args.push('-l', language);
+      }
 
       // 🎯 INITIAL PROMPT for better accuracy
       if (initialPrompt) {
@@ -620,9 +663,10 @@ export class Transcriber {
             .map(l => l.trim())
             .filter(l => {
               if (!l || l.length < 2) return false;
-              if (l.startsWith('[') && l.match(/^\[\d{2}:\d{2}:\d{2}/)) return false;
-              if (/^(whisper|main|system_info|sampling|auto|detected)/.test(l)) return false;
-              if (l.includes('ggml') || l.includes('model') || l.includes('thread')) return false;
+              // Skip whisper's own output lines (start with [HH:MM:SS])
+              if (/^\[\d{2}:\d{2}:\d{2}[\].]/.test(l)) return false;
+              // Skip whisper metadata lines (exact prefix matches only)
+              if (/^(whisper model:|system_info:|main: processing|sampling rate:|auto detected)/i.test(l)) return false;
               return true;
             })
             .join(' ')
@@ -664,7 +708,8 @@ export class Transcriber {
     rawText: string,
     fuzzyMatch: boolean,
     confidenceScore: boolean,
-    audioDurationMs?: number
+    audioDurationMs?: number,
+    formalMode: boolean = false
   ): Promise<{ text?: string; rawText?: string; confidence?: ConfidenceResult; fuzzyChanges?: number }> {
     let finalText = rawText;
     let fuzzyChanges = 0;
@@ -672,7 +717,7 @@ export class Transcriber {
 
     if (fuzzyMatch) {
       try {
-        const fuzzyResult = this.fuzzyMatcher.process(rawText);
+        const fuzzyResult = this.fuzzyMatcher.process(rawText, formalMode);
         finalText = fuzzyResult.corrected;
         fuzzyChanges = fuzzyResult.changes.length;
       } catch {}
@@ -693,14 +738,28 @@ export class Transcriber {
   }
 
   private isGarbageText(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return true;
+
     const patterns = [
-      /^\s*\.{2,}\s*$/, /^\s*[,.\-?!;\s]+$/,
-      /^(thank you|thanks for watching|subscribe)\s*\.?\s*$/i,
-      /^(halo|hai|hey|hello|hi|yo)\s*\.?\s*$/i,
-      /^(yeah|ya|yep|nope|ok|okay|hm|hmm|umm|uhh|ahh)\s*\.?\s*$/i,
-      /^\s*\[.*\]\s*$/, /^\s*-{3,}\s*$/, /^\s*_{3,}\s*$/,
+      // Punctuation/symbols only
+      /^\s*\.{2,}\s*$/, /^\s*[,.\-?!;\s]+$/, /^\s*\[.*\]\s*$/, /^\s*-{3,}\s*$/, /^\s*_{3,}\s*$/,
+      // English hallucinations
+      /^(thank you|thanks for watching|subscribe|like and subscribe|please subscribe)\s*\.?\s*$/i,
+      /^(music|applause|laughter|sigh|breathing)\s*\.?\s*$/i,
+      // Indonesian common hallucinations
+      /^(selamat pagi|selamat siang|selamat sore|selamat malam|selamat datang)\s*\.?\s*$/i,
+      /^(terima kasih|makasih|trima kasih)\s*\.?\s*$/i,
+      /^(baiklah|bagus|oke|ok|ya|yap|yah|hmm|hm|uh|ah)\s*\.?\s*$/i,
+      /^(halo|hai|hey|hello|hi|yo|woi|bro)\s*\.?\s*$/i,
+      /^(yah|nah|loh|lho|dong|sih|nih|deh|kan|kok)\s*\.?\s*$/i,
+      // Whisper fillers
+      /^(umm|uhh|ahh|emm|amm|umm|hmm)\s*\.?\s*$/i,
+      /^(yeah|yep|nope|nah|yup)\s*\.?\s*$/i,
+      // Very short text (1-2 chars) that's likely noise
+      /^.{1,2}$/,
     ];
-    return patterns.some(p => p.test(text));
+    return patterns.some(p => p.test(trimmed));
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -732,10 +791,15 @@ export class Transcriber {
     language: string = 'auto',
     initialPrompt?: string
   ): Promise<{ success: boolean; text?: string }> {
+    const modelName = this.selectOptimalModel('');
+    const modelPath = path.join(this.modelsPath, modelName);
+    if (!fs.existsSync(modelPath)) {
+      return { success: false, text: undefined };
+    }
     const result = await this.runWhisper(
       audioPath,
-      '', // Will be resolved
-      this.selectOptimalModel(''),
+      modelPath,
+      modelName,
       language,
       PROFILES.fast,
       this.buildInitialPrompt(initialPrompt, language),

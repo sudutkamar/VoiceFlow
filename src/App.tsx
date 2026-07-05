@@ -236,6 +236,8 @@ function MiniBar() {
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const smoothLevels = useRef<number[]>(Array(24).fill(0));
   const animRef = useRef<number>(0);
   const timerRef = useRef<any>(null);
   const processingTimeoutRef = useRef<any>(null);
@@ -264,10 +266,9 @@ function MiniBar() {
       window.electronAPI.onStopRecording(() => { if (wavRecorderRef.current) stopRec(); }),
       window.electronAPI.onTranscriptReady((d) => {
         if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-        // Just update text silently — no state changes, no visual refresh
         setText(d.cleaned || d.raw);
-        // Stay in idle state, don't transition through 'done'
-        setState('idle');
+        setState('done');
+        setTimeout(() => { if (stateRef.current === 'done') setState('idle'); }, 4000);
       }),
       window.electronAPI.onPartialTranscript((p) => setPartial(p)),
       window.electronAPI.onError((e) => { 
@@ -318,7 +319,17 @@ function MiniBar() {
     try {
       const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
       wavRecorderRef.current = recorder;
-      await recorder.start(settings.selected_mic || undefined);
+      await recorder.start(settings.selected_mic || undefined, {
+        enabled: true,
+        silenceThreshold: 0.01,
+        silenceDurationMs: 3000,
+      });
+      recorder.onSilence(() => {
+        if (stateRef.current === 'recording') {
+          playSound('stop');
+          stopRec();
+        }
+      });
       const analyser = recorder.getAnalyserNode();
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();
@@ -327,6 +338,64 @@ function MiniBar() {
       // Don't clear text here — keep previous text visible during recording
       playSound('start');
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 200);
+      const POINTS = 24;
+      const drawCanvas = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+          canvas.width = rect.width * dpr;
+          canvas.height = rect.height * dpr;
+          ctx.scale(dpr, dpr);
+        }
+        const w = rect.width, h = rect.height;
+        ctx.clearRect(0, 0, w, h);
+        const src = smoothLevels.current;
+        const mid = h / 2;
+        const step = w / (POINTS - 1);
+        // Main wave
+        ctx.beginPath();
+        ctx.moveTo(0, mid - (src[0] / 100) * (mid - 1));
+        for (let i = 1; i < POINTS; i++) {
+          const x0 = (i - 1) * step, x1 = i * step;
+          const y0 = mid - (src[i - 1] / 100) * (mid - 1);
+          const y1 = mid - (src[i] / 100) * (mid - 1);
+          ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
+        }
+        const avg = src.reduce((a, b) => a + b, 0) / POINTS;
+        const glow = Math.min(1, avg / 50);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 + glow * 0.5})`;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = `rgba(185, 152, 255, ${0.3 + glow * 0.5})`;
+        ctx.shadowBlur = 6 + glow * 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Mirror wave
+        ctx.beginPath();
+        ctx.moveTo(0, mid + (src[0] / 100) * (mid - 1));
+        for (let i = 1; i < POINTS; i++) {
+          const x0 = (i - 1) * step, x1 = i * step;
+          const y0 = mid + (src[i - 1] / 100) * (mid - 1);
+          const y1 = mid + (src[i] / 100) * (mid - 1);
+          ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
+        }
+        ctx.strokeStyle = `rgba(185, 152, 255, ${0.25 + glow * 0.35})`;
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = `rgba(185, 152, 255, ${0.2 + glow * 0.3})`;
+        ctx.shadowBlur = 4 + glow * 6;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Center line
+        ctx.beginPath();
+        ctx.moveTo(0, mid);
+        ctx.lineTo(w, mid);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.04 + glow * 0.06})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      };
       const viz = () => {
         if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
         const data = new Uint8Array(analyserRef.current.frequencyBinCount);
@@ -335,14 +404,20 @@ function MiniBar() {
         analyserRef.current.getByteTimeDomainData(wave);
         const freq = Array.from(data).slice(2, Math.max(3, Math.floor(data.length * 0.85)));
         const amp = Array.from(wave).map((v) => Math.abs(v - 128) * 4.8);
-        const barCount = 13;
-        const freqBucket = Math.max(1, Math.floor(freq.length / barCount));
-        const ampBucket = Math.max(1, Math.floor(amp.length / barCount));
-        setLevels(Array.from({ length: barCount }, (_, i) => {
+        const freqBucket = Math.max(1, Math.floor(freq.length / POINTS));
+        const ampBucket = Math.max(1, Math.floor(amp.length / POINTS));
+        const raw = Array.from({ length: POINTS }, (_, i) => {
           const freqPeak = freq.slice(i * freqBucket, (i + 1) * freqBucket).reduce((m, v) => Math.max(m, v), 0) * 1.55;
           const ampPeak = amp.slice(i * ampBucket, (i + 1) * ampBucket).reduce((m, v) => Math.max(m, v), 0);
-          return Math.min(100, Math.max(6, freqPeak, ampPeak));
-        }));
+          return Math.min(100, Math.max(4, freqPeak, ampPeak));
+        });
+        // Smooth easing
+        const ease = 0.18;
+        for (let i = 0; i < POINTS; i++) {
+          smoothLevels.current[i] += (raw[i] - smoothLevels.current[i]) * ease;
+        }
+        setLevels(raw);
+        drawCanvas();
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
         setMicLevel(Math.min(100, avg * 2));
         setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
@@ -484,7 +559,7 @@ function MiniBar() {
             {state === 'recording' ? 'Stop' : <><span>Speak </span><strong>{hotkeyLabel}</strong></>}
           </div>
           {(state === 'idle' || state === 'hover') && (
-            <svg className="m-voice-icon" viewBox="0 0[Memasih] 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="m-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3.5 3.5 0 0 0-3.5 3.5v6a3.5 3.5 0 0 0 7 0v-6A3.5 3.5 0 0 0 12 2Z"/>
               <path d="M19 10.5v1a7 7 0 0 1-14 0v-1"/>
               <path d="M12 18.5V22"/>
@@ -493,7 +568,7 @@ function MiniBar() {
           {state === 'recording' && (
             <div className="m-recording-core">
               <span className="m-live-dot" />
-              <div className="m-viz">{levels.slice(0, 11).map((l, i) => <div key={i} className="m-vb" style={{ height: `${Math.max(5, l)}%` }} />)}</div>
+              <canvas ref={canvasRef} className="m-canvas" />
               <span className="m-time">{fmt(time)}</span>
             </div>
           )}
@@ -586,6 +661,17 @@ function MiniBar() {
           )}
         </button>
       </div>
+
+      {/* Text result */}
+      {text && state === 'done' && (
+        <div className="m-result-text" onClick={async () => {
+          const r = await window.electronAPI.copyText(text);
+          if (r.success) playSound('done');
+        }}>
+          <span className="m-result-label">Result:</span>
+          <span className="m-result-content">{text.length > 80 ? text.substring(0, 80) + '...' : text}</span>
+        </div>
+      )}
 
       {/* Tooltips */}
       {partial && state === 'recording' && <div className="m-tooltip">{partial}</div>}
@@ -778,7 +864,17 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
     try {
       const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
       wavRecorderRef.current = recorder;
-      await recorder.start(settings.selected_mic || undefined);
+      await recorder.start(settings.selected_mic || undefined, {
+        enabled: true,
+        silenceThreshold: 0.01,
+        silenceDurationMs: 3000,
+      });
+      recorder.onSilence(() => {
+        if (stateRef.current === 'recording') {
+          playSound('stop');
+          stopRec();
+        }
+      });
       const analyser = recorder.getAnalyserNode();
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();

@@ -30,6 +30,8 @@ function Settings({ onSuccess, onError }: SettingsProps) {
   const [newTrigger, setNewTrigger] = useState('');
   const [newOutput, setNewOutput] = useState('');
   const [gpuStatus, setGpuStatus] = useState<{ hasGpu: boolean; mode: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string } | null>(null);
+  const [availableModels, setAvailableModels] = useState<{ name: string; downloaded?: boolean }[]>([]);
+  const [appVersion, setAppVersion] = useState('');
   const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup debounce timer on unmount
@@ -37,12 +39,27 @@ function Settings({ onSuccess, onError }: SettingsProps) {
     return () => { if (promptTimerRef.current) clearTimeout(promptTimerRef.current); };
   }, []);
 
-  useEffect(() => { loadData(); loadMics(); loadGpuStatus(); }, []);
+  useEffect(() => { loadData(); loadMics(); loadGpuStatus(); loadModels(); loadVersion(); }, []);
 
   const loadGpuStatus = async () => {
     try {
       const status = await window.electronAPI.getGpuStatus();
       setGpuStatus(status);
+    } catch {}
+  };
+
+  const loadModels = async () => {
+    try {
+      const models = await window.electronAPI.scanModelsFolder();
+      const downloaded = models.filter((m: any) => m.downloaded);
+      setAvailableModels(downloaded);
+    } catch {}
+  };
+
+  const loadVersion = async () => {
+    try {
+      const v = await window.electronAPI.getVersion();
+      setAppVersion(v);
     } catch {}
   };
 
@@ -185,7 +202,12 @@ function Settings({ onSuccess, onError }: SettingsProps) {
       </div>
 
       {/* Tabs */}
-      <div className="tabs">
+      <div className="tabs" onKeyDown={(e) => {
+        const tabIds = ['general', 'recording', 'processing', 'presets', 'dictionary', 'snippets'];
+        const idx = tabIds.indexOf(tab);
+        if (e.key === 'ArrowRight' && idx < tabIds.length - 1) { e.preventDefault(); setTab(tabIds[idx + 1] as any); }
+        if (e.key === 'ArrowLeft' && idx > 0) { e.preventDefault(); setTab(tabIds[idx - 1] as any); }
+      }}>
         {[
           { id: 'general', label: 'General', icon: '⚙️' },
           { id: 'recording', label: 'Recording', icon: '🎤' },
@@ -359,6 +381,26 @@ function Settings({ onSuccess, onError }: SettingsProps) {
               </button>
             </div>
           </div>
+
+          <div className="section">
+            <div className="section-header">About</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">VoiceFlow</span>
+                <span className="setting-hint">Local voice-to-text powered by Whisper AI</span>
+              </div>
+              <span className="setting-value">{appVersion || '1.0.0'}</span>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">GitHub</span>
+                <span className="setting-hint">Source code, issues, and updates</span>
+              </div>
+              <button className="btn btn-sm" onClick={() => window.open('https://github.com/AriProject/VoiceFlow', '_blank')}>
+                Open
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -387,13 +429,21 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Model</span>
-                <span className="setting-hint">Model for transcription</span>
+                <span className="setting-hint">Larger models = better accuracy, slower speed</span>
               </div>
               <select value={settings.model || 'ggml-large-v3-turbo-q5_0.bin'} onChange={(e) => { save('model', e.target.value); onSuccess('Model changed'); }}>
-                <option value="ggml-base-q5_1.bin">⚡ Base Q5 - Fast + Good</option>
-                <option value="ggml-base.bin">⚖️ Base - Balanced</option>
-                <option value="ggml-large-v3-turbo-q5_0.bin">🏆 Large v3 Turbo Q5 - Fast + Accurate</option>
-                <option value="ggml-large-v3.bin">👑 Large v3 - Best Quality</option>
+                {availableModels.length > 0 ? (
+                  availableModels.map(m => (
+                    <option key={m.name} value={m.name}>{m.name.replace('ggml-', '').replace('.bin', '')}</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="ggml-base-q5_1.bin">Base Q5 - Fast</option>
+                    <option value="ggml-base.bin">Base - Balanced</option>
+                    <option value="ggml-large-v3-turbo-q5_0.bin">Large v3 Turbo Q5</option>
+                    <option value="ggml-large-v3.bin">Large v3 - Best</option>
+                  </>
+                )}
               </select>
             </div>
           </div>

@@ -33,15 +33,15 @@ export class AudioPreprocessor {
     this.logger = logger;
     this.options = {
       sampleRate: options.sampleRate || 16000,
-      highPassFreq: options.highPassFreq || 80,
-      lowPassFreq: options.lowPassFreq || 7500,
-      noiseGateThreshold: options.noiseGateThreshold || 0.008,
-      noiseReduction: options.noiseReduction ?? true,
+      highPassFreq: options.highPassFreq || 40,       // Raised: whisper handles low freq well, 80Hz cuts male voice bass
+      lowPassFreq: options.lowPassFreq || 8000,       // Raised: whisper mel spectrogram goes to 8kHz
+      noiseGateThreshold: options.noiseGateThreshold || 0.005,
+      noiseReduction: options.noiseReduction ?? false, // Disabled: whisper is robust to noise, spectral subtraction can remove speech harmonics
       volumeNormalization: options.volumeNormalization ?? true,
       silenceTrimming: options.silenceTrimming ?? true,
-      dynamicCompression: options.dynamicCompression ?? true,
-      targetRmsDb: options.targetRmsDb || -18,
-      targetPeakDb: options.targetPeakDb || -3,
+      dynamicCompression: options.dynamicCompression ?? false, // Disabled: alters voice characteristics, whisper handles volume variation
+      targetRmsDb: options.targetRmsDb || -20,        // More conservative target
+      targetPeakDb: options.targetPeakDb || -1,
     };
   }
 

@@ -22,7 +22,7 @@ export class PasteEngine {
     this.showAfterPaste = showAfterPaste || null;
   }
 
-  async paste(text: string, targetWindowHandle?: string | null): Promise<{ success: boolean; error?: string }> {
+  async paste(text: string, targetWindowHandle?: string | null, targetWindowThread?: number): Promise<{ success: boolean; error?: string }> {
     if (!text?.trim()) return { success: false, error: 'No text' };
 
     try {
@@ -43,11 +43,11 @@ export class PasteEngine {
         }
       }
 
-      // 4. Small delay to let windows hide and target app gain focus
-      await this.sleep(60);
+      // 4. Delay to let windows hide and target app gain focus
+      await this.sleep(200);
 
       // 5. Send Ctrl+V to target window
-      const ok = await this.sendPasteKeystroke(targetWindowHandle || null);
+      const ok = await this.sendPasteKeystroke(targetWindowHandle || null, targetWindowThread || 0);
 
       // 6. Re-show mini window after paste
       if (this.showAfterPaste) {
@@ -76,11 +76,13 @@ export class PasteEngine {
     }
   }
 
-  private async sendPasteKeystroke(targetWindowHandle: string | null): Promise<boolean> {
+  private async sendPasteKeystroke(targetWindowHandle: string | null, targetWindowThread: number): Promise<boolean> {
     const hwndLiteral = targetWindowHandle && /^\d+$/.test(targetWindowHandle) ? targetWindowHandle : '0';
+    const tid = targetWindowThread || 0;
 
     const script = `
 $hwnd=[IntPtr]${hwndLiteral}
+$targetTid=${tid}
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -89,13 +91,56 @@ public class NI {
   [DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h, int nCmdShow);
   [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr h);
   [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);
+  [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")]public static extern bool AttachThreadInput(uint a, uint b, bool c);
+  [DllImport("user32.dll")]public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")]public static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")]public static extern bool FlashWindow(IntPtr h, bool invert);
 }
 "@
 if($hwnd.ToInt64()-ne 0 -and [NI]::IsWindow($hwnd)){
+  # Restore if minimized
   [NI]::ShowWindow($hwnd, 9)|Out-Null
+  Start-Sleep -m 30
+
+  # Get current foreground and our thread
+  $fg = [NI]::GetForegroundWindow()
+  $ourTid = [NI]::GetCurrentThreadId()
+
+  # Get target window's thread
+  if($targetTid -eq 0){
+    [uint32]$dummy=0
+    $targetTid = [NI]::GetWindowThreadProcessId($hwnd, [ref]$dummy)
+  }
+
+  # Attach to target thread if different
+  $attached = $false
+  if($targetTid -ne $ourTid -and $targetTid -ne 0){
+    $attached = [NI]::AttachThreadInput($ourTid, $targetTid, $true)
+    Start-Sleep -m 20
+  }
+
+  # Force foreground
+  [NI]::BringWindowToTop($hwnd)|Out-Null
   [NI]::SetForegroundWindow($hwnd)|Out-Null
-  Start-Sleep -m 80
+  Start-Sleep -m 50
+
+  # Verify and retry
+  $fg = [NI]::GetForegroundWindow()
+  if($fg -ne $hwnd){
+    [NI]::SetForegroundWindow($hwnd)|Out-Null
+    Start-Sleep -m 50
+  }
+
+  # Detach
+  if($attached){
+    [NI]::AttachThreadInput($ourTid, $targetTid, $false)|Out-Null
+  }
+  Start-Sleep -m 30
 }
+
+# Send Ctrl+V
 [NI]::keybd_event(0x11,0,0,[UIntPtr]::Zero)
 Start-Sleep -m 10
 [NI]::keybd_event(0x56,0,0,[UIntPtr]::Zero)

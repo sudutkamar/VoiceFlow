@@ -45,6 +45,7 @@ let hotkeyManager: HotkeyManager;
 let cudaDownloader: CudaDownloader;
 let isQuitting = false;
 let isPasting = false;
+let miniWindowReady = false;
 
 function isDev(): boolean {
   return process.env.NODE_ENV === 'development';
@@ -56,9 +57,11 @@ function getPreloadPath(): string {
 
 // ============ MAIN WINDOW (Full UI) ============
 function createMainWindow(showInitially: boolean = true): void {
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+
   mainWindow = new BrowserWindow({
-    width: 480,
-    height: 600,
+    width: sw,
+    height: sh,
     minWidth: 400,
     minHeight: 500,
     webPreferences: {
@@ -69,16 +72,17 @@ function createMainWindow(showInitially: boolean = true): void {
     },
     title: 'VoiceFlow',
     icon: getAppIcon(),
-    show: showInitially,
+    show: false,
     backgroundColor: '#0a0a0f',
     frame: false,
     resizable: true,
-    center: true,
+    x: 0,
+    y: 0,
   });
 
   mainWindow.on('ready-to-show', () => {
     if (showInitially) {
-      mainWindow?.maximize();
+      mainWindow?.setBounds({ x: 0, y: 0, width: sw, height: sh });
       mainWindow?.show();
       mainWindow?.focus();
     }
@@ -113,7 +117,7 @@ function createMainWindow(showInitially: boolean = true): void {
 function createMiniWindow(): void {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   const miniWidth = Math.min(460, sw - 40);
-  const miniHeight = 120; // Larger to accommodate tooltips without resize glitches
+  const miniHeight = 64;
   const taskbarHeight = sh; // workArea already excludes taskbar
 
   miniWindow = new BrowserWindow({
@@ -164,6 +168,22 @@ function createMiniWindow(): void {
     if (hotkeyManager && miniWindow) {
       hotkeyManager.setMiniWindow(miniWindow);
     }
+    // Show if this was the first load and showMiniWindow was already called
+    if (miniWindowReady && miniWindow && !miniWindow.isDestroyed() && !miniWindow.isVisible()) {
+      const floatingEnabled = database?.getSetting('show_mini_window') !== 'false';
+      if (floatingEnabled) {
+        miniWindow.showInactive();
+        miniWindow.setAlwaysOnTop(true, 'screen-saver');
+      }
+    }
+  });
+
+  miniWindow.on('ready-to-show', () => {
+    // Prevent flash — window stays hidden until showInactive() is called
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.hide();
+      miniWindowReady = true;
+    }
   });
 
   if (isDev()) {
@@ -177,12 +197,18 @@ function showMiniWindow(): void {
   logger?.info('showMiniWindow called, miniWindow exists: ' + !!miniWindow);
   if (!miniWindow || miniWindow.isDestroyed()) {
     miniWindow = null;
+    miniWindowReady = false;
     createMiniWindow();
     logger?.info('Created new miniWindow');
   }
   // Update hotkeyManager with miniWindow reference
   if (hotkeyManager && miniWindow) {
     hotkeyManager.setMiniWindow(miniWindow);
+  }
+  // Only show after content is fully loaded to prevent flash
+  if (!miniWindowReady) {
+    logger?.info('Mini window not ready, deferring show');
+    return;
   }
   // Show without stealing focus, so user's cursor stays in the target app.
   miniWindow?.showInactive();

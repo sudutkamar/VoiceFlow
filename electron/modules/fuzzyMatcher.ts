@@ -48,37 +48,28 @@ export class FuzzyMatcher {
   // ═══════════════════════════════════════════════════════════════
 
   /**
-   * Known Whisper transcription errors mapped to correct words.
-   * Organized by category for maintainability.
+   * True Whisper mishears — words that whisper genuinely gets wrong.
+   * These are ALWAYS corrected regardless of formal/informal mode.
    */
-  private readonly COMMON_ERRORS: Record<string, string> = {
-    // ── Indonesian: Very common Whisper mishears ──
+  private readonly WHISPER_ERRORS: Record<string, string> = {
     'tesih': 'test', 'tesis': 'test', 'tesi': 'test',
     'adala': 'adalah', 'adalh': 'adalah', 'adlah': 'adalah',
-    'engga': 'tidak', 'enggak': 'tidak', 'ngga': 'tidak', 'nggak': 'tidak',
-    'gak': 'tidak', 'ga': 'tidak', 'gk': 'tidak', 'tdk': 'tidak',
-    'aja': 'saja', 'aj': 'saja', 'sj': 'saja',
     'smua': 'semua', 'semu': 'semua',
     'dg': 'dengan', 'dgn': 'dengan', 'dng': 'dengan', 'dngn': 'dengan',
     'utk': 'untuk', 'unt': 'untuk',
     'dr': 'dari', 'dri': 'dari',
-    'km': 'kamu', 'kmu': 'kamu',
-    'sy': 'saya', 'gw': 'saya', 'gue': 'saya',
-    'aq': 'aku', 'ak': 'aku',
     'bgt': 'banget', 'bngt': 'banget', 'bnget': 'banget',
     'bener': 'benar', 'bner': 'benar',
     'emg': 'memang', 'emng': 'memang',
     'mgkn': 'mungkin', 'mngkn': 'mungkin',
     'gmn': 'gimana', 'gmna': 'gimana', 'gimna': 'gimana',
     'bgmn': 'bagaimana', 'bgmna': 'bagaimana',
-    'trus': 'terus', 'trs': 'terus', 'truz': 'terus',
-    'klo': 'kalau', 'kalo': 'kalau', 'kl': 'kalau', 'klau': 'kalau', 'klu': 'kalau',
+    'trs': 'terus', 'truz': 'terus',
     'blm': 'belum', 'blum': 'belum', 'blom': 'belum',
-    'sdh': 'sudah', 'sdah': 'sudah', 'udh': 'sudah', 'udah': 'sudah', 'dah': 'sudah',
-    'tp': 'tapi', 'tpi': 'tapi',
+    'sdh': 'sudah', 'sdah': 'sudah',
+    'tpi': 'tapi',
     'krn': 'karena', 'krna': 'karena', 'karna': 'karena', 'kren': 'karena',
     'jd': 'jadi', 'jdi': 'jadi',
-    'org': 'orang',
     'prg': 'pergi', 'pgi': 'pergi',
     'krm': 'kirim',
     'dtg': 'datang', 'dtng': 'datang', 'datg': 'datang',
@@ -106,7 +97,7 @@ export class FuzzyMatcher {
     'pngt': 'penting', 'pentng': 'penting',
     'prlu': 'perlu',
     'hrs': 'harus', 'hrus': 'harus', 'haru': 'harus',
-    'bs': 'bisa', 'mw': 'mau', 'akn': 'akan',
+    'bs': 'bisa', 'akn': 'akan',
     'sdg': 'sedang', 'sedng': 'sedang',
     'lgi': 'lagi',
     'hny': 'hanya',
@@ -118,14 +109,26 @@ export class FuzzyMatcher {
     'kcp': 'kacamata', 'kcm': 'kacamata',
     'solus': 'solusi', 'slsi': 'solusi',
     'sm': 'sama',
+  };
 
-    // ── English: Common Whisper mishears ──
-    'gonna': 'going to', 'wanna': 'want to', 'gotta': 'got to',
-    'lemme': 'let me', 'gimme': 'give me', 'kinda': 'kind of',
-    'sorta': 'sort of', 'outta': 'out of', 'dunno': "don't know",
-    'shoulda': 'should have', 'coulda': 'could have', 'woulda': 'would have',
-    'musta': 'must have', 'mighta': 'might have',
-    'ain\'t': 'is not', 'y\'all': 'you all',
+  /**
+   * Informal-to-formal conversions — legitimate informal words.
+   * Only applied when formalMode is enabled (user wants formal text).
+   * These are NOT errors, just style preferences.
+   */
+  private readonly INFORMAL_TO_FORMAL: Record<string, string> = {
+    'engga': 'tidak', 'enggak': 'tidak', 'ngga': 'tidak', 'nggak': 'tidak',
+    'gak': 'tidak', 'ga': 'tidak', 'gk': 'tidak', 'tdk': 'tidak',
+    'aja': 'saja', 'aj': 'saja', 'sj': 'saja',
+    'km': 'kamu', 'kmu': 'kamu',
+    'sy': 'saya', 'gw': 'saya', 'gue': 'saya',
+    'aq': 'aku', 'ak': 'aku',
+    'trus': 'terus',
+    'klo': 'kalau', 'kalo': 'kalau', 'kl': 'kalau', 'klau': 'kalau', 'klu': 'kalau',
+    'udh': 'sudah', 'udah': 'sudah', 'dah': 'sudah',
+    'tp': 'tapi',
+    'org': 'orang',
+    'mw': 'mau',
   };
 
   // ═══════════════════════════════════════════════════════════════
@@ -144,7 +147,7 @@ export class FuzzyMatcher {
   //  Main Processing Pipeline
   // ═══════════════════════════════════════════════════════════════
 
-  process(text: string): FuzzyMatchResult {
+  process(text: string, formalMode: boolean = false): FuzzyMatchResult {
     if (!text?.trim()) {
       return { original: text, corrected: text, confidence: 1, changes: [] };
     }
@@ -152,6 +155,12 @@ export class FuzzyMatcher {
     const words = text.split(/(\s+)/); // Preserve whitespace
     const changes: FuzzyMatchResult['changes'] = [];
     const correctedWords: string[] = [];
+
+    // Build the error map: always include WHISPER_ERRORS, add INFORMAL_TO_FORMAL only in formal mode
+    const errorMap: Record<string, string> = { ...this.WHISPER_ERRORS };
+    if (formalMode) {
+      Object.assign(errorMap, this.INFORMAL_TO_FORMAL);
+    }
 
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
@@ -183,8 +192,8 @@ export class FuzzyMatcher {
       }
 
       // ── Priority 2: Exact common error match ──
-      if (!replacement && this.COMMON_ERRORS[lowerClean]) {
-        replacement = this.COMMON_ERRORS[lowerClean];
+      if (!replacement && errorMap[lowerClean]) {
+        replacement = errorMap[lowerClean];
         confidence = 0.95;
         reason = 'common_error';
       }
@@ -204,12 +213,12 @@ export class FuzzyMatcher {
 
       // ── Priority 4: Fuzzy common error match ──
       if (!replacement) {
-        const errorKeys = Object.keys(this.COMMON_ERRORS);
+        const errorKeys = Object.keys(errorMap);
         const errorMatch = this.findBestMatch(lowerClean, errorKeys);
         if (errorMatch && errorMatch.distance <= this.maxDistance) {
           const similarity = 1 - (errorMatch.distance / Math.max(cleanWord.length, errorMatch.word.length));
           if (similarity >= this.minConfidenceThreshold) {
-            replacement = this.COMMON_ERRORS[errorMatch.word];
+            replacement = errorMap[errorMatch.word];
             confidence = similarity * 0.9; // Slightly lower confidence for fuzzy common errors
             reason = 'fuzzy';
           }
@@ -346,7 +355,7 @@ export class FuzzyMatcher {
   getStats(): { dictionarySize: number; commonErrorsSize: number } {
     return {
       dictionarySize: this.dictionary.size,
-      commonErrorsSize: Object.keys(this.COMMON_ERRORS).length,
+      commonErrorsSize: Object.keys(this.WHISPER_ERRORS).length + Object.keys(this.INFORMAL_TO_FORMAL).length,
     };
   }
 }

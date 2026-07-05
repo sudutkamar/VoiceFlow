@@ -105,6 +105,7 @@ export function setupDictationIPC(
       logger.info('Starting whisper...', { model, language, verbatimMode, processingMode });
 
       // Single pass: accurate transcription with selected model + GPU/CPU
+      const formalMode = processingMode === 'clean';
       const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
         preprocess: preprocessAudio,
         fuzzyMatch,
@@ -112,6 +113,7 @@ export function setupDictationIPC(
         audioDurationMs: audioData.duration,
         initialPrompt: initialPrompt || undefined,
         device: whisperDevice,
+        formalMode,
       });
 
       // Cleanup temp file
@@ -181,7 +183,7 @@ export function setupDictationIPC(
       const autoPaste = database.getSetting('auto_paste') !== 'false';
       if (autoPaste && finalText) {
         hotkeyManager?.setState('pasting');
-        pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle()).catch(() => {});
+        pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread()).catch(() => {});
       }
 
       // Save to history
@@ -206,7 +208,7 @@ export function setupDictationIPC(
   });
 
   ipcMain.handle('paste-text', async (event, text: string) => {
-    return await pasteEngine.paste(text, hotkeyManager?.getTargetWindowHandle());
+    return await pasteEngine.paste(text, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread());
   });
 
   ipcMain.handle('copy-text', async (event, text: string) => {
