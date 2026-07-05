@@ -247,8 +247,51 @@ body {
 /* ============ HOME PAGE ============ */
 .home-page {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.model-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 0 16px 8px 16px;
+  width: calc(100% - 32px);
+  max-width: 400px;
+  flex-shrink: 0;
+}
+
+.model-warning-banner span:first-child {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.model-warning-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-warning-text strong {
+  display: block;
+  font-size: 13px;
+  color: #fbbf24;
+  margin-bottom: 2px;
+}
+
+.model-warning-text p {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.model-warning-banner .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .home-content {
@@ -1356,6 +1399,11 @@ body {
 .badge-warning {
   background: rgba(251, 191, 36, 0.15);
   color: #fbbf24;
+}
+
+.badge-custom {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
 }
 
 .status-active {

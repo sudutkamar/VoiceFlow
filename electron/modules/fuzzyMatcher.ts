@@ -9,6 +9,7 @@ export interface FuzzyMatchResult {
     from: string;
     to: string;
     confidence: number;
+    reason: 'dictionary' | 'common_error' | 'fuzzy';
   }>;
 }
 
@@ -17,315 +18,244 @@ export interface DictionaryEntry {
   replacement: string;
 }
 
+/**
+ * Context-aware fuzzy matcher for speech recognition output.
+ * 
+ * Strategy:
+ * 1. Exact dictionary match (highest confidence)
+ * 2. Common Whisper errors (high confidence, language-specific)
+ * 3. Fuzzy dictionary match (medium confidence, Levenshtein distance)
+ * 4. Fuzzy common error match (lower confidence)
+ * 
+ * All corrections have confidence scores. Only high-confidence corrections
+ * are applied automatically; low-confidence ones are flagged for review.
+ */
 export class FuzzyMatcher {
   private logger: Logger;
   private dictionary: Map<string, string> = new Map();
-  private commonErrors: Map<string, string> = new Map();
   private maxDistance: number;
+  private minConfidenceThreshold: number;
 
-  constructor(logger: Logger, maxDistance: number = 2) {
+  constructor(logger: Logger, maxDistance: number = 2, minConfidence: number = 0.7) {
     this.logger = logger;
     this.maxDistance = maxDistance;
-    this.initCommonErrors();
+    this.minConfidenceThreshold = minConfidence;
+    this.logger.info('FuzzyMatcher initialized', { maxDistance, minConfidence });
   }
 
-  /**
-   * Initialize common Indonesian transcription errors
-   */
-  private initCommonErrors(): void {
-    const errors: [string, string][] = [
-      // Common Whisper errors for Indonesian
-      ['tesih', 'test'],
-      ['tesis', 'test'],
-      ['tesi', 'test'],
-      ['adala', 'adalah'],
-      ['adalh', 'adalah'],
-      ['adlah', 'adalah'],
-      ['engga', 'tidak'],
-      ['enggak', 'tidak'],
-      ['ngga', 'tidak'],
-      ['nggak', 'tidak'],
-      ['gak', 'tidak'],
-      ['ga', 'tidak'],
-      ['gk', 'tidak'],
-      ['tdk', 'tidak'],
-      ['tak', 'tidak'],
-      ['aja', 'saja'],
-      ['aj', 'saja'],
-      ['sj', 'saja'],
-      ['sm', 'sama'],
-      ['smua', 'semua'],
-      ['semu', 'semua'],
-      ['dg', 'dengan'],
-      ['dgn', 'dengan'],
-      ['dng', 'dengan'],
-      ['dngn', 'dengan'],
-      ['utk', 'untuk'],
-      ['unt', 'untuk'],
-      ['utk', 'untuk'],
-      ['dr', 'dari'],
-      ['dri', 'dari'],
-      ['km', 'kamu'],
-      ['kmu', 'kamu'],
-      ['sy', 'saya'],
-      ['sy', 'saya'],
-      ['gw', 'saya'],
-      ['gue', 'saya'],
-      ['aq', 'aku'],
-      ['ak', 'aku'],
-      ['aku', 'aku'],
-      ['bgt', 'banget'],
-      ['bngt', 'banget'],
-      ['bnget', 'banget'],
-      ['bener', 'benar'],
-      ['bner', 'benar'],
-      ['emg', 'memang'],
-      ['emng', 'memang'],
-      ['mgkn', 'mungkin'],
-      ['mngkn', 'mungkin'],
-      ['gmn', 'gimana'],
-      ['gmna', 'gimana'],
-      ['gimna', 'gimana'],
-      ['bgmn', 'bagaimana'],
-      ['bgmna', 'bagaimana'],
-      ['trus', 'terus'],
-      ['trs', 'terus'],
-      ['truz', 'terus'],
-      ['klo', 'kalau'],
-      ['kalo', 'kalau'],
-      ['kl', 'kalau'],
-      ['klau', 'kalau'],
-      ['klu', 'kalau'],
-      ['blm', 'belum'],
-      ['blum', 'belum'],
-      ['blom', 'belum'],
-      ['sdh', 'sudah'],
-      ['sdah', 'sudah'],
-      ['udh', 'sudah'],
-      ['udah', 'sudah'],
-      ['udh', 'sudah'],
-      ['dah', 'sudah'],
-      ['nya', 'nya'],
-      ['ny', 'nya'],
-      ['tp', 'tapi'],
-      ['tpi', 'tapi'],
-      ['tapi', 'tapi'],
-      ['krn', 'karena'],
-      ['krna', 'karena'],
-      ['karna', 'karena'],
-      ['kren', 'karena'],
-      ['jd', 'jadi'],
-      ['jdi', 'jadi'],
-      ['jd', 'jadi'],
-      ['org', 'orang'],
-      ['org', 'orang'],
-      ['prg', 'pergi'],
-      ['pgi', 'pergi'],
-      ['krm', 'kirim'],
-      ['kirim', 'kirim'],
-      ['dtg', 'datang'],
-      ['dtng', 'datang'],
-      ['datg', 'datang'],
-      ['mkn', 'makan'],
-      ['mkan', 'makan'],
-      ['mkn', 'makan'],
-      ['mnm', 'minum'],
-      ['minm', 'minum'],
-      ['tdr', 'tidur'],
-      ['tidr', 'tidur'],
-      ['bngn', 'bangun'],
-      ['bangn', 'bangun'],
-      ['pulg', 'pulang'],
-      ['pulng', 'pulang'],
-      ['plg', 'pulang'],
-      ['plng', 'pulang'],
-      ['krj', 'kerja'],
-      ['kerj', 'kerja'],
-      ['sklh', 'sekolah'],
-      ['seklh', 'sekolah'],
-      ['skla', 'sekolah'],
-      ['ktr', 'kantor'],
-      ['kant', 'kantor'],
-      ['rmt', 'rumah'],
-      ['rumh', 'rumah'],
-      ['rmh', 'rumah'],
-      ['mbl', 'mobil'],
-      ['mobl', 'mobil'],
-      ['mtr', 'motor'],
-      ['motr', 'motor'],
-      ['kcp', 'kacamata'],
-      ['kcm', 'kacamata'],
-      ['hsl', 'hasil'],
-      ['hasl', 'hasil'],
-      ['mslh', 'masalah'],
-      ['maslh', 'masalah'],
-      ['msl', 'masalah'],
-      ['solus', 'solusi'],
-      ['slsi', 'solusi'],
-      ['jwb', 'jawab'],
-      ['jawb', 'jawab'],
-      ['jwbn', 'jawaban'],
-      ['tmbh', 'tambah'],
-      ['tmbh', 'tambah'],
-      ['krg', 'kurang'],
-      ['kurng', 'kurang'],
-      ['lbh', 'lebih'],
-      ['lebh', 'lebih'],
-      ['cukp', 'cukup'],
-      ['cukup', 'cukup'],
-      ['sdkt', 'sedikit'],
-      ['sedkt', 'sedikit'],
-      ['byk', 'banyak'],
-      ['bnyk', 'banyak'],
-      ['bsr', 'besar'],
-      ['besr', 'besar'],
-      ['kcl', 'kecil'],
-      ['kecl', 'kecil'],
-      ['pngt', 'penting'],
-      ['pentng', 'penting'],
-      ['prlu', 'perlu'],
-      ['perlu', 'perlu'],
-      ['hrus', 'harus'],
-      ['hrs', 'harus'],
-      ['haru', 'harus'],
-      ['bisa', 'bisa'],
-      ['bs', 'bisa'],
-      ['mau', 'mau'],
-      ['mw', 'mau'],
-      ['akan', 'akan'],
-      ['akn', 'akan'],
-      ['sudah', 'sudah'],
-      ['belum', 'belum'],
-      ['sedang', 'sedang'],
-      ['sdg', 'sedang'],
-      ['sedng', 'sedang'],
-      ['lagi', 'lagi'],
-      ['lgi', 'lagi'],
-      ['saja', 'saja'],
-      ['hanya', 'hanya'],
-      ['hny', 'hanya'],
-      ['sangat', 'sangat'],
-      ['sngt', 'sangat'],
-      ['sangt', 'sangat'],
-      ['sekali', 'sekali'],
-      ['skli', 'sekali'],
-      ['paling', 'paling'],
-      ['plng', 'paling'],
-      ['paling', 'paling'],
-      ['agak', 'agak'],
-      ['agk', 'agak'],
-      ['cukup', 'cukup'],
-      ['ckp', 'cukup'],
-      ['cukp', 'cukup'],
-      ['lumayan', 'lumayan'],
-      ['lmyan', 'lumayan'],
-      ['lumyn', 'lumayan'],
-    ];
-
-    for (const [error, correction] of errors) {
-      this.commonErrors.set(error.toLowerCase(), correction.toLowerCase());
-    }
-
-    this.logger.info('FuzzyMatcher initialized', { commonErrors: this.commonErrors.size });
-  }
+  // ═══════════════════════════════════════════════════════════════
+  //  Common Whisper Errors (Indonesian + English)
+  // ═══════════════════════════════════════════════════════════════
 
   /**
-   * Load dictionary from database
+   * Known Whisper transcription errors mapped to correct words.
+   * Organized by category for maintainability.
    */
+  private readonly COMMON_ERRORS: Record<string, string> = {
+    // ── Indonesian: Very common Whisper mishears ──
+    'tesih': 'test', 'tesis': 'test', 'tesi': 'test',
+    'adala': 'adalah', 'adalh': 'adalah', 'adlah': 'adalah',
+    'engga': 'tidak', 'enggak': 'tidak', 'ngga': 'tidak', 'nggak': 'tidak',
+    'gak': 'tidak', 'ga': 'tidak', 'gk': 'tidak', 'tdk': 'tidak',
+    'aja': 'saja', 'aj': 'saja', 'sj': 'saja',
+    'smua': 'semua', 'semu': 'semua',
+    'dg': 'dengan', 'dgn': 'dengan', 'dng': 'dengan', 'dngn': 'dengan',
+    'utk': 'untuk', 'unt': 'untuk',
+    'dr': 'dari', 'dri': 'dari',
+    'km': 'kamu', 'kmu': 'kamu',
+    'sy': 'saya', 'gw': 'saya', 'gue': 'saya',
+    'aq': 'aku', 'ak': 'aku',
+    'bgt': 'banget', 'bngt': 'banget', 'bnget': 'banget',
+    'bener': 'benar', 'bner': 'benar',
+    'emg': 'memang', 'emng': 'memang',
+    'mgkn': 'mungkin', 'mngkn': 'mungkin',
+    'gmn': 'gimana', 'gmna': 'gimana', 'gimna': 'gimana',
+    'bgmn': 'bagaimana', 'bgmna': 'bagaimana',
+    'trus': 'terus', 'trs': 'terus', 'truz': 'terus',
+    'klo': 'kalau', 'kalo': 'kalau', 'kl': 'kalau', 'klau': 'kalau', 'klu': 'kalau',
+    'blm': 'belum', 'blum': 'belum', 'blom': 'belum',
+    'sdh': 'sudah', 'sdah': 'sudah', 'udh': 'sudah', 'udah': 'sudah', 'dah': 'sudah',
+    'tp': 'tapi', 'tpi': 'tapi',
+    'krn': 'karena', 'krna': 'karena', 'karna': 'karena', 'kren': 'karena',
+    'jd': 'jadi', 'jdi': 'jadi',
+    'org': 'orang',
+    'prg': 'pergi', 'pgi': 'pergi',
+    'krm': 'kirim',
+    'dtg': 'datang', 'dtng': 'datang', 'datg': 'datang',
+    'mkn': 'makan', 'mkan': 'makan',
+    'mnm': 'minum', 'minm': 'minum',
+    'tdr': 'tidur', 'tidr': 'tidur',
+    'bngn': 'bangun', 'bangn': 'bangun',
+    'plg': 'pulang', 'plng': 'pulang',
+    'krj': 'kerja', 'kerj': 'kerja',
+    'sklh': 'sekolah', 'seklh': 'sekolah',
+    'ktr': 'kantor', 'kant': 'kantor',
+    'rmh': 'rumah', 'rumh': 'rumah', 'rmt': 'rumah',
+    'mbl': 'mobil', 'mobl': 'mobil',
+    'mtr': 'motor', 'motr': 'motor',
+    'hsl': 'hasil', 'hasl': 'hasil',
+    'mslh': 'masalah', 'maslh': 'masalah', 'msl': 'masalah',
+    'jwb': 'jawab', 'jawb': 'jawab', 'jwbn': 'jawaban',
+    'tmbh': 'tambah',
+    'krg': 'kurang', 'kurng': 'kurang',
+    'lbh': 'lebih', 'lebh': 'lebih',
+    'sdkt': 'sedikit', 'sedkt': 'sedikit',
+    'byk': 'banyak', 'bnyk': 'banyak',
+    'bsr': 'besar', 'besr': 'besar',
+    'kcl': 'kecil', 'kecl': 'kecil',
+    'pngt': 'penting', 'pentng': 'penting',
+    'prlu': 'perlu',
+    'hrs': 'harus', 'hrus': 'harus', 'haru': 'harus',
+    'bs': 'bisa', 'mw': 'mau', 'akn': 'akan',
+    'sdg': 'sedang', 'sedng': 'sedang',
+    'lgi': 'lagi',
+    'hny': 'hanya',
+    'sngt': 'sangat', 'sangt': 'sangat',
+    'skli': 'sekali',
+    'agk': 'agak',
+    'ckp': 'cukup', 'cukp': 'cukup',
+    'lmyan': 'lumayan', 'lumyn': 'lumayan',
+    'kcp': 'kacamata', 'kcm': 'kacamata',
+    'solus': 'solusi', 'slsi': 'solusi',
+    'sm': 'sama',
+
+    // ── English: Common Whisper mishears ──
+    'gonna': 'going to', 'wanna': 'want to', 'gotta': 'got to',
+    'lemme': 'let me', 'gimme': 'give me', 'kinda': 'kind of',
+    'sorta': 'sort of', 'outta': 'out of', 'dunno': "don't know",
+    'shoulda': 'should have', 'coulda': 'could have', 'woulda': 'would have',
+    'musta': 'must have', 'mighta': 'might have',
+    'ain\'t': 'is not', 'y\'all': 'you all',
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Dictionary Management
+  // ═══════════════════════════════════════════════════════════════
+
   loadDictionary(entries: DictionaryEntry[]): void {
     this.dictionary.clear();
     for (const entry of entries) {
-      this.dictionary.set(entry.phrase.toLowerCase(), entry.replacement.toLowerCase());
+      this.dictionary.set(entry.phrase.toLowerCase(), entry.replacement);
     }
     this.logger.info('Dictionary loaded', { entries: this.dictionary.size });
   }
 
-  /**
-   * Process text with fuzzy matching
-   */
+  // ═══════════════════════════════════════════════════════════════
+  //  Main Processing Pipeline
+  // ═══════════════════════════════════════════════════════════════
+
   process(text: string): FuzzyMatchResult {
-    const words = text.split(/\s+/);
+    if (!text?.trim()) {
+      return { original: text, corrected: text, confidence: 1, changes: [] };
+    }
+
+    const words = text.split(/(\s+)/); // Preserve whitespace
     const changes: FuzzyMatchResult['changes'] = [];
     const correctedWords: string[] = [];
 
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
-      const lowerWord = word.toLowerCase();
-      
-      // 1. Check exact dictionary match
-      if (this.dictionary.has(lowerWord)) {
-        const replacement = this.dictionary.get(lowerWord)!;
-        correctedWords.push(this.preserveCase(word, replacement));
-        changes.push({
-          position: i,
-          from: word,
-          to: replacement,
-          confidence: 1.0,
-        });
+
+      // Skip whitespace tokens
+      if (/^\s+$/.test(word)) {
+        correctedWords.push(word);
         continue;
       }
 
-      // 2. Check common errors
-      if (this.commonErrors.has(lowerWord)) {
-        const correction = this.commonErrors.get(lowerWord)!;
-        correctedWords.push(this.preserveCase(word, correction));
-        changes.push({
-          position: i,
-          from: word,
-          to: correction,
-          confidence: 0.95,
-        });
+      const cleanWord = this.stripPunctuation(word);
+      const lowerClean = cleanWord.toLowerCase();
+
+      // Skip very short words (single chars, numbers, etc.)
+      if (cleanWord.length <= 1) {
+        correctedWords.push(word);
         continue;
       }
 
-      // 3. Fuzzy match against dictionary
-      const dictMatch = this.findBestMatch(lowerWord, Array.from(this.dictionary.keys()));
-      if (dictMatch && dictMatch.distance <= this.maxDistance) {
-        const replacement = this.dictionary.get(dictMatch.word)!;
-        correctedWords.push(this.preserveCase(word, replacement));
+      let replacement: string | null = null;
+      let confidence = 0;
+      let reason: 'dictionary' | 'common_error' | 'fuzzy' = 'dictionary';
+
+      // ── Priority 1: Exact dictionary match ──
+      if (this.dictionary.has(lowerClean)) {
+        replacement = this.dictionary.get(lowerClean)!;
+        confidence = 1.0;
+        reason = 'dictionary';
+      }
+
+      // ── Priority 2: Exact common error match ──
+      if (!replacement && this.COMMON_ERRORS[lowerClean]) {
+        replacement = this.COMMON_ERRORS[lowerClean];
+        confidence = 0.95;
+        reason = 'common_error';
+      }
+
+      // ── Priority 3: Fuzzy dictionary match ──
+      if (!replacement && this.dictionary.size > 0) {
+        const dictMatch = this.findBestMatch(lowerClean, Array.from(this.dictionary.keys()));
+        if (dictMatch && dictMatch.distance <= this.maxDistance) {
+          const similarity = 1 - (dictMatch.distance / Math.max(cleanWord.length, dictMatch.word.length));
+          if (similarity >= this.minConfidenceThreshold) {
+            replacement = this.dictionary.get(dictMatch.word)!;
+            confidence = similarity;
+            reason = 'fuzzy';
+          }
+        }
+      }
+
+      // ── Priority 4: Fuzzy common error match ──
+      if (!replacement) {
+        const errorKeys = Object.keys(this.COMMON_ERRORS);
+        const errorMatch = this.findBestMatch(lowerClean, errorKeys);
+        if (errorMatch && errorMatch.distance <= this.maxDistance) {
+          const similarity = 1 - (errorMatch.distance / Math.max(cleanWord.length, errorMatch.word.length));
+          if (similarity >= this.minConfidenceThreshold) {
+            replacement = this.COMMON_ERRORS[errorMatch.word];
+            confidence = similarity * 0.9; // Slightly lower confidence for fuzzy common errors
+            reason = 'fuzzy';
+          }
+        }
+      }
+
+      // ── Apply or keep original ──
+      if (replacement && replacement.toLowerCase() !== lowerClean) {
+        const finalReplacement = this.preserveCase(word, replacement);
+        correctedWords.push(finalReplacement);
         changes.push({
           position: i,
           from: word,
-          to: replacement,
-          confidence: 1 - (dictMatch.distance / Math.max(word.length, dictMatch.word.length)),
+          to: finalReplacement,
+          confidence: Math.round(confidence * 100) / 100,
+          reason,
         });
-        continue;
+      } else {
+        correctedWords.push(word);
       }
-
-      // 4. Fuzzy match against common errors
-      const errorMatch = this.findBestMatch(lowerWord, Array.from(this.commonErrors.keys()));
-      if (errorMatch && errorMatch.distance <= this.maxDistance) {
-        const correction = this.commonErrors.get(errorMatch.word)!;
-        correctedWords.push(this.preserveCase(word, correction));
-        changes.push({
-          position: i,
-          from: word,
-          to: correction,
-          confidence: 1 - (errorMatch.distance / Math.max(word.length, errorMatch.word.length)),
-        });
-        continue;
-      }
-
-      // No match found, keep original
-      correctedWords.push(word);
     }
 
-    const corrected = correctedWords.join(' ');
+    const corrected = correctedWords.join('');
     const overallConfidence = changes.length > 0
       ? changes.reduce((sum, c) => sum + c.confidence, 0) / changes.length
       : 1.0;
 
+    this.logger.info('Fuzzy matching complete', {
+      original: text.length,
+      corrected: corrected.length,
+      changes: changes.length,
+      overallConfidence: overallConfidence.toFixed(2),
+    });
+
     return {
       original: text,
       corrected,
-      confidence: overallConfidence,
+      confidence: Math.round(overallConfidence * 100) / 100,
       changes,
     };
   }
 
-  /**
-   * Find best match using Levenshtein distance
-   */
+  // ═══════════════════════════════════════════════════════════════
+  //  Levenshtein Distance
+  // ═══════════════════════════════════════════════════════════════
+
   private findBestMatch(word: string, candidates: string[]): { word: string; distance: number } | null {
     let bestMatch: { word: string; distance: number } | null = null;
     let bestDistance = Infinity;
@@ -335,11 +265,10 @@ export class FuzzyMatcher {
     const maxLen = word.length + this.maxDistance;
 
     for (const candidate of candidates) {
-      // Skip if length difference is too large
       if (candidate.length < minLen || candidate.length > maxLen) continue;
 
       const distance = this.levenshteinDistance(word, candidate);
-      
+
       if (distance < bestDistance && distance <= this.maxDistance) {
         bestDistance = distance;
         bestMatch = { word: candidate, distance };
@@ -349,19 +278,15 @@ export class FuzzyMatcher {
     return bestMatch;
   }
 
-  /**
-   * Calculate Levenshtein distance between two strings
-   */
   private levenshteinDistance(a: string, b: string): number {
     const m = a.length;
     const n = b.length;
 
-    // Optimize for small strings
     if (m === 0) return n;
     if (n === 0) return m;
     if (m === 1 && n === 1) return a[0] === b[0] ? 0 : 1;
 
-    // Use single array for space optimization
+    // Optimized: single array for space efficiency
     let prev = new Array(n + 1);
     let curr = new Array(n + 1);
 
@@ -383,26 +308,45 @@ export class FuzzyMatcher {
     return prev[n];
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  Utility Functions
+  // ═══════════════════════════════════════════════════════════════
+
   /**
-   * Preserve the original case pattern
+   * Strip surrounding punctuation from a word for matching.
+   * Preserves the punctuation for reattachment.
    */
-  private preserveCase(original: string, replacement: string): string {
-    if (original === original.toUpperCase()) {
-      return replacement.toUpperCase();
-    }
-    if (original[0] === original[0].toUpperCase()) {
-      return replacement[0].toUpperCase() + replacement.slice(1);
-    }
-    return replacement;
+  private stripPunctuation(word: string): string {
+    return word.replace(/^[.,!?;:'"()\[\]{}]+|[.,!?;:'"()\[\]{}]+$/g, '');
   }
 
   /**
-   * Get statistics about corrections
+   * Preserve the original case pattern when replacing.
    */
+  private preserveCase(original: string, replacement: string): string {
+    if (!original || !replacement) return replacement;
+
+    // All uppercase
+    if (original === original.toUpperCase() && original.length > 1) {
+      return replacement.toUpperCase();
+    }
+
+    // First letter capitalized
+    if (original[0] === original[0].toUpperCase()) {
+      return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+    }
+
+    return replacement;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Public API
+  // ═══════════════════════════════════════════════════════════════
+
   getStats(): { dictionarySize: number; commonErrorsSize: number } {
     return {
       dictionarySize: this.dictionary.size,
-      commonErrorsSize: this.commonErrors.size,
+      commonErrorsSize: Object.keys(this.COMMON_ERRORS).length,
     };
   }
 }

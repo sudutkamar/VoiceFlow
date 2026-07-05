@@ -75,13 +75,20 @@ export class CudaDownloader {
   }
 
   /**
-   * Check if CUDA DLLs are already downloaded
+   * Check if CUDA DLLs are already downloaded (userData/cuda/) or bundled (whisper/).
    */
   areCudaDllsPresent(): boolean {
     try {
+      // Check user data folder first (downloaded or copied there)
       for (const dll of CUDA_DLLS) {
         const dllPath = path.join(this.cudaPath, dll);
-        if (!fs.existsSync(dllPath)) return false;
+        if (!fs.existsSync(dllPath)) {
+          // Also check bundled whisper directory
+          const whisperDir = this.getResourcesWhisperDir();
+          if (!whisperDir) return false;
+          const bundledPath = path.join(whisperDir, dll);
+          if (!fs.existsSync(bundledPath)) return false;
+        }
       }
       return true;
     } catch {
@@ -127,7 +134,7 @@ export class CudaDownloader {
     try {
       const whisperDir = app.isPackaged
         ? path.join(process.resourcesPath, 'whisper')
-        : path.join(__dirname, '..', '..', 'resources-whisper-clean');
+        : path.join(__dirname, '..', '..', 'resources', 'whisper');
       
       if (fs.existsSync(whisperDir)) return whisperDir;
       return null;

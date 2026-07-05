@@ -5,9 +5,9 @@ import { VoiceFlowDatabase as Database } from './modules/database';
 import { Logger } from './modules/logger';
 import { HotkeyManager } from './modules/hotkeyManager';
 import { CudaDownloader } from './modules/cudaDownloader';
-import { setupDictationIPC } from './ipc/dictation.ipc';
+import { setupDictationIPC, getTranscriberInstance } from './ipc/dictation.ipc';
 import { setupSettingsIPC } from './ipc/settings.ipc';
-import { setupModelIPC } from './ipc/model.ipc';
+import { setupModelIPC, setTranscriberForModelSync } from './ipc/model.ipc';
 import { setupSnippetIPC } from './ipc/snippet.ipc';
 
 // Fix GPU cache errors on Windows - set cache directory to app's own folder
@@ -326,6 +326,14 @@ function setupIPC(): void {
   }).catch(err => logger.warn('CUDA check failed', err));
 
   setupDictationIPC(mainWindow, database, logger, hotkeyManager, hideAllForPaste, showAfterPaste);
+  
+  // Wire transcriber BEFORE model IPC so path sync works immediately
+  const dicTranscriber = getTranscriberInstance();
+  if (dicTranscriber) {
+    setTranscriberForModelSync(dicTranscriber);
+    logger.info('Transcriber synced with ModelDownloader');
+  }
+  
   setupSettingsIPC(mainWindow, database, logger, hotkeyManager);
   setupModelIPC(mainWindow, database, logger);
   setupSnippetIPC(mainWindow, database, logger);
@@ -394,7 +402,7 @@ function setupIPC(): void {
       const status = await cudaDownloader.checkStatus();
       const whisperDir = app.isPackaged
         ? path.join(process.resourcesPath, 'whisper')
-        : path.join(__dirname, '..', 'resources-whisper-clean');
+        : path.join(__dirname, '..', 'resources', 'whisper');
       return {
         hasGpu: status.hasNvidiaGpu,
         cudaDllsPresent: status.cudaDllsPresent,

@@ -19,6 +19,13 @@ let isProcessing = false;
 let lastTranscript = '';
 let lastCleanedText = '';
 
+/**
+ * Expose transcriber instance so model.ipc can sync path changes.
+ */
+export function getTranscriberInstance(): Transcriber | null {
+  return transcriber || null;
+}
+
 export function setupDictationIPC(
   mainWindow: BrowserWindow,
   database: Database,
@@ -33,6 +40,13 @@ export function setupDictationIPC(
   if (hotkeyManager) {
     transcriber.setSendToAll((channel: string, ...args: any[]) => hotkeyManager.sendToAll(channel, ...args));
   }
+
+  // Sync Transcriber path with any custom models path from database
+  const savedModelsPath = database.getSetting('custom_models_path');
+  if (savedModelsPath) {
+    transcriber.updateModelsPath(savedModelsPath);
+  }
+
   textCleaner = new TextCleaner(logger);
   pasteEngine = new PasteEngine(mainWindow, logger, hideAllForPaste, showAfterPaste);
 
@@ -231,12 +245,21 @@ export function setupDictationIPC(
   });
 
   function getBestAvailableModel(preferredModel: string): string {
-    // Use same path logic as Transcriber/ModelDownloader for consistency
-    const modelsDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'whisper', 'models')
-      : path.join(__dirname, '..', '..', 'resources-whisper-clean', 'models');
+    // Use Transcriber's models path (which is synced with ModelDownloader)
+    const modelsDir = transcriber.getModelsPathValue();
 
-    const accuracyOrder = [preferredModel, 'ggml-large-v3-turbo-q5_0.bin', 'ggml-base-q5_1.bin', 'ggml-base.bin'];
+    // Check preferred model first, then fallback to known models
+    const accuracyOrder = [
+      preferredModel,
+      'ggml-base-q5_1.bin',
+      'ggml-base.bin',
+      'ggml-tiny.bin',
+      'ggml-small.bin',
+      'ggml-medium.bin',
+      'ggml-large-v3-turbo-q5_0.bin',
+      'ggml-large-v3-turbo.bin',
+      'ggml-large-v3.bin',
+    ];
     for (const model of [...new Set(accuracyOrder)]) {
       if (fs.existsSync(path.join(modelsDir, model))) return model;
     }

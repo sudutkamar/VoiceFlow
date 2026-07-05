@@ -17,17 +17,16 @@ export class AudioConverter {
     try {
       const ffmpegStatic = require('ffmpeg-static');
       if (ffmpegStatic && typeof ffmpegStatic === 'string') {
+        // In packaged ASAR, the path points inside asar which can't be spawned.
+        // Electron's asarUnpack extracts to app.asar.unpacked/ — fix the path.
+        const unpacked = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
+        if (fs.existsSync(unpacked)) return unpacked;
         return ffmpegStatic;
       }
     } catch {}
 
-    try {
-      const ffmpegStatic = require('ffmpeg-static');
-      return ffmpegStatic as string;
-    } catch {
-      this.logger.warn('ffmpeg-static not found, trying system ffmpeg');
-      return 'ffmpeg';
-    }
+    this.logger.warn('ffmpeg-static not found, trying system ffmpeg');
+    return 'ffmpeg';
   }
 
   async convertToWav(inputPath: string): Promise<{ success: boolean; outputPath?: string; error?: string }> {

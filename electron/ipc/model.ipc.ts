@@ -2,8 +2,17 @@ import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { VoiceFlowDatabase as Database } from '../modules/database';
 import { Logger } from '../modules/logger';
 import { ModelDownloader, AVAILABLE_MODELS } from '../modules/modelDownloader';
+import { Transcriber } from '../modules/transcriber';
 
 let modelDownloader: ModelDownloader;
+let transcriberRef: Transcriber | null = null;
+
+/**
+ * Set transcriber reference so models path changes are synced.
+ */
+export function setTranscriberForModelSync(transcriber: Transcriber | null): void {
+  transcriberRef = transcriber;
+}
 
 export function setupModelIPC(mainWindow: BrowserWindow, database: Database, logger: Logger): void {
   const savedSettings = database.getAllSettings();
@@ -12,17 +21,18 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
   modelDownloader = new ModelDownloader(logger, savedModelsPath);
   modelDownloader.setMainWindow(mainWindow);
 
+  // Sync Transcriber path with ModelDownloader's initial path
+  if (transcriberRef) {
+    transcriberRef.updateModelsPath(modelDownloader.getModelsPathValue());
+  }
+
   ipcMain.handle('get-available-models', async () => {
-    return AVAILABLE_MODELS.map(model => {
-      const downloaded = modelDownloader.isModelDownloaded(model.name);
-      const fileSize = modelDownloader.getModelFileSize(model.name);
-      return {
-        ...model,
-        downloaded,
-        fileSize,
-        isValid: downloaded,
-      };
-    });
+    return modelDownloader.getAvailableModels();
+  });
+
+  ipcMain.handle('scan-models-folder', async () => {
+    // Force re-scan by calling getAvailableModels which re-reads the folder
+    return modelDownloader.getAvailableModels();
   });
 
   ipcMain.handle('get-downloaded-models', async () => {
@@ -61,6 +71,10 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     return modelDownloader.getModelsPathValue();
   });
 
+  ipcMain.handle('has-any-model', async () => {
+    return modelDownloader.getDownloadedModels().length > 0;
+  });
+
   ipcMain.handle('get-custom-models-path', async () => {
     return modelDownloader.getCustomModelsPath();
   });
@@ -82,6 +96,11 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     if (setResult.success) {
       database.updateSetting('custom_models_path', selectedPath);
       logger.info(`Models path saved to settings: ${selectedPath}`);
+      // Sync Transcriber path
+      if (transcriberRef) {
+        transcriberRef.updateModelsPath(selectedPath);
+        logger.info(`Transcriber path synced to: ${selectedPath}`);
+      }
     }
     
     return { success: setResult.success, path: selectedPath, error: setResult.error };
@@ -99,6 +118,10 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
   ipcMain.handle('reset-models-path', async () => {
     modelDownloader.setCustomModelsPath('');
     database.updateSetting('custom_models_path', '');
+    // Sync Transcriber path back to default
+    if (transcriberRef) {
+      transcriberRef.updateModelsPath(modelDownloader.getModelsPathValue());
+    }
     return { success: true, path: modelDownloader.getModelsPathValue() };
   });
 }

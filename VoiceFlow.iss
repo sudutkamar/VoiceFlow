@@ -6,7 +6,7 @@ AppPublisher=SudutKamar
 AppPublisherURL=https://github.com/sudutkamar/VoiceFlow
 DefaultDirName={autopf}\VoiceFlow
 DefaultGroupName=VoiceFlow
-OutputDir=C:\Users\cgnscr\Documents\Dev\Code\VoiceFlow\release-assets
+OutputDir=C:\Users\cgnscr\Documents\Dev\Code\VoiceFlow\release
 OutputBaseFilename=VoiceFlow-Setup
 Compression=lzma2
 SolidCompression=yes
@@ -23,7 +23,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "Start with Windows"; GroupDescription: "Startup:"
 
 [Files]
-Source: "C:\Users\cgnscr\Documents\Dev\Code\VoiceFlow\release\VoiceFlow\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\cgnscr\Documents\Dev\Code\VoiceFlow\release\win-unpacked\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\VoiceFlow"; Filename: "{app}\VoiceFlow.exe"

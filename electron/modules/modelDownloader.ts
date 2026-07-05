@@ -12,6 +12,10 @@ export interface ModelInfo {
   sizeBytes: number;
   url: string;
   description: string;
+  isKnown: boolean; // true if in AVAILABLE_MODELS, false if custom/discovered
+  downloaded?: boolean;
+  fileSize?: number;
+  isValid?: boolean;
 }
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
@@ -21,6 +25,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 75000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
     description: 'Tercepat, akurasi rendah',
+    isKnown: true,
   },
   {
     name: 'ggml-base.bin',
@@ -28,6 +33,23 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 142000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
     description: 'Seimbang untuk daily use',
+    isKnown: true,
+  },
+  {
+    name: 'ggml-base-q5_1.bin',
+    size: '57 MB',
+    sizeBytes: 57000000,
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin',
+    description: 'Base yang lebih kecil & cepat (quantized)',
+    isKnown: true,
+  },
+  {
+    name: 'ggml-large-v3-turbo-q5_0.bin',
+    size: '548 MB',
+    sizeBytes: 548000000,
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin',
+    description: 'Large v3 Turbo yang lebih kecil (quantized)',
+    isKnown: true,
   },
   {
     name: 'ggml-small.bin',
@@ -35,6 +57,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 466000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
     description: 'Lebih akurat, cocok untuk bahasa campuran',
+    isKnown: true,
   },
   {
     name: 'ggml-medium.bin',
@@ -42,6 +65,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 1500000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
     description: 'Sangat akurat untuk semua bahasa',
+    isKnown: true,
   },
   {
     name: 'ggml-large-v3-turbo.bin',
@@ -49,6 +73,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 1500000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
     description: '⭐ Akurasi tinggi + cepat (recommended)',
+    isKnown: true,
   },
   {
     name: 'ggml-large-v3.bin',
@@ -56,6 +81,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     sizeBytes: 3100000000,
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
     description: 'Akurasi tertinggi, butuh RAM besar',
+    isKnown: true,
   },
 ];
 
@@ -94,11 +120,11 @@ export class ModelDownloader {
   }
 
   private getModelsPath(): string {
-    // Always use resources-whisper-clean/models (same path for dev & production)
     if (app.isPackaged) {
       return path.join(process.resourcesPath, 'whisper', 'models');
     }
-    return path.join(__dirname, '..', '..', 'resources-whisper-clean', 'models');
+    // Use same path structure as production: resources/whisper/models
+    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
   }
 
   private cleanupInvalidFiles(): void {
@@ -161,8 +187,74 @@ export class ModelDownloader {
     }
   }
 
+  /**
+   * Scan the models folder for any .bin files, including ones not in AVAILABLE_MODELS.
+   * Returns all .bin files found as custom ModelInfo entries.
+   */
+  scanModelsFolder(): ModelInfo[] {
+    try {
+      if (!fs.existsSync(this.modelsPath)) {
+        return [];
+      }
+      const files = fs.readdirSync(this.modelsPath)
+        .filter(f => f.endsWith('.bin') && !f.endsWith('.tmp'))
+        .filter(f => this.isValidModelFile(f));
+
+      const knownNames = new Set(AVAILABLE_MODELS.map(m => m.name));
+      const customModels: ModelInfo[] = [];
+
+      for (const file of files) {
+        if (!knownNames.has(file)) {
+          const filePath = path.join(this.modelsPath, file);
+          let sizeBytes = 0;
+          try { sizeBytes = fs.statSync(filePath).size; } catch {}
+          customModels.push({
+            name: file,
+            size: this.formatBytes(sizeBytes),
+            sizeBytes,
+            url: '',
+            description: '📁 Custom model — terdeteksi di folder',
+            isKnown: false,
+          });
+        }
+      }
+
+      return customModels;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get all available models (predefined + custom discovered from folder).
+   */
   getAvailableModels(): ModelInfo[] {
-    return AVAILABLE_MODELS;
+    const known = AVAILABLE_MODELS.map(m => ({ ...m }));
+    const custom = this.scanModelsFolder();
+    
+    // Merge: known models take precedence, add custom ones not in known list
+    const knownNames = new Set(known.map(m => m.name));
+    for (const c of custom) {
+      if (!knownNames.has(c.name)) {
+        known.push(c);
+      }
+    }
+
+    // For each model, set downloaded/isValid based on actual filesystem check
+    return known.map(model => ({
+      ...model,
+      downloaded: this.isModelDownloaded(model.name),
+      fileSize: this.getModelFileSize(model.name),
+      isValid: this.isValidModelFile(model.name),
+    }));
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   getDownloadedModels(): string[] {

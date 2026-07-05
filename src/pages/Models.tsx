@@ -12,6 +12,7 @@ interface ModelInfo {
   sizeBytes: number;
   url: string;
   description: string;
+  isKnown: boolean;
   downloaded: boolean;
   fileSize?: number;
   isValid?: boolean;
@@ -48,6 +49,27 @@ function Models({ onSuccess, onError }: ModelsProps) {
       if (showLoading) setLoading(false);
     }
   }, []);
+
+  const handleScanFolder = async () => {
+    try {
+      setLoading(true);
+      notif.info('🔍 Scanning folder for models...');
+      const available = await window.electronAPI.scanModelsFolder();
+      setModels(available);
+      
+      const foundCustom = available.filter(m => !m.isKnown && m.isValid);
+      if (foundCustom.length > 0) {
+        notif.success(`Ditemukan ${foundCustom.length} model baru!`);
+      } else {
+        notif.info('Tidak ada model baru ditemukan.');
+      }
+    } catch (error) {
+      console.error('Failed to scan models folder:', error);
+      notif.error('Gagal scan folder models');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadSettings = useCallback(async () => {
     try {
@@ -265,16 +287,19 @@ function Models({ onSuccess, onError }: ModelsProps) {
 
   const getIcon = (name: string) => {
     if (name.includes('tiny')) return '⚡';
+    if (name.includes('base-q5_1')) return '⚡';
     if (name.includes('base')) return '⚖️';
     if (name.includes('small')) return '🎯';
     if (name.includes('medium')) return '💎';
     if (name.includes('large-v3-turbo')) return '🏆';
+    if (name.includes('large-v3')) return '👑';
     if (name.includes('large')) return '👑';
     return '🧠';
   };
 
   const getLabel = (name: string) => {
     if (name.includes('tiny')) return 'Tiny';
+    if (name.includes('base-q5_1')) return 'Base Q5_1';
     if (name.includes('base')) return 'Base';
     if (name.includes('small')) return 'Small';
     if (name.includes('medium')) return 'Medium';
@@ -286,20 +311,24 @@ function Models({ onSuccess, onError }: ModelsProps) {
 
   const getSpeed = (name: string) => {
     if (name.includes('tiny')) return '~1s';
+    if (name.includes('base-q5_1')) return '~1-2s';
     if (name.includes('base')) return '~2-3s';
     if (name.includes('small')) return '~5-7s';
     if (name.includes('medium')) return '~10-15s';
     if (name.includes('large-v3-turbo')) return '~8-12s';
+    if (name.includes('large-v3')) return '~15-25s';
     if (name.includes('large')) return '~15-25s';
     return '';
   };
 
   const getAccuracy = (name: string) => {
     if (name.includes('tiny')) return 'Low';
+    if (name.includes('base-q5_1')) return 'Good';
     if (name.includes('base')) return 'Good';
     if (name.includes('small')) return 'Better';
     if (name.includes('medium')) return 'Great';
     if (name.includes('large-v3-turbo')) return 'Excellent';
+    if (name.includes('large-v3')) return 'Best';
     if (name.includes('large')) return 'Best';
     return '';
   };
@@ -307,6 +336,9 @@ function Models({ onSuccess, onError }: ModelsProps) {
   const isModelCorrupt = (model: ModelInfo): boolean => {
     return model.fileSize !== undefined && model.fileSize > 0 && !model.isValid;
   };
+
+  // Custom models that aren't in AVAILABLE_MODELS but exist in folder
+  const customModels = models.filter(m => !m.isKnown && m.isValid);
 
   if (loading) {
     return (
@@ -344,6 +376,9 @@ function Models({ onSuccess, onError }: ModelsProps) {
             </button>
             <button className="btn btn-secondary btn-sm" onClick={handleResetPath}>
               Reset
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={handleScanFolder} disabled={loading}>
+              🔍 Scan Folder
             </button>
           </div>
         </div>
@@ -415,6 +450,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
                   <div className="card-title">
                     {getLabel(model.name)}
                     {isActive && <span className="badge">Active</span>}
+                    {!model.isKnown && model.downloaded && <span className="badge badge-custom">Custom</span>}
                     {isCorrupt && <span className="badge badge-warning">Corrupt</span>}
                   </div>
                   <div className="card-desc">{model.description}</div>

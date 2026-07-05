@@ -42,7 +42,8 @@ export interface ElectronAPI {
   updateSnippet: (id: string, trigger: string, output: string) => Promise<{ success: boolean; error?: string }>;
   
   // Models
-  getAvailableModels: () => Promise<string[]>;
+  getAvailableModels: () => Promise<any[]>;
+  scanModelsFolder: () => Promise<any[]>;
   downloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
   forceDownloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
   pauseDownload: () => Promise<{ success: boolean; error?: string }>;
@@ -56,6 +57,7 @@ export interface ElectronAPI {
   getCustomModelsPath: () => Promise<string | null>;
   chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
+  hasAnyModel: () => Promise<boolean>;
   
   // Hotkey
   updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
@@ -110,6 +112,7 @@ const api: ElectronAPI = {
   setMiniWindowFocusable: (focusable: boolean) => ipcRenderer.invoke('set-mini-window-focusable', focusable),
   miniWindowReady: () => ipcRenderer.send('mini-window-ready'),
   
+  hasAnyModel: () => ipcRenderer.invoke('has-any-model'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   updateSetting: (key, value) => ipcRenderer.invoke('update-setting', key, value),
   getHistory: (limit) => ipcRenderer.invoke('get-history', limit),
@@ -131,6 +134,7 @@ const api: ElectronAPI = {
   updateSnippet: (id, trigger, output) => ipcRenderer.invoke('update-snippet', id, trigger, output),
   
   getAvailableModels: () => ipcRenderer.invoke('get-available-models'),
+  scanModelsFolder: () => ipcRenderer.invoke('scan-models-folder'),
   downloadModel: (model) => ipcRenderer.invoke('download-model', model),
   forceDownloadModel: (model) => ipcRenderer.invoke('force-download-model', model),
   pauseDownload: () => ipcRenderer.invoke('pause-download'),

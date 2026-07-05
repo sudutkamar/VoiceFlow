@@ -34,18 +34,37 @@ files:
   - "!node_modules/rxjs/**"
   - "!node_modules/@babel/**"
 extraResources:
-  - from: resources-whisper-clean
+  # Whisper engine (CPU + CUDA DLLs, no models)
+  - from: resources-whisper-slim
     to: whisper
+  # App icons
   - from: resources/icons
     to: icons
 win:
   executableName: VoiceFlow
+  icon: resources/icons/icon.ico
   target:
     - nsis
+  publisherName: VoiceFlow
 nsis:
   artifactName: "VoiceFlow Setup.${ext}"
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  differentialPackage: false
+  installerIcon: resources/icons/icon.ico
+  uninstallerIcon: resources/icons/icon.ico
+  installerHeaderIcon: resources/icons/icon.ico
+  shortcutName: VoiceFlow
+  uninstallDisplayName: VoiceFlow
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  warningsAsErrors: false
+  allowElevation: true
+  perMachine: false
 asar: true
+asarUnpack:
+  - "node_modules/better-sqlite3/**"
+  - "node_modules/uiohook-napi/**"
+  - "node_modules/ffmpeg-static/**"

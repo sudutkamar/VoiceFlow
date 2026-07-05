@@ -43,6 +43,7 @@ declare global {
       copyText: (text: string) => Promise<{ success: boolean; error?: string }>; 
       pasteText: (text: string) => Promise<{ success: boolean; error?: string }>;
       getAvailableModels: () => Promise<any[]>;
+      scanModelsFolder: () => Promise<any[]>;
       downloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
       forceDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
       pauseDownload: () => Promise<{ success: boolean; error?: string }>;
@@ -54,6 +55,7 @@ declare global {
       getCustomModelsPath: () => Promise<string | null>;
       chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
       resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
+      hasAnyModel: () => Promise<boolean>;
       getDictionary: () => Promise<any[]>;
       addDictionaryEntry: (phrase: string, replacement: string) => Promise<{ success: boolean }>;
       deleteDictionaryEntry: (id: string) => Promise<void>;
@@ -877,8 +879,26 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
   const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
 
+  const [hasModel, setHasModel] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(true));
+  }, []);
+
   return (
     <div className="page home-page">
+      {hasModel === false && (
+        <div className="model-warning-banner">
+          <span>⚠️</span>
+          <div className="model-warning-text">
+            <strong>Belum ada model AI!</strong>
+            <p>Download model untuk mulai transcribe.</p>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => window.electronAPI.showMain('models')}>
+            Download Model
+          </button>
+        </div>
+      )}
       <div className="home-content">
         {/* Mic Button */}
         <div className={`mic-section ${state}`}>
