@@ -166,48 +166,6 @@ npm run dev
 
 ---
 
-## Struktur Project
-
-```
-VoiceFlow/
-├── electron/                    # Backend (Electron + TypeScript)
-│   ├── main.ts                 # Entry point
-│   ├── preload.ts              # IPC bridge (frontend ↔ backend)
-│   └── modules/
-│       ├── recorder.ts         # Audio recording dari mic
-│       ├── audioConverter.ts   # Konversi audio ke WAV 16kHz
-│       ├── audioPreprocessor.ts # Noise reduction & normalisasi
-│       ├── transcriber.ts      # Whisper transcription engine
-│       ├── textCleaner.ts      # Text processing & voice commands
-│       ├── pasteEngine.ts      # Auto-paste ke aplikasi aktif
-│       ├── hotkeyManager.ts    # Global hotkey & push-to-talk
-│       ├── modelDownloader.ts  # Download model dari HuggingFace
-│       ├── database.ts         # SQLite database (history)
-│       ├── fuzzyMatcher.ts     # Fuzzy matching untuk dictionary
-│       ├── confidenceScorer.ts # Confidence score hasil transkripsi
-│       └── logger.ts           # Logging system
-│
-├── src/                         # Frontend (React + TypeScript)
-│   ├── App.tsx                 # Main app + MiniBar component
-│   ├── pages/
-│   │   ├── Settings.tsx        # Settings, dictionary, snippets
-│   │   ├── Models.tsx          # Download & manage models
-│   │   ├── History.tsx         # History transkripsi
-│   │   └── Benchmark.tsx       # Model performance benchmark
-│   └── styles/
-│       └── app.css             # All styles including floating UI
-│
-├── resources/
-│   └── whisper/                # Whisper engine & models
-│
-├── data/                       # SQLite database (auto-created)
-├── logs/                       # Log files (auto-created)
-│
-├── download-whisper.bat        # Download whisper-cli.exe + DLLs
-├── download-model.bat          # Download default model
-└── build.bat                   # Build untuk distribusi
-```
-
 ---
 
 ## Troubleshooting
