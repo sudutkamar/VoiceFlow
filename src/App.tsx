@@ -537,27 +537,26 @@ function MiniBar() {
         onMouseEnter={() => { setBarHover(true); if (state === 'idle') setState('hover'); }}
         onMouseLeave={() => { setBarHover(false); if (stateRef.current === 'hover') setState('idle'); }}
       >
-        {/* Click to cycle language */}
+        {/* Language selector */}
         <div className="m-lang-wrap" ref={langRef}>
-          <div className="m-btn-tooltip">Language: {currentLang.s}</div>
+          <div className="m-tooltip-box">Ganti bahasa ({currentLang.l})</div>
           <button
             type="button"
             className="m-lang"
             onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); cycleLanguage(); }}
-            title={`Click to switch language. Current: ${currentLang.l}`}
           >
             <span className="m-lang-current">{currentLang.s}</span>
           </button>
         </div>
 
+        {/* Mic / Record */}
         <button
           className={`m-voice-btn ${state}`}
           onClick={toggle}
           disabled={state === 'processing'}
-          title={state === 'recording' ? 'Stop recording' : 'Start recording'}
         >
-          <div className="m-btn-tooltip m-speak-tooltip">
-            {state === 'recording' ? 'Stop' : <><span>Speak </span><strong>{hotkeyLabel}</strong></>}
+          <div className="m-tooltip-box m-tooltip-wide">
+            {state === 'recording' ? 'Stop recording' : state === 'processing' ? 'Memproses...' : `Mulai rekam (${hotkeyLabel})`}
           </div>
           {(state === 'idle' || state === 'hover') && (
             <svg className="m-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -586,13 +585,13 @@ function MiniBar() {
           )}
         </button>
 
+        {/* Cancel (during recording) */}
         {state === 'recording' && (
           <button
             className="m-orb-btn m-cancel-btn"
             onClick={cancelRec}
-            title="Cancel recording (Esc)"
           >
-            <div className="m-btn-tooltip">Cancel <strong>Esc</strong></div>
+            <div className="m-tooltip-box">Batalkan rekaman (Esc)</div>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
@@ -600,6 +599,7 @@ function MiniBar() {
           </button>
         )}
 
+        {/* Copy / Tools */}
         <button
           className={`m-orb-btn m-spark-btn ${text ? 'ready copy-mode' : ''}`}
           onClick={async () => {
@@ -614,9 +614,8 @@ function MiniBar() {
               window.electronAPI.showMain('settings');
             }
           }}
-          title={text ? 'Copy result' : 'Open Settings'}
         >
-          <div className="m-btn-tooltip">{text ? 'Copy' : 'Tools'}</div>
+          <div className="m-tooltip-box">{text ? 'Salin hasil' : 'Buka Settings'}</div>
           {text ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="11" height="11" rx="2"/>
@@ -633,6 +632,7 @@ function MiniBar() {
           )}
         </button>
 
+        {/* Paste / History */}
         <button
           className={`m-orb-btn m-note-btn ${text ? 'ready paste-mode' : ''}`}
           onClick={async () => {
@@ -643,9 +643,8 @@ function MiniBar() {
               window.electronAPI.showMain('history');
             }
           }}
-          title={text ? 'Paste result' : 'Open History'}
         >
-          <div className="m-btn-tooltip">{text ? 'Paste' : 'History'}</div>
+          <div className="m-tooltip-box">{text ? 'Tempel hasil' : 'Buka History'}</div>
           {text ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>

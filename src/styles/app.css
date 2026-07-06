@@ -3037,50 +3037,38 @@ body.mini-mode, html.mini-mode { background: transparent; }
   pointer-events: auto;
 }
 
-.m-btn-tooltip {
+.m-tooltip-box {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(4px);
   padding: 5px 10px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.88);
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s ease, transform 0.15s ease;
-  transform: translateX(-50%) translateY(4px);
   z-index: 100;
+  letter-spacing: 0.01em;
 }
 
-.m-lang-wrap:hover > .m-btn-tooltip,
-.m-voice-btn:hover > .m-btn-tooltip,
-.m-orb-btn:hover > .m-btn-tooltip {
+.m-tooltip-box.m-tooltip-wide {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.m-lang-wrap:hover > .m-tooltip-box,
+.m-voice-btn:hover > .m-tooltip-box,
+.m-orb-btn:hover > .m-tooltip-box {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
-}
-
-.m-speak-tooltip {
-  font-size: 14px;
-  font-weight: 650;
-  padding: 7px 13px;
-  border-radius: 999px;
-}
-
-.m-speak-tooltip span {
-  color: rgba(255, 255, 255, 0.92);
-  font-weight: 700;
-}
-
-.m-speak-tooltip strong {
-  color: #c084fc;
-  font-weight: 850;
 }
 
 .m-voice-btn,
