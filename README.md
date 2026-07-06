@@ -1,4 +1,4 @@
-# VoiceFlow v2.1.0
+# VoiceFlow v1.0.0.0
 
 **Voice-to-text lokal untuk Windows — 100% gratis, 100% privat, tanpa internet.**
 
