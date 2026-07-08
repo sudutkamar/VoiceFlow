@@ -91,6 +91,18 @@ function Models({ onSuccess, onError }: ModelsProps) {
     loadSettings();
     loadModelsPath();
 
+    // Re-sync download state on mount (survives tab switches)
+    (async () => {
+      try {
+        const state = await window.electronAPI.getDownloadProgress();
+        if (state.state === 'downloading' || state.state === 'paused') {
+          setProgress(state.progress);
+          setDownloadState(state.state as DownloadState);
+          if (state.modelName) setDownloading(state.modelName);
+        }
+      } catch {}
+    })();
+
     // Listen for download progress updates
     const unsub = window.electronAPI.onDownloadProgress((data) => {
       const { progress: prog, state, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
@@ -100,23 +112,18 @@ function Models({ onSuccess, onError }: ModelsProps) {
       setTotalBytes(tBytes);
 
       if (state === 'finalizing') {
-        // Download is finishing up, show 100%
         setProgress(100);
         setDownloadState('finalizing');
         return;
       }
 
       if (state === 'completed') {
-        // File is ready! Reset download state and refresh models
         const completedModel = downloadingRef.current;
         setDownloading(null);
         setDownloadState('idle');
         setProgress(100);
-        
-        // Refresh models list (file is guaranteed to be renamed at this point)
         loadModels(false);
         
-        // Auto-select the newly downloaded model
         if (completedModel) {
           window.electronAPI.updateSetting('model', completedModel).then(() => {
             setSelectedModel(completedModel);
@@ -134,7 +141,6 @@ function Models({ onSuccess, onError }: ModelsProps) {
         return;
       }
 
-      // Update state for downloading/paused
       setDownloadState(state as DownloadState);
     });
 

@@ -51,7 +51,7 @@ export interface ElectronAPI {
   cancelDownload: () => Promise<void>;
   runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;
   deleteModel: (model: string) => Promise<boolean>;
-  getDownloadProgress: () => Promise<{ progress: number; state: string }>;
+  getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null }>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   getModelsPath: () => Promise<string>;
   getCustomModelsPath: () => Promise<string | null>;
@@ -94,7 +94,7 @@ export interface ElectronAPI {
   onCancelRecording: (callback: () => void) => () => void;
   onNavigate: (callback: (page: string) => void) => () => void;
   onPartialTranscript: (callback: (text: string) => void) => () => void;
-  onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
+  onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number; modelName?: string | null }) => void) => () => void;
   onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
   onWpmUpdate: (callback: (wpm: number) => void) => () => void;
   onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;

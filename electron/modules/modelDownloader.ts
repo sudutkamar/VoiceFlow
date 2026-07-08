@@ -116,15 +116,54 @@ export class ModelDownloader {
       this.modelsPath = this.getModelsPath();
     }
 
+    // Migrate models from old resources path (production) to new userData path
+    if (app.isPackaged) {
+      this.migrateOldModels();
+    }
+
     this.cleanupInvalidFiles();
   }
 
-  private getModelsPath(): string {
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'whisper', 'models');
+  private migrateOldModels(): void {
+    try {
+      const oldPath = path.join(process.resourcesPath, 'whisper', 'models');
+      if (oldPath === this.modelsPath || !fs.existsSync(oldPath)) return;
+      
+      const files = fs.readdirSync(oldPath).filter(f => f.endsWith('.bin'));
+      if (files.length === 0) return;
+
+      if (!fs.existsSync(this.modelsPath)) {
+        fs.mkdirSync(this.modelsPath, { recursive: true });
+      }
+
+      let migrated = 0;
+      for (const file of files) {
+        const src = path.join(oldPath, file);
+        const dest = path.join(this.modelsPath, file);
+        if (!fs.existsSync(dest)) {
+          fs.copyFileSync(src, dest);
+          this.logger.info(`Migrated model: ${file} → ${this.modelsPath}`);
+          migrated++;
+        }
+      }
+      if (migrated > 0) {
+        this.logger.info(`Migrated ${migrated} models from old location to ${this.modelsPath}`);
+      }
+    } catch (err) {
+      this.logger.warn('Failed to migrate old models', err);
     }
-    // Use same path structure as production: resources/whisper/models
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+  }
+
+  private getModelsPath(): string {
+    // Use userData directory so models persist across reinstalls and are user-writable
+    const defaultPath = path.join(app.getPath('userData'), 'whisper', 'models');
+    if (!app.isPackaged) {
+      // In dev, still use project resources folder for convenience
+      return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+    }
+    const logger = this.logger;
+    logger.info(`Models path (userData): ${defaultPath}`);
+    return defaultPath;
   }
 
   private cleanupInvalidFiles(): void {
@@ -193,12 +232,18 @@ export class ModelDownloader {
    */
   scanModelsFolder(): ModelInfo[] {
     try {
+      this.logger.info(`Scanning models folder: ${this.modelsPath}`);
       if (!fs.existsSync(this.modelsPath)) {
+        this.logger.warn(`Models folder does not exist: ${this.modelsPath}`);
         return [];
       }
-      const files = fs.readdirSync(this.modelsPath)
+      const allFiles = fs.readdirSync(this.modelsPath);
+      this.logger.info(`Files in models folder: ${JSON.stringify(allFiles)}`);
+      const files = allFiles
         .filter(f => f.endsWith('.bin') && !f.endsWith('.tmp'))
         .filter(f => this.isValidModelFile(f));
+
+      this.logger.info(`Valid model files found: ${files.length} (${JSON.stringify(files)})`);
 
       const knownNames = new Set(AVAILABLE_MODELS.map(m => m.name));
       const customModels: ModelInfo[] = [];
@@ -220,7 +265,8 @@ export class ModelDownloader {
       }
 
       return customModels;
-    } catch {
+    } catch (err) {
+      this.logger.error('Failed to scan models folder', err);
       return [];
     }
   }
@@ -313,6 +359,10 @@ export class ModelDownloader {
     return this.downloadState;
   }
 
+  getCurrentModelName(): string | null {
+    return this.currentModelName;
+  }
+
   private updateTaskbarProgress(progress: number, mode: 'normal' | 'paused' | 'error' | 'none' = 'normal'): void {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
     
@@ -345,6 +395,7 @@ export class ModelDownloader {
       state,
       downloadedBytes: this.downloadedBytes,
       totalBytes: this.totalBytes,
+      modelName: this.currentModelName,
     });
     
     // Update taskbar

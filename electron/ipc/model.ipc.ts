@@ -60,6 +60,7 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     return {
       progress: modelDownloader.getDownloadProgress(),
       state: modelDownloader.getDownloadState(),
+      modelName: modelDownloader.getCurrentModelName(),
     };
   });
 

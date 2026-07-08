@@ -51,7 +51,7 @@ declare global {
       resumeDownload: () => Promise<{ success: boolean; error?: string }>;
       cancelDownload: () => Promise<void>;
       deleteModel: (modelName: string) => Promise<boolean>;
-      getDownloadProgress: () => Promise<{ progress: number; state: string }>;
+      getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null }>;
       getModelsPath: () => Promise<string>;
       getCustomModelsPath: () => Promise<string | null>;
       chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
@@ -70,10 +70,10 @@ declare global {
       exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
       searchHistory: (query: string) => Promise<any[]>;
       clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
-      getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string }>;
+      getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
       isAutoStart: () => Promise<boolean>;
       getVersion: () => Promise<string>;
-      onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
+      onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number; modelName?: string | null }) => void) => () => void;
       onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
       onWpmUpdate: (callback: (wpm: number) => void) => () => void;
       getDownloadedModels: () => Promise<string[]>;

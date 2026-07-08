@@ -21,8 +21,8 @@ const CUDA_DLLS = [
   'cudart64_12.dll',
 ];
 
-// GitHub release URL for CUDA addon
-const CUDA_DOWNLOAD_URL = 'https://github.com/sudutkamar/VoiceFlow/releases/download/cuda-addon-v2.0.0/VoiceFlow-CUDA-v2.0.0.7z';
+// GitHub release URL for CUDA addon (whisper-cuda.zip includes CUDA DLLs)
+const CUDA_DOWNLOAD_URL = 'https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cuda.zip';
 
 export interface CudaStatus {
   hasNvidiaGpu: boolean;
