@@ -57,6 +57,8 @@ VoiceFlow dirancang khusus untuk **pengguna Indonesia** dengan dukungan penuh ba
 
 Saat merekam, VoiceFlow menampilkan **floating toolbar** transparan di bagian bawah layar:
 
+![Floating UI Preview](resources/icons/preview/floating-ui.png)
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │  [ID]  [🔴  ~~~~~~~~~~~~ 0:23]  [✕]  [📋]  [📄]  │
