@@ -1,7 +1,5 @@
 # VoiceFlow v1.0.0
 
-![Floating UI Preview](resources/icons/preview/floating-ui.png)
-
 **Aplikasi Voice-to-Text lokal untuk Windows — 100% gratis, 100% privat, tanpa internet.**
 
 VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara real-time menggunakan AI (OpenAI Whisper) yang berjalan **sepenuhnya di komputer kamu**. Cocok untuk menulis dokumen, coding, content creation, dan kebutuhan mengetik lainnya tanpa harus menyentuh keyboard.
@@ -60,9 +58,8 @@ VoiceFlow dirancang khusus untuk **pengguna Indonesia** dengan dukungan penuh ba
 Saat merekam, VoiceFlow menampilkan **floating toolbar** transparan di bagian bawah layar:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  [ID]  [🔴  ~~~~~~~~~~~~ 0:23]  [✕]  [📋]  [📄]  │
-└─────────────────────────────────────────────────────┘
+![Floating UI Preview](resources/icons/preview/floating-ui.png)
+
 ```
 
 | Tombol | Fungsi |
