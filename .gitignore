@@ -50,7 +50,12 @@ nul
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-resources/whisper/models/
 
 # Downloaded models
 resources/whisper/models/
+
+# opencode AI config (local only, do not commit)
+.opencode/
+.opencode.json
+.opencode.jsonc
+AGENTS.md
