@@ -59,6 +59,13 @@ export interface ElectronAPI {
   resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
   hasAnyModel: () => Promise<boolean>;
   
+  // Adaptive Learning
+  learnCorrection: (original: string, corrected: string) => Promise<{ success: boolean; error?: string }>;
+  getLearnedCorrections: () => Promise<any[]>;
+  deleteLearnedCorrection: (id: string) => Promise<{ success: boolean }>;
+  clearLearnedCorrections: () => Promise<{ success: boolean }>;
+  getAdaptiveStats: () => Promise<{ total: number; totalFrequency: number; avgConfidence: number }>;
+
   // Hotkey
   updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
   
@@ -93,6 +100,7 @@ export interface ElectronAPI {
   onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
   onTargetAppChanged: (callback: (appName: string) => void) => () => void;
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
+  onThemeChange: (callback: (theme: string) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -149,6 +157,12 @@ const api: ElectronAPI = {
   chooseModelsFolder: () => ipcRenderer.invoke('choose-models-folder'),
   resetModelsPath: () => ipcRenderer.invoke('reset-models-path'),
   
+  learnCorrection: (original, corrected) => ipcRenderer.invoke('learn-correction', original, corrected),
+  getLearnedCorrections: () => ipcRenderer.invoke('get-learned-corrections'),
+  deleteLearnedCorrection: (id) => ipcRenderer.invoke('delete-learned-correction', id),
+  clearLearnedCorrections: () => ipcRenderer.invoke('clear-learned-corrections'),
+  getAdaptiveStats: () => ipcRenderer.invoke('get-adaptive-stats'),
+
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
   
   getAppState: () => ipcRenderer.invoke('get-app-state'),
@@ -239,6 +253,11 @@ const api: ElectronAPI = {
     const handler = (_: any, data: any) => callback(data);
     ipcRenderer.on('benchmark-progress', handler);
     return () => ipcRenderer.removeListener('benchmark-progress', handler);
+  },
+  onThemeChange: (callback) => {
+    const handler = (_: any, theme: string) => callback(theme);
+    ipcRenderer.on('theme-changed', handler);
+    return () => ipcRenderer.removeListener('theme-changed', handler);
   },
 };
 

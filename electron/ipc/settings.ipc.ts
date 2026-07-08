@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { VoiceFlowDatabase as Database } from '../modules/database';
 import { Logger } from '../modules/logger';
 import { HotkeyManager } from '../modules/hotkeyManager';
+import { getTranscriberInstance } from './dictation.ipc';
 
 export function setupSettingsIPC(
   mainWindow: BrowserWindow,
@@ -27,6 +28,25 @@ export function setupSettingsIPC(
       // Apply setting changes immediately
       if (key === 'push_to_talk' && hotkeyManager) {
         hotkeyManager.updatePushToTalk(value === 'true');
+      }
+      // Warm up transcriber when model changes
+      if (key === 'model') {
+        try {
+          const transcriber = getTranscriberInstance();
+          if (transcriber) transcriber.warmup(value);
+        } catch {}
+      }
+      // Broadcast theme change to all windows
+      if (key === 'theme') {
+        mainWindow.webContents.send('theme-changed', value);
+        // Also send to mini window if it exists
+        const { BrowserWindow } = require('electron');
+        const allWindows = BrowserWindow.getAllWindows();
+        for (const win of allWindows) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('theme-changed', value);
+          }
+        }
       }
       return { success: true };
     } catch (error) {

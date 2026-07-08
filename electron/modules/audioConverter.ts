@@ -3,14 +3,26 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { Logger } from './logger';
+import { AudioPreprocessor } from './audioPreprocessor';
 
 export class AudioConverter {
   private logger: Logger;
   private ffmpegPath: string;
 
+  private audioPreprocessor: AudioPreprocessor;
+
   constructor(logger: Logger) {
     this.logger = logger;
     this.ffmpegPath = this.getFfmpegPath();
+    this.audioPreprocessor = new AudioPreprocessor(logger);
+  }
+
+  /**
+   * Quick analysis — determine if audio needs preprocessing.
+   * Returns true if audio is clean enough to skip the full pipeline.
+   */
+  needsProcessing(audioBuffer: Buffer): { needed: boolean; reason: string } {
+    return this.audioPreprocessor.needsProcessing(audioBuffer);
   }
 
   private getFfmpegPath(): string {

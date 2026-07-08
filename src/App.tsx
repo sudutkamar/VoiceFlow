@@ -284,6 +284,13 @@ function MiniBar() {
       }),
       window.electronAPI.onTargetAppChanged((appName) => setTargetApp(appName)),
       window.electronAPI.onHotkeyRegistered?.((hotkey) => setSettings(prev => ({ ...prev, hotkey }))),
+      window.electronAPI.onThemeChange?.((theme) => {
+        if (theme === 'light') {
+          document.documentElement.classList.add('light-theme');
+        } else {
+          document.documentElement.classList.remove('light-theme');
+        }
+      }),
     ];
     window.electronAPI.getTargetApp().then(setTargetApp).catch(() => {});
 
@@ -310,7 +317,19 @@ function MiniBar() {
     };
   }, []);
 
-  const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
+  const loadSettings = async () => { 
+    try { 
+      const s = await window.electronAPI.getSettings(); 
+      setSettings(s); 
+      window.voiceflowSoundEnabled = s.sound_effects !== 'false'; 
+      // Apply theme to mini window
+      if (s.theme === 'light') {
+        document.documentElement.classList.add('light-theme');
+      } else {
+        document.documentElement.classList.remove('light-theme');
+      }
+    } catch {} 
+  };
 
   // No window resize on hover — CSS handles all visual transitions smoothly.
   // This prevents the glitch/flicker caused by Electron window bounds changing on hover.
@@ -367,33 +386,45 @@ function MiniBar() {
           ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
         }
         const avg = src.reduce((a, b) => a + b, 0) / POINTS;
-        const glow = Math.min(1, avg / 50);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 + glow * 0.5})`;
-        ctx.lineWidth = 2;
-        ctx.shadowColor = `rgba(185, 152, 255, ${0.3 + glow * 0.5})`;
-        ctx.shadowBlur = 6 + glow * 8;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        // Mirror wave
+        const glow = Math.min(1, avg / 40);
+        
+        // Main wave — bright blue with strong glow
         ctx.beginPath();
-        ctx.moveTo(0, mid + (src[0] / 100) * (mid - 1));
+        ctx.moveTo(0, mid - (src[0] / 100) * (mid - 2));
         for (let i = 1; i < POINTS; i++) {
           const x0 = (i - 1) * step, x1 = i * step;
-          const y0 = mid + (src[i - 1] / 100) * (mid - 1);
-          const y1 = mid + (src[i] / 100) * (mid - 1);
+          const y0 = mid - (src[i - 1] / 100) * (mid - 2);
+          const y1 = mid - (src[i] / 100) * (mid - 2);
           ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
         }
-        ctx.strokeStyle = `rgba(185, 152, 255, ${0.25 + glow * 0.35})`;
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = `rgba(185, 152, 255, ${0.2 + glow * 0.3})`;
-        ctx.shadowBlur = 4 + glow * 6;
+        ctx.strokeStyle = `rgba(99, 182, 255, ${0.85 + glow * 0.15})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = `rgba(99, 182, 255, ${0.6 + glow * 0.4})`;
+        ctx.shadowBlur = 8 + glow * 12;
         ctx.stroke();
         ctx.shadowBlur = 0;
-        // Center line
+        
+        // Mirror wave — soft purple reflection
+        ctx.beginPath();
+        ctx.moveTo(0, mid + (src[0] / 100) * (mid - 2));
+        for (let i = 1; i < POINTS; i++) {
+          const x0 = (i - 1) * step, x1 = i * step;
+          const y0 = mid + (src[i - 1] / 100) * (mid - 2);
+          const y1 = mid + (src[i] / 100) * (mid - 2);
+          ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
+        }
+        ctx.strokeStyle = `rgba(168, 130, 255, ${0.5 + glow * 0.4})`;
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = `rgba(168, 130, 255, ${0.4 + glow * 0.3})`;
+        ctx.shadowBlur = 6 + glow * 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        
+        // Center line — subtle guide
         ctx.beginPath();
         ctx.moveTo(0, mid);
         ctx.lineTo(w, mid);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.04 + glow * 0.06})`;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + glow * 0.1})`;
         ctx.lineWidth = 0.5;
         ctx.stroke();
       };
@@ -702,7 +733,19 @@ function MainApp() {
     };
   }, []);
 
-  const loadSettings = async () => { try { const s = await window.electronAPI.getSettings(); setSettings(s); window.voiceflowSoundEnabled = s.sound_effects !== 'false'; } catch {} };
+  const loadSettings = async () => { 
+    try { 
+      const s = await window.electronAPI.getSettings(); 
+      setSettings(s); 
+      window.voiceflowSoundEnabled = s.sound_effects !== 'false'; 
+      // Apply saved theme
+      if (s.theme === 'light') {
+        document.documentElement.classList.add('light-theme');
+      } else {
+        document.documentElement.classList.remove('light-theme');
+      }
+    } catch {} 
+  };
 
   const showSuccess = (msg: string) => {
     notif.success(msg);
@@ -977,6 +1020,15 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
     window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(true));
   }, []);
 
+  // Determine active profile based on model and audio settings
+  const getActiveProfile = () => {
+    const model = settings.model || '';
+    const isLargeModel = model.includes('large') || model.includes('medium');
+    if (isLargeModel) return { name: 'Turbo', icon: '⚡', desc: 'Fast + Accurate (large model)' };
+    return { name: 'Turbo', icon: '⚡', desc: 'Fast transcription' };
+  };
+  const activeProfile = getActiveProfile();
+
   return (
     <div className="page home-page">
       {hasModel === false && (
@@ -991,6 +1043,19 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
           </button>
         </div>
       )}
+      
+      {/* Profile Indicator */}
+      <div className="profile-indicator">
+        <div className={`profile-badge ${activeProfile.name.toLowerCase()}`}>
+          <span className="profile-badge-icon">{activeProfile.icon}</span>
+          {activeProfile.name}
+        </div>
+        <div className="profile-info">
+          <span className="profile-name">Transcription Profile</span>
+          <span className="profile-desc">{activeProfile.desc}</span>
+        </div>
+      </div>
+
       <div className="home-content">
         {/* Mic Button */}
         <div className={`mic-section ${state}`}>

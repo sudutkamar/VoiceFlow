@@ -543,6 +543,16 @@ app.whenReady().then(() => {
   }
 
   setupIPC();
+
+  // Warm up transcriber model for faster first transcription
+  try {
+    const dicTranscriber = getTranscriberInstance();
+    if (dicTranscriber) {
+      const savedModel = database.getSetting('model') || '';
+      dicTranscriber.warmup(savedModel);
+    }
+  } catch {}
+
   logger.info('VoiceFlow ready');
 });
 

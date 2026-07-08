@@ -150,6 +150,15 @@ export class VoiceFlowDatabase {
         output_text TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS learned_corrections (
+        id TEXT PRIMARY KEY,
+        original TEXT NOT NULL,
+        corrected TEXT NOT NULL,
+        frequency INTEGER DEFAULT 1,
+        last_used INTEGER NOT NULL,
+        confidence REAL DEFAULT 0.6
+      );
     `);
   }
 
@@ -337,6 +346,39 @@ export class VoiceFlowDatabase {
   deleteSnippet(id: string): void {
     if (!this.db) throw new Error('Database not initialized');
     this.db.prepare('DELETE FROM snippets WHERE id = ?').run(id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Learned Corrections (Adaptive Learning)
+  // ═══════════════════════════════════════════════════════════════
+
+  getLearnedCorrections(): any[] {
+    if (!this.db) return [];
+    return this.db.prepare('SELECT * FROM learned_corrections ORDER BY frequency DESC').all();
+  }
+
+  saveLearnedCorrection(correction: any): void {
+    if (!this.db) throw new Error('Database not initialized');
+    const existing = this.db.prepare('SELECT id FROM learned_corrections WHERE original = ?').get(correction.original) as any;
+    if (existing) {
+      this.db.prepare(
+        'UPDATE learned_corrections SET corrected = ?, frequency = ?, last_used = ?, confidence = ? WHERE original = ?'
+      ).run(correction.corrected, correction.frequency, correction.lastUsed, correction.confidence, correction.original);
+    } else {
+      this.db.prepare(
+        'INSERT INTO learned_corrections (id, original, corrected, frequency, last_used, confidence) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(correction.id, correction.original, correction.corrected, correction.frequency, correction.lastUsed, correction.confidence);
+    }
+  }
+
+  deleteLearnedCorrection(id: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('DELETE FROM learned_corrections WHERE id = ?').run(id);
+  }
+
+  clearLearnedCorrections(): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('DELETE FROM learned_corrections').run();
   }
 
   close(): void {

@@ -99,6 +99,7 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
       // Sync Transcriber path
       if (transcriberRef) {
         transcriberRef.updateModelsPath(selectedPath);
+        transcriberRef.warmup(database.getSetting('model') || '');
         logger.info(`Transcriber path synced to: ${selectedPath}`);
       }
     }
@@ -121,6 +122,7 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     // Sync Transcriber path back to default
     if (transcriberRef) {
       transcriberRef.updateModelsPath(modelDownloader.getModelsPathValue());
+      transcriberRef.warmup(database.getSetting('model') || '');
     }
     return { success: true, path: modelDownloader.getModelsPathValue() };
   });

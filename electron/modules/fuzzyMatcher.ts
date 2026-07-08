@@ -19,38 +19,47 @@ export interface DictionaryEntry {
 }
 
 /**
- * Context-aware fuzzy matcher for speech recognition output.
- * 
- * Strategy:
- * 1. Exact dictionary match (highest confidence)
- * 2. Common Whisper errors (high confidence, language-specific)
- * 3. Fuzzy dictionary match (medium confidence, Levenshtein distance)
- * 4. Fuzzy common error match (lower confidence)
- * 
- * All corrections have confidence scores. Only high-confidence corrections
- * are applied automatically; low-confidence ones are flagged for review.
+ * Optimized fuzzy matcher for speech recognition output.
+ *
+ * Optimization strategy:
+ * 1. Set-based O(1) exact lookups (dictionary + common errors)
+ * 2. Optimized Levenshtein with early termination + single-array
+ * 3. Length-bucketed candidates for faster fuzzy search
+ * 4. Skip Levenshtein for very short words (≤2 chars)
  */
 export class FuzzyMatcher {
   private logger: Logger;
-  private dictionary: Map<string, string> = new Map();
+
+  // ═══════════════════════════════════════════════════════════════
+  //  O(1) Lookup Structures
+  // ═══════════════════════════════════════════════════════════════
+  private dictionarySet: Map<string, string> = new Map();        // phrase → replacement
+  private errorSet: Map<string, string> = new Map();             // error → correction
+  private informalSet: Map<string, string> = new Map();          // informal → formal
+
+  // For fuzzy search: bucket candidates by length for faster filtering
+  private dictionaryByLength: Map<number, string[]> = new Map(); // length → [phrases]
+  private errorKeysByLength: Map<number, string[]> = new Map();  // length → [error keys]
+
   private maxDistance: number;
   private minConfidenceThreshold: number;
+  private dictionaryLoaded: boolean = false;
 
   constructor(logger: Logger, maxDistance: number = 2, minConfidence: number = 0.7) {
     this.logger = logger;
     this.maxDistance = maxDistance;
     this.minConfidenceThreshold = minConfidence;
-    this.logger.info('FuzzyMatcher initialized', { maxDistance, minConfidence });
+
+    // Pre-populate error sets (always available, no load needed)
+    this.initErrorSets();
+
+    this.logger.info('FuzzyMatcher initialized (optimized)', { maxDistance, minConfidence });
   }
 
   // ═══════════════════════════════════════════════════════════════
   //  Common Whisper Errors (Indonesian + English)
   // ═══════════════════════════════════════════════════════════════
 
-  /**
-   * True Whisper mishears — words that whisper genuinely gets wrong.
-   * These are ALWAYS corrected regardless of formal/informal mode.
-   */
   private readonly WHISPER_ERRORS: Record<string, string> = {
     'tesih': 'test', 'tesis': 'test', 'tesi': 'test',
     'adala': 'adalah', 'adalh': 'adalah', 'adlah': 'adalah',
@@ -111,11 +120,6 @@ export class FuzzyMatcher {
     'sm': 'sama',
   };
 
-  /**
-   * Informal-to-formal conversions — legitimate informal words.
-   * Only applied when formalMode is enabled (user wants formal text).
-   * These are NOT errors, just style preferences.
-   */
   private readonly INFORMAL_TO_FORMAL: Record<string, string> = {
     'engga': 'tidak', 'enggak': 'tidak', 'ngga': 'tidak', 'nggak': 'tidak',
     'gak': 'tidak', 'ga': 'tidak', 'gk': 'tidak', 'tdk': 'tidak',
@@ -132,19 +136,49 @@ export class FuzzyMatcher {
   };
 
   // ═══════════════════════════════════════════════════════════════
-  //  Dictionary Management
+  //  Initialize O(1) Sets
   // ═══════════════════════════════════════════════════════════════
 
-  loadDictionary(entries: DictionaryEntry[]): void {
-    this.dictionary.clear();
-    for (const entry of entries) {
-      this.dictionary.set(entry.phrase.toLowerCase(), entry.replacement);
+  private initErrorSets(): void {
+    // Load whisper errors into O(1) Map
+    for (const [key, value] of Object.entries(this.WHISPER_ERRORS)) {
+      this.errorSet.set(key, value);
+      // Bucket by length for fuzzy search
+      const len = key.length;
+      if (!this.errorKeysByLength.has(len)) this.errorKeysByLength.set(len, []);
+      this.errorKeysByLength.get(len)!.push(key);
     }
-    this.logger.info('Dictionary loaded', { entries: this.dictionary.size });
+
+    // Load informal-to-formal into O(1) Map
+    for (const [key, value] of Object.entries(this.INFORMAL_TO_FORMAL)) {
+      this.informalSet.set(key, value);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  Main Processing Pipeline
+  //  Dictionary Management (with length bucketing)
+  // ═══════════════════════════════════════════════════════════════
+
+  loadDictionary(entries: DictionaryEntry[]): void {
+    this.dictionarySet.clear();
+    this.dictionaryByLength.clear();
+
+    for (const entry of entries) {
+      const key = entry.phrase.toLowerCase();
+      this.dictionarySet.set(key, entry.replacement);
+
+      // Bucket by length for faster fuzzy search
+      const len = key.length;
+      if (!this.dictionaryByLength.has(len)) this.dictionaryByLength.set(len, []);
+      this.dictionaryByLength.get(len)!.push(key);
+    }
+
+    this.dictionaryLoaded = true;
+    this.logger.info('Dictionary loaded (optimized)', { entries: this.dictionarySet.size });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Main Processing Pipeline (OPTIMIZED)
   // ═══════════════════════════════════════════════════════════════
 
   process(text: string, formalMode: boolean = false): FuzzyMatchResult {
@@ -152,15 +186,14 @@ export class FuzzyMatcher {
       return { original: text, corrected: text, confidence: 1, changes: [] };
     }
 
-    const words = text.split(/(\s+)/); // Preserve whitespace
+    const words = text.split(/(\s+)/);
     const changes: FuzzyMatchResult['changes'] = [];
     const correctedWords: string[] = [];
 
-    // Build the error map: always include WHISPER_ERRORS, add INFORMAL_TO_FORMAL only in formal mode
-    const errorMap: Record<string, string> = { ...this.WHISPER_ERRORS };
-    if (formalMode) {
-      Object.assign(errorMap, this.INFORMAL_TO_FORMAL);
-    }
+    // Build active error map for this run
+    const activeErrors = formalMode
+      ? new Map([...this.errorSet, ...this.informalSet])
+      : this.errorSet;
 
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
@@ -184,27 +217,27 @@ export class FuzzyMatcher {
       let confidence = 0;
       let reason: 'dictionary' | 'common_error' | 'fuzzy' = 'dictionary';
 
-      // ── Priority 1: Exact dictionary match ──
-      if (this.dictionary.has(lowerClean)) {
-        replacement = this.dictionary.get(lowerClean)!;
+      // ── Priority 1: O(1) Exact dictionary match ──
+      if (this.dictionarySet.has(lowerClean)) {
+        replacement = this.dictionarySet.get(lowerClean)!;
         confidence = 1.0;
         reason = 'dictionary';
       }
 
-      // ── Priority 2: Exact common error match ──
-      if (!replacement && errorMap[lowerClean]) {
-        replacement = errorMap[lowerClean];
+      // ── Priority 2: O(1) Exact common error match ──
+      if (!replacement && activeErrors.has(lowerClean)) {
+        replacement = activeErrors.get(lowerClean)!;
         confidence = 0.95;
         reason = 'common_error';
       }
 
-      // ── Priority 3: Fuzzy dictionary match ──
-      if (!replacement && this.dictionary.size > 0) {
-        const dictMatch = this.findBestMatch(lowerClean, Array.from(this.dictionary.keys()));
+      // ── Priority 3: Fuzzy dictionary match (only if dictionary loaded) ──
+      if (!replacement && this.dictionaryLoaded) {
+        const dictMatch = this.findBestMatchFast(lowerClean, this.dictionaryByLength);
         if (dictMatch && dictMatch.distance <= this.maxDistance) {
           const similarity = 1 - (dictMatch.distance / Math.max(cleanWord.length, dictMatch.word.length));
           if (similarity >= this.minConfidenceThreshold) {
-            replacement = this.dictionary.get(dictMatch.word)!;
+            replacement = this.dictionarySet.get(dictMatch.word)!;
             confidence = similarity;
             reason = 'fuzzy';
           }
@@ -213,13 +246,12 @@ export class FuzzyMatcher {
 
       // ── Priority 4: Fuzzy common error match ──
       if (!replacement) {
-        const errorKeys = Object.keys(errorMap);
-        const errorMatch = this.findBestMatch(lowerClean, errorKeys);
+        const errorMatch = this.findBestMatchFast(lowerClean, this.errorKeysByLength);
         if (errorMatch && errorMatch.distance <= this.maxDistance) {
           const similarity = 1 - (errorMatch.distance / Math.max(cleanWord.length, errorMatch.word.length));
           if (similarity >= this.minConfidenceThreshold) {
-            replacement = errorMap[errorMatch.word];
-            confidence = similarity * 0.9; // Slightly lower confidence for fuzzy common errors
+            replacement = activeErrors.get(errorMatch.word) || null;
+            confidence = similarity * 0.9;
             reason = 'fuzzy';
           }
         }
@@ -246,7 +278,7 @@ export class FuzzyMatcher {
       ? changes.reduce((sum, c) => sum + c.confidence, 0) / changes.length
       : 1.0;
 
-    this.logger.info('Fuzzy matching complete', {
+    this.logger.info('Fuzzy matching complete (optimized)', {
       original: text.length,
       corrected: corrected.length,
       changes: changes.length,
@@ -262,40 +294,61 @@ export class FuzzyMatcher {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  Levenshtein Distance
+  //  Optimized Levenshtein with Early Termination
   // ═══════════════════════════════════════════════════════════════
 
-  private findBestMatch(word: string, candidates: string[]): { word: string; distance: number } | null {
+  /**
+   * Fast best-match finder using length-bucketed candidates.
+   * Only checks candidates within ±maxDistance length.
+   * Uses early termination in Levenshtein when distance exceeds threshold.
+   */
+  private findBestMatchFast(
+    word: string,
+    bucketMap: Map<number, string[]>
+  ): { word: string; distance: number } | null {
     let bestMatch: { word: string; distance: number } | null = null;
     let bestDistance = Infinity;
 
-    // Quick length filter for performance
-    const minLen = word.length - this.maxDistance;
-    const maxLen = word.length + this.maxDistance;
+    const wordLen = word.length;
+    const minLen = Math.max(1, wordLen - this.maxDistance);
+    const maxLen = wordLen + this.maxDistance;
 
-    for (const candidate of candidates) {
-      if (candidate.length < minLen || candidate.length > maxLen) continue;
+    // Only iterate over relevant length buckets
+    for (let len = minLen; len <= maxLen; len++) {
+      const candidates = bucketMap.get(len);
+      if (!candidates) continue;
 
-      const distance = this.levenshteinDistance(word, candidate);
+      for (const candidate of candidates) {
+        const distance = this.levenshteinDistanceOptimized(word, candidate, bestDistance);
 
-      if (distance < bestDistance && distance <= this.maxDistance) {
-        bestDistance = distance;
-        bestMatch = { word: candidate, distance };
+        if (distance < bestDistance && distance <= this.maxDistance) {
+          bestDistance = distance;
+          bestMatch = { word: candidate, distance };
+        }
       }
     }
 
     return bestMatch;
   }
 
-  private levenshteinDistance(a: string, b: string): number {
+  /**
+   * Optimized Levenshtein distance with:
+   * 1. Single-array (space efficient)
+   * 2. Early termination (stop if exceeds threshold)
+   * 3. Bounds check (if length difference > threshold, skip)
+   */
+  private levenshteinDistanceOptimized(a: string, b: string, threshold: number): number {
     const m = a.length;
     const n = b.length;
+
+    // Quick reject: length difference exceeds threshold
+    if (Math.abs(m - n) > threshold) return threshold + 1;
 
     if (m === 0) return n;
     if (n === 0) return m;
     if (m === 1 && n === 1) return a[0] === b[0] ? 0 : 1;
 
-    // Optimized: single array for space efficiency
+    // Single array for space efficiency
     let prev = new Array(n + 1);
     let curr = new Array(n + 1);
 
@@ -303,14 +356,21 @@ export class FuzzyMatcher {
 
     for (let i = 1; i <= m; i++) {
       curr[0] = i;
+      let rowMin = curr[0];
+
       for (let j = 1; j <= n; j++) {
         const cost = a[i - 1] === b[j - 1] ? 0 : 1;
         curr[j] = Math.min(
-          prev[j] + 1,      // deletion
-          curr[j - 1] + 1,  // insertion
-          prev[j - 1] + cost // substitution
+          prev[j] + 1,
+          curr[j - 1] + 1,
+          prev[j - 1] + cost
         );
+        if (curr[j] < rowMin) rowMin = curr[j];
       }
+
+      // Early termination: if entire row exceeds threshold, no need to continue
+      if (rowMin > threshold) return threshold + 1;
+
       [prev, curr] = [curr, prev];
     }
 
@@ -321,30 +381,18 @@ export class FuzzyMatcher {
   //  Utility Functions
   // ═══════════════════════════════════════════════════════════════
 
-  /**
-   * Strip surrounding punctuation from a word for matching.
-   * Preserves the punctuation for reattachment.
-   */
   private stripPunctuation(word: string): string {
     return word.replace(/^[.,!?;:'"()\[\]{}]+|[.,!?;:'"()\[\]{}]+$/g, '');
   }
 
-  /**
-   * Preserve the original case pattern when replacing.
-   */
   private preserveCase(original: string, replacement: string): string {
     if (!original || !replacement) return replacement;
-
-    // All uppercase
     if (original === original.toUpperCase() && original.length > 1) {
       return replacement.toUpperCase();
     }
-
-    // First letter capitalized
     if (original[0] === original[0].toUpperCase()) {
       return replacement.charAt(0).toUpperCase() + replacement.slice(1);
     }
-
     return replacement;
   }
 
@@ -354,8 +402,8 @@ export class FuzzyMatcher {
 
   getStats(): { dictionarySize: number; commonErrorsSize: number } {
     return {
-      dictionarySize: this.dictionary.size,
-      commonErrorsSize: Object.keys(this.WHISPER_ERRORS).length + Object.keys(this.INFORMAL_TO_FORMAL).length,
+      dictionarySize: this.dictionarySet.size,
+      commonErrorsSize: this.errorSet.size + this.informalSet.size,
     };
   }
 }

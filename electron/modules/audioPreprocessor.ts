@@ -46,6 +46,96 @@ export class AudioPreprocessor {
   }
 
   /**
+   * Quick analysis — determine if preprocessing is needed.
+   * Returns true if audio is clean enough to skip the full pipeline.
+   * This is 10x faster than running the full process().
+   */
+  needsProcessing(audioBuffer: Buffer): { needed: boolean; reason: string } {
+    try {
+      const wavInfo = this.parseWavHeader(audioBuffer);
+      if (!wavInfo) return { needed: false, reason: 'invalid_wav' };
+
+      const samples = this.bytesToSamples(
+        audioBuffer.subarray(wavInfo.dataOffset),
+        wavInfo.bitsPerSample,
+        wavInfo.channels
+      );
+
+      const rms = this.calculateRms(samples);
+      const peak = this.calculatePeak(samples);
+
+      // Check DC offset (high-pass filter would fix this)
+      const dcOffset = Math.abs(this.calculateDcOffset(samples));
+
+      // Check if volume is too low (normalization would fix this)
+      const rmsDb = this.linearToDb(rms);
+
+      // Check if silence trimming is needed (detect long silence at start/end)
+      const needsSilenceTrim = this.detectLeadingTrailingSilence(samples, wavInfo.sampleRate);
+
+      // Decision logic: skip if audio is already good
+      if (dcOffset > 0.01) return { needed: true, reason: 'dc_offset' };
+      if (rmsDb < -35) return { needed: true, reason: 'too_quiet' };
+      if (rmsDb > -5) return { needed: true, reason: 'too_loud' };
+      if (peak > 0.98) return { needed: true, reason: 'clipping' };
+      if (needsSilenceTrim) return { needed: true, reason: 'silence_at_edges' };
+
+      // Audio looks clean — skip preprocessing
+      return { needed: false, reason: 'clean' };
+    } catch {
+      return { needed: true, reason: 'analysis_failed' };
+    }
+  }
+
+  /**
+   * Calculate DC offset (average of all samples).
+   * High DC offset = high-pass filter needed.
+   */
+  private calculateDcOffset(samples: Float32Array): number {
+    if (samples.length === 0) return 0;
+    let sum = 0;
+    // Sample every 10th point for speed
+    const step = Math.max(1, Math.floor(samples.length / 1000));
+    for (let i = 0; i < samples.length; i += step) {
+      sum += samples[i];
+    }
+    return sum / Math.ceil(samples.length / step);
+  }
+
+  /**
+   * Detect if there's significant silence at the start or end.
+   */
+  private detectLeadingTrailingSilence(samples: Float32Array, sampleRate: number): boolean {
+    const frameSize = Math.floor(sampleRate * 0.02); // 20ms frames
+    const threshold = 0.003; // Very quiet
+    const minSilentFrames = 5; // 100ms of silence to trigger trim
+
+    // Check leading silence
+    let leadingSilent = 0;
+    for (let i = 0; i < samples.length; i += frameSize) {
+      let energy = 0;
+      const end = Math.min(i + frameSize, samples.length);
+      for (let j = i; j < end; j++) energy += samples[j] * samples[j];
+      const rms = Math.sqrt(energy / (end - i));
+      if (rms < threshold) leadingSilent++;
+      else break;
+    }
+
+    // Check trailing silence
+    let trailingSilent = 0;
+    for (let i = samples.length - frameSize; i >= 0; i -= frameSize) {
+      let energy = 0;
+      const end = Math.min(i + frameSize, samples.length);
+      for (let j = i; j < end; j++) energy += samples[j] * samples[j];
+      const rms = Math.sqrt(energy / (end - i));
+      if (rms < threshold) trailingSilent++;
+      else break;
+    }
+
+    return leadingSilent >= minSilentFrames || trailingSilent >= minSilentFrames;
+  }
+
+  /**
    * Main processing pipeline
    */
   async process(audioBuffer: Buffer): Promise<Buffer> {

@@ -10,11 +10,13 @@ import { Transcriber } from '../modules/transcriber';
 import { TextCleaner } from '../modules/textCleaner';
 import { PasteEngine } from '../modules/pasteEngine';
 import { HotkeyManager } from '../modules/hotkeyManager';
+import { AdaptiveLearning } from '../modules/adaptiveLearning';
 
 let audioConverter: AudioConverter;
 let transcriber: Transcriber;
 let textCleaner: TextCleaner;
 let pasteEngine: PasteEngine;
+let adaptiveLearning: AdaptiveLearning;
 let isProcessing = false;
 let lastTranscript = '';
 let lastCleanedText = '';
@@ -49,6 +51,7 @@ export function setupDictationIPC(
 
   textCleaner = new TextCleaner(logger);
   pasteEngine = new PasteEngine(mainWindow, logger, hideAllForPaste, showAfterPaste);
+  adaptiveLearning = new AdaptiveLearning(logger, database);
 
   ipcMain.handle('start-recording', async () => {
     mainWindow.webContents.send('state-change', 'recording');
@@ -104,10 +107,24 @@ export function setupDictationIPC(
       hotkeyManager?.setState('transcribing');
       logger.info('Starting whisper...', { model, language, verbatimMode, processingMode });
 
-      // Single pass: accurate transcription with selected model + GPU/CPU
+      // Smart preprocessing: check if audio actually needs it
+      let effectivePreprocess = preprocessAudio;
+      if (preprocessAudio) {
+        try {
+          const needsProc = audioConverter.needsProcessing(buffer);
+          if (!needsProc.needed) {
+            effectivePreprocess = false;
+            logger.info('Audio is clean, skipping preprocessing', { reason: needsProc.reason });
+          } else {
+            logger.info('Audio needs preprocessing', { reason: needsProc.reason });
+          }
+        } catch {}
+      }
+
+      // Single pass: transcription with selected model + GPU/CPU
       const formalMode = processingMode === 'clean';
       const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
-        preprocess: preprocessAudio,
+        preprocess: effectivePreprocess,
         fuzzyMatch,
         confidenceScore: true,
         audioDurationMs: audioData.duration,
@@ -144,7 +161,19 @@ export function setupDictationIPC(
 
       let finalText = transcribeResult.text || '';
       if (finalText) {
+        // Apply text cleaning
         finalText = textCleaner.cleanForMode(finalText, mode, { dictionary, snippets, voiceCommands });
+        
+        // Apply learned corrections from adaptive learning
+        try {
+          const learned = adaptiveLearning.apply(finalText);
+          if (learned.changes > 0) {
+            logger.info('Applied learned corrections', { changes: learned.changes });
+            finalText = learned.text;
+          }
+        } catch (err) {
+          logger.warn('Adaptive learning failed, using original', err);
+        }
       }
 
       logger.info('Final text', { text: finalText });
@@ -179,6 +208,9 @@ export function setupDictationIPC(
         rawText: transcribeResult.rawText,
       });
 
+      // Record transcription for auto-learning
+      adaptiveLearning.recordTranscription(transcribeResult.text || '');
+
       // Paste in background
       const autoPaste = database.getSetting('auto_paste') !== 'false';
       if (autoPaste && finalText) {
@@ -208,10 +240,14 @@ export function setupDictationIPC(
   });
 
   ipcMain.handle('paste-text', async (event, text: string) => {
+    // Auto-learn: if user pastes text different from last transcription, learn it
+    adaptiveLearning.autoLearnFromPaste(lastTranscript, text);
     return await pasteEngine.paste(text, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread());
   });
 
   ipcMain.handle('copy-text', async (event, text: string) => {
+    // Auto-learn: if user copies text different from last transcription, learn it
+    adaptiveLearning.autoLearnFromCopy(text);
     return await pasteEngine.copy(text);
   });
 
@@ -221,6 +257,43 @@ export function setupDictationIPC(
 
   ipcMain.handle('get-clipboard-text', async () => {
     return pasteEngine.getClipboardText();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Adaptive Learning IPC
+  // ═══════════════════════════════════════════════════════════════
+
+  // Learn from user correction (when user edits transcription)
+  ipcMain.handle('learn-correction', async (_event, original: string, corrected: string) => {
+    try {
+      adaptiveLearning.learn(original, corrected);
+      return { success: true };
+    } catch (err: any) {
+      logger.error('Learn correction failed', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Get all learned corrections
+  ipcMain.handle('get-learned-corrections', async () => {
+    return adaptiveLearning.getCorrections();
+  });
+
+  // Delete a learned correction
+  ipcMain.handle('delete-learned-correction', async (_event, id: string) => {
+    adaptiveLearning.deleteCorrection(id);
+    return { success: true };
+  });
+
+  // Clear all learned corrections
+  ipcMain.handle('clear-learned-corrections', async () => {
+    adaptiveLearning.clearAll();
+    return { success: true };
+  });
+
+  // Get adaptive learning stats
+  ipcMain.handle('get-adaptive-stats', async () => {
+    return adaptiveLearning.getStats();
   });
 
   ipcMain.handle('run-benchmark', async (_event, audioBuffer: number[], models: string[]) => {

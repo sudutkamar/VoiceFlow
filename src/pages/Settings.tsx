@@ -23,7 +23,9 @@ function Settings({ onSuccess, onError }: SettingsProps) {
   const [dict, setDict] = useState<DictEntry[]>([]);
   const [snippets, setSnippets] = useState<SnippetEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'general' | 'recording' | 'processing' | 'presets' | 'dictionary' | 'snippets'>('general');
+  const [tab, setTab] = useState<'general' | 'recording' | 'processing' | 'presets' | 'dictionary' | 'snippets' | 'learning'>('general');
+  const [learnedCorrections, setLearnedCorrections] = useState<any[]>([]);
+  const [adaptiveStats, setAdaptiveStats] = useState<{ total: number; totalFrequency: number; avgConfidence: number } | null>(null);
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [editingHotkey, setEditingHotkey] = useState(false);
   const [newPhrase, setNewPhrase] = useState('');
@@ -40,7 +42,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
     return () => { if (promptTimerRef.current) clearTimeout(promptTimerRef.current); };
   }, []);
 
-  useEffect(() => { loadData(); loadMics(); loadGpuStatus(); loadModels(); loadVersion(); }, []);
+  useEffect(() => { loadData(); loadMics(); loadGpuStatus(); loadModels(); loadVersion(); loadLearnedCorrections(); }, []);
 
   const loadGpuStatus = async () => {
     try {
@@ -61,6 +63,15 @@ function Settings({ onSuccess, onError }: SettingsProps) {
     try {
       const v = await window.electronAPI.getVersion();
       setAppVersion(v);
+    } catch {}
+  };
+
+  const loadLearnedCorrections = async () => {
+    try {
+      const corrections = await window.electronAPI.getLearnedCorrections();
+      setLearnedCorrections(corrections);
+      const stats = await window.electronAPI.getAdaptiveStats();
+      setAdaptiveStats(stats);
     } catch {}
   };
 
@@ -216,6 +227,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
           { id: 'presets', label: 'Presets', icon: '🎯' },
           { id: 'dictionary', label: 'Dictionary', icon: '📖' },
           { id: 'snippets', label: 'Snippets', icon: '📝' },
+          { id: 'learning', label: 'Learning', icon: '🧠' },
         ].map(t => (
           <button
             key={t.id}
@@ -230,6 +242,32 @@ function Settings({ onSuccess, onError }: SettingsProps) {
       {/* General */}
       {tab === 'general' && (
         <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Appearance</div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Theme</span>
+                <span className="setting-hint">Switch between dark and light appearance</span>
+              </div>
+              <div className="theme-switcher">
+                <button
+                  className={`theme-btn ${settings.theme !== 'light' ? 'active' : ''}`}
+                  onClick={async () => { await save('theme', 'dark'); document.documentElement.classList.remove('light-theme'); }}
+                  title="Dark Theme"
+                >
+                  🌙 Dark
+                </button>
+                <button
+                  className={`theme-btn ${settings.theme === 'light' ? 'active' : ''}`}
+                  onClick={async () => { await save('theme', 'light'); document.documentElement.classList.add('light-theme'); }}
+                  title="Light Theme"
+                >
+                  ☀️ Light
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="section">
             <div className="section-header">Quick Settings</div>
             <div className="setting-row">
@@ -638,6 +676,81 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 </div>
               ) : (
                 <div className="empty-hint">No snippets yet</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Adaptive Learning */}
+      {tab === 'learning' && (
+        <div className="settings-sections">
+          <div className="section">
+            <div className="section-header">Adaptive Learning</div>
+            <div className="section-body">
+              <p className="section-hint">
+                VoiceFlow automatically learns from your usage. When you copy or paste text 
+                that differs from the transcription, the system learns and auto-applies 
+                similar corrections in the future. No manual editing needed!
+              </p>
+              
+              {/* Stats */}
+              {adaptiveStats && (
+                <div className="learning-stats">
+                  <div className="learning-stat">
+                    <span className="learning-stat-value">{adaptiveStats.total}</span>
+                    <span className="learning-stat-label">Learned Patterns</span>
+                  </div>
+                  <div className="learning-stat">
+                    <span className="learning-stat-value">{adaptiveStats.totalFrequency}</span>
+                    <span className="learning-stat-label">Total Applications</span>
+                  </div>
+                  <div className="learning-stat">
+                    <span className="learning-stat-value">{Math.round(adaptiveStats.avgConfidence * 100)}%</span>
+                    <span className="learning-stat-label">Avg Confidence</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Corrections List */}
+              {learnedCorrections.length > 0 ? (
+                <>
+                  <div className="list">
+                    {learnedCorrections.map((c) => (
+                      <div key={c.id} className="list-item learned-item">
+                        <div className="learned-original">{c.original}</div>
+                        <span className="list-arrow">→</span>
+                        <div className="learned-corrected">{c.corrected}</div>
+                        <div className="learned-meta">
+                          <span className="learned-freq">×{c.frequency}</span>
+                          <button className="btn btn-sm btn-icon" onClick={async () => {
+                            await window.electronAPI.deleteLearnedCorrection(c.id);
+                            loadLearnedCorrections();
+                          }}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <button className="btn btn-danger btn-sm" onClick={async () => {
+                      if (confirm('Hapus semua learned corrections?')) {
+                        await window.electronAPI.clearLearnedCorrections();
+                        loadLearnedCorrections();
+                        onSuccess('All learned corrections cleared');
+                      }
+                    }}>
+                      Clear All Learned Data
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="empty-hint">
+                  <p>No learned corrections yet.</p>
+                  <p style={{ marginTop: '8px', fontSize: '12px' }}>
+                    Start recording and editing your transcriptions. 
+                    VoiceFlow will learn from your corrections automatically.
+                  </p>
+                </div>
               )}
             </div>
           </div>
