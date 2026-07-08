@@ -52,6 +52,8 @@ declare global {
       cancelDownload: () => Promise<void>;
       deleteModel: (modelName: string) => Promise<boolean>;
       getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes?: number; totalBytes?: number }>;
+      hasInterruptedDownload: () => Promise<boolean>;
+      getInterruptedDownloadInfo: () => Promise<{ modelName: string; progress: number } | null>;
       getModelsPath: () => Promise<string>;
       getCustomModelsPath: () => Promise<string | null>;
       chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
@@ -243,6 +245,8 @@ function MiniBar() {
   const [barHover, setBarHover] = useState(false);
   const [hasModel, setHasModel] = useState<boolean | null>(null);
   const [gpuStatus, setGpuStatus] = useState<string | null>(null);
+  const [windowHeight, setWindowHeight] = useState(64);
+  const [windowWidth, setWindowWidth] = useState(460);
   const langRef = useRef<HTMLDivElement>(null);
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
@@ -256,7 +260,21 @@ function MiniBar() {
   const startRef = useRef(0);
   const stateRef = useRef<State>(state);
 
+  // Calculate zoom based on window height (base bar height = 52px, width is auto)
+  const miniZoom = windowHeight / 52;
+
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // Listen for window resize to update scale
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowHeight(window.innerHeight);
+      setWindowWidth(window.innerWidth);
+    };
+    handleResize(); // Set initial height
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const vadEnabled = settings.vad_enabled !== 'false';
   const vadSilenceMs = parseInt(settings.vad_silence_ms || '1500', 10);
@@ -369,6 +387,13 @@ function MiniBar() {
       }
     } catch {} 
   };
+
+  // Save zoom to settings when it changes
+  useEffect(() => {
+    if (windowHeight !== 64) {
+      window.electronAPI.updateSetting('mini_bar_scale', String(miniZoom)).catch(() => {});
+    }
+  }, [miniZoom]);
 
   // No window resize on hover — CSS handles all visual transitions smoothly.
   // This prevents the glitch/flicker caused by Electron window bounds changing on hover.
@@ -606,12 +631,12 @@ function MiniBar() {
     <div className="mini-app">
       <div
         className={`mini-bar ${state}`}
+        style={{ zoom: miniZoom }}
         onMouseEnter={() => { setBarHover(true); if (state === 'idle') setState('hover'); }}
         onMouseLeave={() => { setBarHover(false); if (stateRef.current === 'hover') setState('idle'); }}
       >
         {/* Language selector */}
         <div className="m-lang-wrap" ref={langRef}>
-          <div className="m-tooltip-box">Ganti bahasa ({currentLang.l})</div>
           <button
             type="button"
             className="m-lang"
@@ -627,9 +652,6 @@ function MiniBar() {
           onClick={toggle}
           disabled={state === 'processing'}
         >
-          <div className="m-tooltip-box m-tooltip-wide">
-            {state === 'recording' ? 'Stop recording' : state === 'processing' ? 'Memproses...' : `Mulai rekam (${hotkeyLabel})`}
-          </div>
           {(state === 'idle' || state === 'hover') && (
             <svg className="m-voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3.5 3.5 0 0 0-3.5 3.5v6a3.5 3.5 0 0 0 7 0v-6A3.5 3.5 0 0 0 12 2Z"/>
@@ -663,7 +685,6 @@ function MiniBar() {
             className="m-orb-btn m-cancel-btn"
             onClick={cancelRec}
           >
-            <div className="m-tooltip-box">Batalkan rekaman (Esc)</div>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
@@ -687,7 +708,6 @@ function MiniBar() {
             }
           }}
         >
-          <div className="m-tooltip-box">{text ? 'Salin hasil' : 'Buka Settings'}</div>
           {text ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="11" height="11" rx="2"/>
@@ -716,7 +736,6 @@ function MiniBar() {
             }
           }}
         >
-          <div className="m-tooltip-box">{text ? 'Tempel hasil' : 'Buka History'}</div>
           {text ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>

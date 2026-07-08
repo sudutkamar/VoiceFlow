@@ -123,8 +123,13 @@ function createMainWindow(showInitially: boolean = true): void {
 // ============ MINI WINDOW (Floating Bar) ============
 function createMiniWindow(): void {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-  const miniWidth = Math.min(460, sw - 40);
-  const miniHeight = 64;
+  
+  // Load saved size or use defaults
+  const savedWidth = parseInt(database?.getSetting('mini_window_width') || '0', 10);
+  const savedHeight = parseInt(database?.getSetting('mini_window_height') || '0', 10);
+  
+  const miniWidth = savedWidth > 0 ? Math.min(savedWidth, sw - 40) : Math.min(380, sw - 40);
+  const miniHeight = savedHeight > 0 ? Math.min(savedHeight, 200) : 52;
   const taskbarHeight = sh; // workArea already excludes taskbar
 
   miniWindow = new BrowserWindow({
@@ -132,6 +137,10 @@ function createMiniWindow(): void {
     height: miniHeight,
     x: Math.round((sw - miniWidth) / 2),
     y: taskbarHeight - miniHeight - 10,
+    minWidth: 120,
+    minHeight: 40,
+    maxWidth: Math.min(800, sw - 40),
+    maxHeight: 200,
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -150,7 +159,7 @@ function createMiniWindow(): void {
     backgroundColor: '#00000000',
     frame: false,
     transparent: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
@@ -164,6 +173,15 @@ function createMiniWindow(): void {
     // Notify renderer to close dropdown when clicking outside
     if (miniWindow && !miniWindow.isDestroyed()) {
       miniWindow.webContents.send('mini-window-blur');
+    }
+  });
+
+  // Save window size on resize
+  miniWindow.on('resize', () => {
+    if (miniWindow && !miniWindow.isDestroyed() && database) {
+      const bounds = miniWindow.getBounds();
+      database.updateSetting('mini_window_width', String(bounds.width));
+      database.updateSetting('mini_window_height', String(bounds.height));
     }
   });
 

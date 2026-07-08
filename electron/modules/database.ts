@@ -192,6 +192,9 @@ export class VoiceFlowDatabase {
       preview_before_paste: 'false',
       show_target_app: 'true',
       whisper_device: 'auto',
+      mini_bar_scale: '1',
+      mini_window_width: '460',
+      mini_window_height: '64',
     };
 
     const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

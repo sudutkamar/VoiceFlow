@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Logger } from './logger';
+import { VoiceFlowDatabase } from './database';
 
 export interface ModelInfo {
   name: string;
@@ -99,6 +100,7 @@ export class ModelDownloader {
   private cancelled: boolean = false;
   private paused: boolean = false;
   private currentTempPath: string | null = null;
+  private database: VoiceFlowDatabase | null = null;
   
   // Resume support
   private currentModelUrl: string | null = null;
@@ -107,8 +109,9 @@ export class ModelDownloader {
   private totalBytes: number = 0;
   private downloadState: DownloadState = 'idle';
 
-  constructor(logger: Logger, savedModelsPath?: string | null) {
+  constructor(logger: Logger, savedModelsPath?: string | null, database?: VoiceFlowDatabase) {
     this.logger = logger;
+    this.database = database || null;
     if (savedModelsPath && fs.existsSync(savedModelsPath)) {
       this.customModelsPath = savedModelsPath;
       this.modelsPath = savedModelsPath;
@@ -122,6 +125,9 @@ export class ModelDownloader {
     }
 
     this.cleanupInvalidFiles();
+    
+    // Restore interrupted download state from database
+    this.restoreDownloadState();
   }
 
   private migrateOldModels(): void {
@@ -177,11 +183,9 @@ export class ModelDownloader {
         const filePath = path.join(this.modelsPath, file);
         try {
           const stat = fs.statSync(filePath);
-          if (file.endsWith('.tmp')) {
-            fs.unlinkSync(filePath);
-            this.logger.info(`Removed temp file: ${file}`);
-            cleanedCount++;
-          } else if (file.endsWith('.bin') && stat.size < MIN_VALID_MODEL_SIZE) {
+          // Don't remove .tmp files - they're needed for resume after app restart
+          // Only remove invalid .bin files (too small to be valid models)
+          if (file.endsWith('.bin') && stat.size < MIN_VALID_MODEL_SIZE) {
             fs.unlinkSync(filePath);
             this.logger.info(`Removed invalid model: ${file} (${stat.size} bytes)`);
             cleanedCount++;
@@ -192,11 +196,125 @@ export class ModelDownloader {
       }
 
       if (cleanedCount > 0) {
-        this.logger.info(`Cleaned up ${cleanedCount} invalid/temp files`);
+        this.logger.info(`Cleaned up ${cleanedCount} invalid files`);
       }
     } catch (err) {
       this.logger.warn('Failed to cleanup invalid files', err);
     }
+  }
+
+  /**
+   * Save download state to database for persistence across app restarts
+   */
+  private saveDownloadState(): void {
+    if (!this.database) return;
+    
+    try {
+      if (this.downloadState === 'downloading' || this.downloadState === 'paused') {
+        // Save active download state
+        this.database.updateSetting('download_state', this.downloadState);
+        this.database.updateSetting('download_model_name', this.currentModelName || '');
+        this.database.updateSetting('download_model_url', this.currentModelUrl || '');
+        this.database.updateSetting('download_progress', String(this.downloadProgress));
+        this.database.updateSetting('downloaded_bytes', String(this.downloadedBytes));
+        this.database.updateSetting('total_bytes', String(this.totalBytes));
+        this.logger.info(`Saved download state: ${this.downloadState} for ${this.currentModelName}`);
+      } else {
+        // Clear download state when idle/completed/error
+        this.database.updateSetting('download_state', 'idle');
+        this.database.updateSetting('download_model_name', '');
+        this.database.updateSetting('download_model_url', '');
+        this.database.updateSetting('download_progress', '0');
+        this.database.updateSetting('downloaded_bytes', '0');
+        this.database.updateSetting('total_bytes', '0');
+      }
+    } catch (err) {
+      this.logger.warn('Failed to save download state', err);
+    }
+  }
+
+  /**
+   * Restore download state from database on app startup
+   */
+  private restoreDownloadState(): void {
+    if (!this.database) return;
+    
+    try {
+      const state = this.database.getSetting('download_state');
+      const modelName = this.database.getSetting('download_model_name');
+      const modelUrl = this.database.getSetting('download_model_url');
+      const progress = this.database.getSetting('download_progress');
+      const downloaded = this.database.getSetting('downloaded_bytes');
+      const total = this.database.getSetting('total_bytes');
+      
+      if (state && state !== 'idle' && modelName && modelUrl) {
+        // Check if temp file still exists
+        const tempPath = path.join(this.modelsPath, modelName + '.tmp');
+        if (fs.existsSync(tempPath)) {
+          // Restore state - will show as paused so user can resume
+          this.downloadState = 'paused';
+          this.currentModelName = modelName;
+          this.currentModelUrl = modelUrl;
+          this.downloadProgress = parseInt(progress || '0', 10);
+          this.downloadedBytes = parseInt(downloaded || '0', 10);
+          this.totalBytes = parseInt(total || '0', 10);
+          this.paused = true;
+          
+          this.logger.info(`Restored download state: ${modelName} at ${this.downloadProgress}% (${this.downloadedBytes}/${this.totalBytes} bytes)`);
+          
+          // Send progress to UI if window is ready
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            setTimeout(() => {
+              this.sendProgressToUI(this.downloadProgress, 'paused');
+            }, 500);
+          }
+        } else {
+          // Temp file missing, clear stale state
+          this.logger.info('Temp file missing, clearing stale download state');
+          this.saveDownloadState();
+        }
+      }
+    } catch (err) {
+      this.logger.warn('Failed to restore download state', err);
+    }
+  }
+
+  /**
+   * Check if there's an interrupted download that can be resumed
+   */
+  hasInterruptedDownload(): boolean {
+    if (!this.database) return false;
+    
+    const state = this.database.getSetting('download_state');
+    const modelName = this.database.getSetting('download_model_name');
+    
+    if (state && state !== 'idle' && modelName) {
+      const tempPath = path.join(this.modelsPath, modelName + '.tmp');
+      return fs.existsSync(tempPath);
+    }
+    return false;
+  }
+
+  /**
+   * Get info about interrupted download for UI display
+   */
+  getInterruptedDownloadInfo(): { modelName: string; progress: number } | null {
+    if (!this.database) return null;
+    
+    const state = this.database.getSetting('download_state');
+    const modelName = this.database.getSetting('download_model_name');
+    const progress = this.database.getSetting('download_progress');
+    
+    if (state && state !== 'idle' && modelName) {
+      const tempPath = path.join(this.modelsPath, modelName + '.tmp');
+      if (fs.existsSync(tempPath)) {
+        return {
+          modelName,
+          progress: parseInt(progress || '0', 10),
+        };
+      }
+    }
+    return null;
   }
 
   setMainWindow(window: BrowserWindow): void {
@@ -668,11 +786,13 @@ export class ModelDownloader {
       this.cancelled = false;
       this.currentModelUrl = null;
       this.currentModelName = null;
+      this.saveDownloadState();
       return { success: false, error: 'Download dibatalkan' };
     }
 
     if (result.error === 'paused') {
       // Download was paused, keep state
+      this.saveDownloadState();
       return { success: false, error: 'Download di-pause' };
     }
 
@@ -690,6 +810,7 @@ export class ModelDownloader {
         this.currentModelUrl = null;
         this.sendProgressToUI(100, 'completed');
         this.currentModelName = null;
+        this.saveDownloadState();
         this.logger.info(`Model downloaded successfully: ${modelName} (${stat.size} bytes)`);
         return { success: true };
       } catch (error) {
@@ -723,6 +844,7 @@ export class ModelDownloader {
 
     this.sendProgressToUI(this.downloadProgress, 'paused');
     this.logger.info(`Download paused at ${this.downloadProgress}% (${this.downloadedBytes} bytes)`);
+    this.saveDownloadState();
     
     return { success: true };
   }
@@ -758,10 +880,12 @@ export class ModelDownloader {
       this.cancelled = false;
       this.currentModelUrl = null;
       this.currentModelName = null;
+      this.saveDownloadState();
       return { success: false, error: 'Download dibatalkan' };
     }
 
     if (result.error === 'paused') {
+      this.saveDownloadState();
       return { success: false, error: 'Download di-pause' };
     }
 
@@ -771,6 +895,7 @@ export class ModelDownloader {
         if (stat.size < MIN_VALID_MODEL_SIZE) {
           this.cleanupTempFile();
           this.sendProgressToUI(0, 'error');
+          this.saveDownloadState();
           return { success: false, error: 'Downloaded file is too small or corrupt' };
         }
 
@@ -780,6 +905,7 @@ export class ModelDownloader {
         this.sendProgressToUI(100, 'completed');
         this.logger.info(`Model downloaded successfully: ${this.currentModelName} (${stat.size} bytes)`);
         this.currentModelName = null;
+        this.saveDownloadState();
         return { success: true };
       } catch (error) {
         this.logger.error('Failed to rename downloaded file', error);
@@ -812,6 +938,7 @@ export class ModelDownloader {
     this.currentModelName = null;
     this.downloadedBytes = 0;
     this.sendProgressToUI(0, 'idle');
+    this.saveDownloadState();
     this.logger.info('Download cancelled and cleaned up');
   }
 

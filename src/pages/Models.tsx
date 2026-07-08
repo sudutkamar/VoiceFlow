@@ -23,6 +23,7 @@ type DownloadState = 'idle' | 'downloading' | 'paused' | 'completed' | 'error' |
 function Models({ onSuccess, onError }: ModelsProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [progress, setProgress] = useState(0);
@@ -31,6 +32,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [modelsPath, setModelsPath] = useState<string>('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [interruptedDownload, setInterruptedDownload] = useState<{ modelName: string; progress: number } | null>(null);
   const notif = useNotification();
   const downloadingRef = useRef<string | null>(null);
 
@@ -52,23 +54,29 @@ function Models({ onSuccess, onError }: ModelsProps) {
   }, []);
 
   const handleScanFolder = async () => {
+    if (scanning) return;
+    
     try {
-      setLoading(true);
-      notif.info('🔍 Scanning folder for models...');
+      setScanning(true);
       const available = await window.electronAPI.scanModelsFolder();
       setModels(available);
       
       const foundCustom = available.filter(m => !m.isKnown && m.isValid);
+      const knownModels = available.filter(m => m.isKnown);
+      const downloadedModels = available.filter(m => m.downloaded);
+      
       if (foundCustom.length > 0) {
-        notif.success(`Ditemukan ${foundCustom.length} model baru!`);
+        notif.success(`Ditemukan ${foundCustom.length} model custom baru!`);
+      } else if (downloadedModels.length > 0) {
+        notif.info(`Folder OK — ${downloadedModels.length} model tersedia`);
       } else {
-        notif.info('Tidak ada model baru ditemukan.');
+        notif.warning('Tidak ada model ditemukan di folder ini');
       }
     } catch (error) {
       console.error('Failed to scan models folder:', error);
       notif.error('Gagal scan folder models');
     } finally {
-      setLoading(false);
+      setScanning(false);
     }
   };
 
@@ -91,8 +99,38 @@ function Models({ onSuccess, onError }: ModelsProps) {
     loadSettings();
     loadModelsPath();
 
-    const handleProgress = (data: { progress: number; state: string; downloadedBytes?: number; totalBytes?: number; modelName?: string | null }) => {
-      const { progress: prog, state, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
+    // Re-sync download state on mount (survives tab switches) — SILENT, no notification/auto-select
+    (async () => {
+      try {
+        const data = await window.electronAPI.getDownloadProgress();
+        if (data.state === 'downloading' || data.state === 'paused') {
+          setProgress(data.progress);
+          setDownloadState(data.state as DownloadState);
+          setDownloadedBytes(data.downloadedBytes ?? 0);
+          setTotalBytes(data.totalBytes ?? 0);
+          if (data.modelName) setDownloading(data.modelName);
+        } else if (data.state === 'completed') {
+          // Download completed while on another tab - just refresh models list
+          setDownloading(null);
+          setDownloadState('idle');
+          loadModels(false);
+        } else {
+          // idle or error - ensure clean state
+          setDownloading(null);
+          setDownloadState('idle');
+        }
+        
+        // Check for interrupted download from app restart
+        const interrupted = await window.electronAPI.getInterruptedDownloadInfo();
+        if (interrupted && !data.modelName) {
+          setInterruptedDownload(interrupted);
+        }
+      } catch {}
+    })();
+
+    // Listen for download progress updates — LIVE handler with notification/auto-select
+    const unsub = window.electronAPI.onDownloadProgress((data) => {
+      const { progress: prog, state, downloadedBytes: dlBytes, totalBytes: tBytes, modelName } = data;
 
       setProgress(prog);
       setDownloadedBytes(dlBytes ?? 0);
@@ -105,7 +143,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
       }
 
       if (state === 'completed') {
-        const completedModel = data.modelName || downloadingRef.current;
+        const completedModel = modelName || downloadingRef.current;
         setDownloading(null);
         setDownloadState('idle');
         setProgress(100);
@@ -129,24 +167,11 @@ function Models({ onSuccess, onError }: ModelsProps) {
       }
 
       if (state === 'downloading' || state === 'paused') {
-        if (data.modelName) setDownloading(data.modelName);
+        if (modelName) setDownloading(modelName);
       }
 
       setDownloadState(state as DownloadState);
-    };
-
-    // Re-sync download state on mount (survives tab switches)
-    (async () => {
-      try {
-        const data = await window.electronAPI.getDownloadProgress();
-        if (data.state !== 'idle') {
-          handleProgress(data);
-        }
-      } catch {}
-    })();
-
-    // Listen for download progress updates
-    const unsub = window.electronAPI.onDownloadProgress(handleProgress);
+    });
 
     return () => unsub();
   }, [loadModels, loadSettings, loadModelsPath, notif]);
@@ -255,6 +280,31 @@ function Models({ onSuccess, onError }: ModelsProps) {
       setProgress(0);
       notif.info('Download dibatalkan');
     }
+  };
+
+  const handleResumeInterrupted = async () => {
+    if (!interruptedDownload) return;
+    
+    setDownloading(interruptedDownload.modelName);
+    setDownloadState('downloading');
+    setInterruptedDownload(null);
+    
+    try {
+      const result = await window.electronAPI.resumeDownload();
+      if (!result.success && result.error !== 'Download di-pause') {
+        notif.error(result.error || 'Gagal resume download');
+        setDownloading(null);
+        setDownloadState('idle');
+      }
+    } catch (error: any) {
+      notif.error('Gagal resume download');
+      setDownloading(null);
+      setDownloadState('idle');
+    }
+  };
+
+  const handleDismissInterrupted = () => {
+    setInterruptedDownload(null);
   };
 
   const handleSelect = async (modelName: string) => {
@@ -396,8 +446,18 @@ function Models({ onSuccess, onError }: ModelsProps) {
             <button className="btn btn-secondary btn-sm" onClick={handleResetPath}>
               Reset
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={handleScanFolder} disabled={loading}>
-              🔍 Scan Folder
+            <button 
+              className="btn btn-secondary btn-sm" 
+              onClick={handleScanFolder} 
+              disabled={scanning}
+            >
+              {scanning ? (
+                <>
+                  <span className="btn-spinner" /> Scanning...
+                </>
+              ) : (
+                '🔍 Scan Folder'
+              )}
             </button>
           </div>
         </div>
@@ -450,6 +510,30 @@ function Models({ onSuccess, onError }: ModelsProps) {
                downloadState === 'finalizing' ? 'Menyimpan...' : 
                'Downloading...'}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Interrupted Download Banner (from app restart) */}
+      {interruptedDownload && !downloading && (
+        <div className="download-progress-card paused">
+          <div className="download-progress-header">
+            <div className="download-progress-info">
+              <span className="download-model-name">⏸️ {getLabel(interruptedDownload.modelName)}</span>
+              <span className="download-progress-percent">{interruptedDownload.progress}%</span>
+            </div>
+            <div className="download-progress-actions">
+              <button className="btn btn-primary btn-sm" onClick={handleResumeInterrupted}>
+                ▶ Resume Download
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={handleDismissInterrupted}>
+                ✕ Dismiss
+              </button>
+            </div>
+          </div>
+          <div className="download-progress-stats">
+            <span>Download terputus sebelumnya</span>
+            <span className="download-state">Paused</span>
           </div>
         </div>
       )}

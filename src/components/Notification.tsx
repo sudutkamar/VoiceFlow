@@ -31,6 +31,28 @@ export function useNotification() {
 
 let notificationIdCounter = 0;
 
+// Deduplication: track recent messages to prevent duplicates
+const recentMessages = new Map<string, number>();
+const DEDUP_WINDOW_MS = 1000;
+
+function isDuplicate(message: string): boolean {
+  const now = Date.now();
+  const lastTime = recentMessages.get(message);
+  if (lastTime && now - lastTime < DEDUP_WINDOW_MS) {
+    return true;
+  }
+  recentMessages.set(message, now);
+  // Cleanup old entries
+  if (recentMessages.size > 50) {
+    for (const [key, time] of recentMessages) {
+      if (now - time > DEDUP_WINDOW_MS) {
+        recentMessages.delete(key);
+      }
+    }
+  }
+  return false;
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const timersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -45,6 +67,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const showNotification = useCallback((type: NotificationType, message: string, duration: number = 4000) => {
+    // Skip duplicate messages within dedup window
+    if (isDuplicate(message)) {
+      return;
+    }
+    
     const id = `notif-${++notificationIdCounter}`;
     const notification: Notification = { id, type, message, duration };
     

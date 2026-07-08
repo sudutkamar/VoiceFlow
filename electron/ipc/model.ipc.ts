@@ -18,7 +18,7 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
   const savedSettings = database.getAllSettings();
   const savedModelsPath = savedSettings.custom_models_path || null;
   
-  modelDownloader = new ModelDownloader(logger, savedModelsPath);
+  modelDownloader = new ModelDownloader(logger, savedModelsPath, database);
   modelDownloader.setMainWindow(mainWindow);
 
   // Sync Transcriber path with ModelDownloader's initial path
@@ -117,6 +117,14 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
 
   ipcMain.handle('force-download-model', async (event, modelName: string) => {
     return await modelDownloader.forceDownloadModel(modelName);
+  });
+
+  ipcMain.handle('has-interrupted-download', async () => {
+    return modelDownloader.hasInterruptedDownload();
+  });
+
+  ipcMain.handle('get-interrupted-download-info', async () => {
+    return modelDownloader.getInterruptedDownloadInfo();
   });
 
   ipcMain.handle('reset-models-path', async () => {

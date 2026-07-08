@@ -52,6 +52,8 @@ export interface ElectronAPI {
   runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;
   deleteModel: (model: string) => Promise<boolean>;
   getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes?: number; totalBytes?: number }>;
+  hasInterruptedDownload: () => Promise<boolean>;
+  getInterruptedDownloadInfo: () => Promise<{ modelName: string; progress: number } | null>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   getModelsPath: () => Promise<string>;
   getCustomModelsPath: () => Promise<string | null>;
@@ -151,6 +153,8 @@ const api: ElectronAPI = {
   runBenchmark: (audioBuffer, models) => ipcRenderer.invoke('run-benchmark', audioBuffer, models),
   deleteModel: (model) => ipcRenderer.invoke('delete-model', model),
   getDownloadProgress: () => ipcRenderer.invoke('get-download-progress'),
+  hasInterruptedDownload: () => ipcRenderer.invoke('has-interrupted-download'),
+  getInterruptedDownloadInfo: () => ipcRenderer.invoke('get-interrupted-download-info'),
   isModelDownloaded: (model) => ipcRenderer.invoke('is-model-downloaded', model),
   getModelsPath: () => ipcRenderer.invoke('get-models-path'),
   getCustomModelsPath: () => ipcRenderer.invoke('get-custom-models-path'),
