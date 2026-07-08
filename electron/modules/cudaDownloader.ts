@@ -22,7 +22,7 @@ const CUDA_DLLS = [
 ];
 
 // GitHub release URL for CUDA addon
-const CUDA_DOWNLOAD_URL = 'https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/VoiceFlow-CUDA-v1.0.0.7z';
+const CUDA_DOWNLOAD_URL = 'https://github.com/sudutkamar/VoiceFlow/releases/download/cuda-addon-v2.0.0/VoiceFlow-CUDA-v2.0.0.7z';
 
 export interface CudaStatus {
   hasNvidiaGpu: boolean;
