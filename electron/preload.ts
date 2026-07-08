@@ -51,7 +51,7 @@ export interface ElectronAPI {
   cancelDownload: () => Promise<void>;
   runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;
   deleteModel: (model: string) => Promise<boolean>;
-  getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null }>;
+  getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes?: number; totalBytes?: number }>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   getModelsPath: () => Promise<string>;
   getCustomModelsPath: () => Promise<string | null>;

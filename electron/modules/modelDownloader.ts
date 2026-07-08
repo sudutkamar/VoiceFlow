@@ -363,6 +363,14 @@ export class ModelDownloader {
     return this.currentModelName;
   }
 
+  getDownloadedBytes(): number {
+    return this.downloadedBytes;
+  }
+
+  getTotalBytes(): number {
+    return this.totalBytes;
+  }
+
   private updateTaskbarProgress(progress: number, mode: 'normal' | 'paused' | 'error' | 'none' = 'normal'): void {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
     
@@ -680,8 +688,8 @@ export class ModelDownloader {
         fs.renameSync(tempPath, modelPath);
         this.currentTempPath = null;
         this.currentModelUrl = null;
-        this.currentModelName = null;
         this.sendProgressToUI(100, 'completed');
+        this.currentModelName = null;
         this.logger.info(`Model downloaded successfully: ${modelName} (${stat.size} bytes)`);
         return { success: true };
       } catch (error) {
@@ -769,9 +777,9 @@ export class ModelDownloader {
         fs.renameSync(tempPath, modelPath);
         this.currentTempPath = null;
         this.currentModelUrl = null;
-        this.currentModelName = null;
         this.sendProgressToUI(100, 'completed');
         this.logger.info(`Model downloaded successfully: ${this.currentModelName} (${stat.size} bytes)`);
+        this.currentModelName = null;
         return { success: true };
       } catch (error) {
         this.logger.error('Failed to rename downloaded file', error);

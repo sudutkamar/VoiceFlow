@@ -91,25 +91,12 @@ function Models({ onSuccess, onError }: ModelsProps) {
     loadSettings();
     loadModelsPath();
 
-    // Re-sync download state on mount (survives tab switches)
-    (async () => {
-      try {
-        const state = await window.electronAPI.getDownloadProgress();
-        if (state.state === 'downloading' || state.state === 'paused') {
-          setProgress(state.progress);
-          setDownloadState(state.state as DownloadState);
-          if (state.modelName) setDownloading(state.modelName);
-        }
-      } catch {}
-    })();
-
-    // Listen for download progress updates
-    const unsub = window.electronAPI.onDownloadProgress((data) => {
+    const handleProgress = (data: { progress: number; state: string; downloadedBytes?: number; totalBytes?: number; modelName?: string | null }) => {
       const { progress: prog, state, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
-      
+
       setProgress(prog);
-      setDownloadedBytes(dlBytes);
-      setTotalBytes(tBytes);
+      setDownloadedBytes(dlBytes ?? 0);
+      setTotalBytes(tBytes ?? 0);
 
       if (state === 'finalizing') {
         setProgress(100);
@@ -118,12 +105,12 @@ function Models({ onSuccess, onError }: ModelsProps) {
       }
 
       if (state === 'completed') {
-        const completedModel = downloadingRef.current;
+        const completedModel = data.modelName || downloadingRef.current;
         setDownloading(null);
         setDownloadState('idle');
         setProgress(100);
         loadModels(false);
-        
+
         if (completedModel) {
           window.electronAPI.updateSetting('model', completedModel).then(() => {
             setSelectedModel(completedModel);
@@ -141,8 +128,25 @@ function Models({ onSuccess, onError }: ModelsProps) {
         return;
       }
 
+      if (state === 'downloading' || state === 'paused') {
+        if (data.modelName) setDownloading(data.modelName);
+      }
+
       setDownloadState(state as DownloadState);
-    });
+    };
+
+    // Re-sync download state on mount (survives tab switches)
+    (async () => {
+      try {
+        const data = await window.electronAPI.getDownloadProgress();
+        if (data.state !== 'idle') {
+          handleProgress(data);
+        }
+      } catch {}
+    })();
+
+    // Listen for download progress updates
+    const unsub = window.electronAPI.onDownloadProgress(handleProgress);
 
     return () => unsub();
   }, [loadModels, loadSettings, loadModelsPath, notif]);

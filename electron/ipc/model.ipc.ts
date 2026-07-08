@@ -61,6 +61,8 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
       progress: modelDownloader.getDownloadProgress(),
       state: modelDownloader.getDownloadState(),
       modelName: modelDownloader.getCurrentModelName(),
+      downloadedBytes: modelDownloader.getDownloadedBytes(),
+      totalBytes: modelDownloader.getTotalBytes(),
     };
   });
 
