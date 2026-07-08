@@ -1,8 +1,10 @@
 /**
- * WAV Recorder - Optimized for speed
+ * WAV Recorder - Reliable implementation using ScriptProcessorNode
  * Records directly in 16kHz mono 16-bit PCM
- * Includes mini VAD (Voice Activity Detection) for auto-stop on silence.
+ * Includes adaptive VAD (Voice Activity Detection) for auto-stop on silence.
  */
+
+import { AdaptiveVAD, AdaptiveVADOptions } from './adaptiveVAD';
 
 export interface VadOptions {
   enabled: boolean;
@@ -19,12 +21,11 @@ export class WavRecorder {
   private startTime: number = 0;
   private recording: boolean = false;
   private analyser: AnalyserNode | null = null;
+  private adaptiveVAD: AdaptiveVAD | null = null;
 
   // VAD state
   private vadOptions: VadOptions = { enabled: false, silenceThreshold: 0.01, silenceDurationMs: 3000 };
   private onSilenceCallback: (() => void) | null = null;
-  private silenceStartTime: number = 0;
-  private isSilent: boolean = false;
 
   async start(deviceId?: string, vadOptions?: Partial<VadOptions>): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
@@ -44,64 +45,42 @@ export class WavRecorder {
     this.analyser.fftSize = 64;
     this.source.connect(this.analyser);
 
-    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    // Initialize adaptive VAD
+    this.adaptiveVAD = new AdaptiveVAD({
+      initialThreshold: vadOptions?.silenceThreshold ?? 0.01,
+      maxSilenceDurationMs: vadOptions?.silenceDurationMs ?? 3000,
+      hangoverMs: 200,
+      minSpeechDurationMs: 100,
+      adaptiveThreshold: true,
+    });
+
+    // Set VAD callbacks
+    this.adaptiveVAD.setOnSilence(() => {
+      if (this.onSilenceCallback) {
+        this.onSilenceCallback();
+      }
+    });
+
+    // Use ScriptProcessorNode for reliable audio capture
     this.chunks = [];
     this.startTime = Date.now();
     this.recording = true;
 
-    // Reset VAD state
-    this.silenceStartTime = 0;
-    this.isSilent = false;
-    if (vadOptions) {
-      this.vadOptions = {
-        enabled: vadOptions.enabled ?? false,
-        silenceThreshold: vadOptions.silenceThreshold ?? 0.01,
-        silenceDurationMs: vadOptions.silenceDurationMs ?? 3000,
-      };
-    }
-
-    this.processor.onaudioprocess = (e) => {
+    const scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    scriptProcessor.onaudioprocess = (e) => {
       if (!this.recording) return;
       const channelData = e.inputBuffer.getChannelData(0);
       this.chunks.push(new Float32Array(channelData));
 
-      // Mini VAD: check silence level
-      if (this.vadOptions.enabled && this.onSilenceCallback) {
-        this.detectSilence(channelData);
+      // Process with adaptive VAD
+      if (this.vadOptions.enabled && this.adaptiveVAD) {
+        this.adaptiveVAD.process(channelData);
       }
     };
 
-    this.source.connect(this.processor);
-    this.processor.connect(this.audioContext.destination);
-  }
-
-  /**
-   * Simple VAD: calculate RMS of current audio chunk and detect sustained silence.
-   */
-  private detectSilence(samples: Float32Array): void {
-    let sum = 0;
-    for (let i = 0; i < samples.length; i++) {
-      sum += samples[i] * samples[i];
-    }
-    const rms = Math.sqrt(sum / samples.length);
-    const now = Date.now();
-
-    if (rms < this.vadOptions.silenceThreshold) {
-      // Audio is below threshold
-      if (!this.isSilent) {
-        // Just became silent — start tracking
-        this.isSilent = true;
-        this.silenceStartTime = now;
-      } else if (now - this.silenceStartTime >= this.vadOptions.silenceDurationMs) {
-        // Silence持续足够久 — trigger auto-stop
-        this.isSilent = false;
-        this.onSilenceCallback?.();
-      }
-    } else {
-      // Audio is above threshold — reset silence tracking
-      this.isSilent = false;
-      this.silenceStartTime = 0;
-    }
+    this.source.connect(scriptProcessor);
+    scriptProcessor.connect(this.audioContext.destination);
+    this.processor = scriptProcessor;
   }
 
   onSilence(callback: () => void): void {
@@ -112,7 +91,12 @@ export class WavRecorder {
     this.recording = false;
     const duration = Date.now() - this.startTime;
 
-    if (this.processor) { this.processor.disconnect(); this.processor = null; }
+    // Cleanup ScriptProcessor
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor = null;
+    }
+
     if (this.source) { this.source.disconnect(); this.source = null; }
     if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
     if (this.audioContext) { await this.audioContext.close(); this.audioContext = null; }
@@ -130,7 +114,12 @@ export class WavRecorder {
   async cancel(): Promise<void> {
     this.recording = false;
 
-    if (this.processor) { this.processor.disconnect(); this.processor = null; }
+    // Cleanup ScriptProcessor
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor = null;
+    }
+
     if (this.source) { this.source.disconnect(); this.source = null; }
     if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
     if (this.audioContext) { await this.audioContext.close(); this.audioContext = null; }
@@ -181,4 +170,5 @@ export class WavRecorder {
 
   isRecording(): boolean { return this.recording; }
   getAnalyserNode(): AnalyserNode | null { return this.analyser; }
+  getAdaptiveVAD(): AdaptiveVAD | null { return this.adaptiveVAD; }
 }

@@ -432,15 +432,16 @@ function setupIPC(): void {
   });
   ipcMain.handle('show-mini-window', () => showMiniWindow());
   ipcMain.handle('hide-mini-window', () => hideMiniWindow());
-  ipcMain.handle('resize-mini-window', (_, height: number) => {
+  ipcMain.handle('resize-mini-window', (_, height: number, width?: number) => {
     if (miniWindow && !miniWindow.isDestroyed()) {
       // Resize upward/downward while preserving the user's dragged X position and bottom anchor.
       const bounds = miniWindow.getBounds();
       const nextHeight = Math.max(64, Math.round(height));
+      const nextWidth = width ? Math.round(width) : bounds.width;
       miniWindow.setBounds({
         x: bounds.x,
         y: bounds.y + bounds.height - nextHeight,
-        width: bounds.width,
+        width: nextWidth,
         height: nextHeight,
       }, false);
     }

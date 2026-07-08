@@ -400,6 +400,9 @@ export class Transcriber {
       profile?: string;
       autoModel?: boolean;
       formalMode?: boolean;
+      streaming?: boolean;
+      chunkSizeMs?: number;
+      overlapMs?: number;
     } = {}
   ): Promise<TranscribeResult> {
     const startTime = Date.now();
@@ -412,6 +415,9 @@ export class Transcriber {
       profile: forceProfile,
       autoModel = false,
       formalMode = false,
+      streaming = false,
+      chunkSizeMs = 30000,
+      overlapMs = 2000,
     } = options;
 
     // --- Validate (with cached paths) ---
@@ -586,6 +592,150 @@ export class Transcriber {
     return {
       success: false,
       error: lastError || 'Transcription failed',
+      usedModel: selectedModel,
+      processingMs: Date.now() - startTime,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Streaming Transcription (Real-time chunk processing)
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Transcribe audio with streaming chunk processing
+   * Splits audio into overlapping chunks and processes them sequentially
+   * Returns partial results as chunks are processed
+   */
+  async transcribeStreaming(
+    audioPath: string,
+    model: string = 'ggml-base.bin',
+    language: string = 'auto',
+    options: {
+      chunkSizeMs?: number;
+      overlapMs?: number;
+      initialPrompt?: string;
+      autoModel?: boolean;
+      onPartialResult?: (text: string, chunkIndex: number, totalChunks: number) => void;
+    } = {}
+  ): Promise<TranscribeResult> {
+    const startTime = Date.now();
+    const {
+      chunkSizeMs = 30000,
+      overlapMs = 2000,
+      initialPrompt,
+      autoModel = false,
+      onPartialResult,
+    } = options;
+
+    // Validate
+    if (!cachedPathExists(this.whisperPath)) {
+      return { success: false, error: 'whisper-cli.exe tidak ditemukan.' };
+    }
+
+    // Model selection
+    const selectedModel = autoModel
+      ? this.selectOptimalModel(model)
+      : (this.isModelAvailable(model) ? model : this.selectOptimalModel(model));
+
+    const modelPath = path.join(this.modelsPath, selectedModel);
+    if (!cachedPathExists(modelPath)) {
+      return { success: false, error: `Model "${selectedModel}" belum diunduh.` };
+    }
+
+    if (!cachedPathExists(audioPath)) {
+      return { success: false, error: 'File audio tidak ditemukan' };
+    }
+
+    // Read audio file
+    const audioBuffer = fs.readFileSync(audioPath);
+    const audioQuality = this.analyzeAudioQuality(audioBuffer);
+    const totalDurationMs = audioQuality.durationMs;
+
+    // If audio is short enough, just transcribe normally
+    if (totalDurationMs <= chunkSizeMs) {
+      return this.transcribe(audioPath, model, language, {
+        initialPrompt,
+        autoModel,
+      });
+    }
+
+    // Calculate chunks
+    const chunkSizeBytes = Math.floor((chunkSizeMs / 1000) * 16000 * 2); // 16kHz 16-bit mono
+    const overlapBytes = Math.floor((overlapMs / 1000) * 16000 * 2);
+    const totalChunks = Math.ceil(audioBuffer.length / (chunkSizeBytes - overlapBytes));
+
+    this.logger.info('Streaming transcription started', {
+      totalChunks,
+      chunkSizeMs,
+      overlapMs,
+      totalDurationMs,
+    });
+
+    // Profile selection
+    const profile = this.selectProfile(selectedModel, chunkSizeMs);
+    const fullPrompt = this.buildInitialPrompt(initialPrompt, language);
+
+    // Process chunks
+    const allTexts: string[] = [];
+    let lastPartialText = '';
+
+    for (let i = 0; i < totalChunks; i++) {
+      const startByte = i * (chunkSizeBytes - overlapBytes);
+      const endByte = Math.min(startByte + chunkSizeBytes, audioBuffer.length);
+      const chunkBuffer = audioBuffer.slice(startByte, endByte);
+
+      // Write chunk to temp file
+      const chunkPath = audioPath.replace('.wav', `_chunk_${i}.wav`);
+      fs.writeFileSync(chunkPath, chunkBuffer);
+
+      try {
+        // Transcribe chunk
+        const result = await this.runWhisper(
+          chunkPath,
+          modelPath,
+          selectedModel,
+          language,
+          profile,
+          fullPrompt,
+          {},
+          chunkSizeMs
+        );
+
+        if (result.success && result.text) {
+          allTexts.push(result.text);
+          
+          // Send partial result
+          const combinedText = allTexts.join(' ');
+          if (combinedText !== lastPartialText && onPartialResult) {
+            onPartialResult(combinedText, i + 1, totalChunks);
+            lastPartialText = combinedText;
+          }
+        }
+
+        // Clean up chunk file
+        try { fs.unlinkSync(chunkPath); } catch {}
+      } catch (error) {
+        this.logger.warn(`Chunk ${i} failed`, error);
+        try { fs.unlinkSync(chunkPath); } catch {}
+      }
+    }
+
+    // Combine all chunk results
+    const finalText = allTexts.join(' ').trim();
+
+    if (!finalText) {
+      return { success: false, error: '__NO_SPEECH__' };
+    }
+
+    // Post-process
+    const postResult = await this.postProcess(finalText, true, true, totalDurationMs);
+
+    return {
+      success: true,
+      text: postResult.text,
+      rawText: finalText !== postResult.text ? finalText : undefined,
+      confidence: postResult.confidence,
+      fuzzyChanges: postResult.fuzzyChanges,
       usedModel: selectedModel,
       processingMs: Date.now() - startTime,
     };

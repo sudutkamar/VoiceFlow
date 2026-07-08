@@ -118,7 +118,7 @@ const api: ElectronAPI = {
   
   showMiniWindow: () => ipcRenderer.invoke('show-mini-window'),
   hideMiniWindow: () => ipcRenderer.invoke('hide-mini-window'),
-  resizeMiniWindow: (height: number) => ipcRenderer.invoke('resize-mini-window', height),
+  resizeMiniWindow: (height: number, width?: number) => ipcRenderer.invoke('resize-mini-window', height, width),
   setMiniWindowFocusable: (focusable: boolean) => ipcRenderer.invoke('set-mini-window-focusable', focusable),
   miniWindowReady: () => ipcRenderer.send('mini-window-ready'),
   

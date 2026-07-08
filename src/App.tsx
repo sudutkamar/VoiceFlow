@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import './styles/app.css';
 import { WavRecorder } from './utils/wavRecorder';
-import Settings from './pages/Settings';
-import Models from './pages/Models';
-import History from './pages/History';
-import Benchmark from './pages/Benchmark';
 import { NotificationProvider, useNotification } from './components/Notification';
 import appLogo from './assets/logo.png';
+
+// Lazy load page components for better performance
+const Settings = lazy(() => import('./pages/Settings'));
+const Models = lazy(() => import('./pages/Models'));
+const History = lazy(() => import('./pages/History'));
+const Benchmark = lazy(() => import('./pages/Benchmark'));
 
 declare global {
   interface Window {
@@ -28,7 +30,7 @@ declare global {
       minimizeWindow: () => Promise<void>;
       maximizeWindow: () => Promise<void>;
       miniWindowReady: () => void;
-      resizeMiniWindow: (height: number) => Promise<void>;
+      resizeMiniWindow: (height: number, width?: number) => Promise<void>;
       setMiniWindowFocusable: (focusable: boolean) => Promise<void>;
       getTargetApp: () => Promise<string>;
       onStateChange: (callback: (state: string) => void) => () => void;
@@ -395,6 +397,17 @@ function MiniBar() {
     }
   }, [miniZoom]);
 
+  // When window is resized, maintain aspect ratio by scaling width proportionally
+  useEffect(() => {
+    if (windowHeight <= 0) return;
+    const BASE_WIDTH = 380;
+    const BASE_HEIGHT = 52;
+    const proportionalWidth = Math.round(BASE_WIDTH * (windowHeight / BASE_HEIGHT));
+    if (Math.abs(windowWidth - proportionalWidth) > 4) {
+      window.electronAPI.resizeMiniWindow(windowHeight, proportionalWidth);
+    }
+  }, [windowHeight]);
+
   // No window resize on hover — CSS handles all visual transitions smoothly.
   // This prevents the glitch/flicker caused by Electron window bounds changing on hover.
 
@@ -549,7 +562,8 @@ function MiniBar() {
       try {
         const { buffer, duration } = await wavRecorderRef.current.stop();
         wavRecorderRef.current = null;
-        window.electronAPI.sendAudioData({ buffer: Array.from(new Uint8Array(buffer)), mimeType: 'audio/wav', duration });
+        // Use efficient buffer transfer
+        window.electronAPI.sendAudioData({ buffer: new Uint8Array(buffer) as any, mimeType: 'audio/wav', duration });
         processingTimeoutRef.current = setTimeout(() => { if (stateRef.current === 'processing') { setError('Timeout'); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); } }, 25000);
       } catch { setState('idle'); }
     }
@@ -891,11 +905,17 @@ function MainApp() {
 
         {/* Content */}
         <main className="content">
-          {currentPage === 'home' && <HomePage settings={settings} onSuccess={showSuccess} onError={showError} />}
-          {currentPage === 'models' && <Models onSuccess={showSuccess} onError={showError} />}
-          {currentPage === 'history' && <History onSuccess={showSuccess} />}
-          {currentPage === 'benchmark' && <Benchmark />}
-          {currentPage === 'settings' && <Settings onSuccess={showSuccess} onError={showError} />}
+          <Suspense fallback={
+            <div className="page-loading">
+              <div className="spinner-lg"></div>
+            </div>
+          }>
+            {currentPage === 'home' && <HomePage settings={settings} onSuccess={showSuccess} onError={showError} />}
+            {currentPage === 'models' && <Models onSuccess={showSuccess} onError={showError} />}
+            {currentPage === 'history' && <History onSuccess={showSuccess} />}
+            {currentPage === 'benchmark' && <Benchmark />}
+            {currentPage === 'settings' && <Settings onSuccess={showSuccess} onError={showError} />}
+          </Suspense>
         </main>
       </div>
     </div>
@@ -1031,7 +1051,8 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
       try {
         const { buffer, duration } = await wavRecorderRef.current.stop();
         wavRecorderRef.current = null;
-        window.electronAPI.sendAudioData({ buffer: Array.from(new Uint8Array(buffer)), mimeType: 'audio/wav', duration });
+        // Use efficient buffer transfer
+        window.electronAPI.sendAudioData({ buffer: new Uint8Array(buffer) as any, mimeType: 'audio/wav', duration });
         processingTimeoutRef.current = setTimeout(() => { if (stateRef.current === 'processing') { setError('Processing timeout'); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); } }, 30000);
       } catch { setState('idle'); }
     }
