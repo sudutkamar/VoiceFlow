@@ -59,8 +59,6 @@ Saat merekam, VoiceFlow menampilkan **floating toolbar** transparan di bagian ba
 
 ![Floating UI Preview](resources/icons/preview/floating-ui.png)
 
-```
-
 | Tombol | Fungsi |
 |--------|--------|
 | **Bahasa** | Ganti bahasa langsung (ID/EN/JA/KO/ZH/Auto) |
