@@ -6,6 +6,26 @@
   "author": "VoiceFlow",
   "license": "MIT",
   "private": true,
+  "build": {
+    "appId": "com.voiceflow.app",
+    "productName": "VoiceFlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  },
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "dev:first-run": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development VOICEFLOW_FIRST_RUN=1 electron .\"",
