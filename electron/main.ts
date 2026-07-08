@@ -71,7 +71,13 @@ function createMainWindow(showInitially: boolean = true): void {
       sandbox: false,
     },
     title: 'VoiceFlow',
-    icon: getAppIcon(),
+    icon: (() => {
+      const iconPath = getAppIcon();
+      if (iconPath) {
+        return nativeImage.createFromPath(iconPath);
+      }
+      return undefined;
+    })(),
     show: false,
     backgroundColor: '#0a0a0f',
     frame: false,
@@ -132,7 +138,13 @@ function createMiniWindow(): void {
       sandbox: false,
     },
     title: 'VoiceFlow Mini',
-    icon: getAppIcon(),
+    icon: (() => {
+      const iconPath = getAppIcon();
+      if (iconPath) {
+        return nativeImage.createFromPath(iconPath);
+      }
+      return undefined;
+    })(),
     show: false,
     backgroundColor: '#00000000',
     frame: false,
@@ -265,11 +277,19 @@ function showMainWindow(page?: string): void {
 }
 
 function getAppIcon(): string {
-  const iconName = 'icon.png';
-  const iconPath = isDev()
-    ? path.join(__dirname, '..', 'resources', 'icons', iconName)
-    : path.join(process.resourcesPath, 'icons', iconName);
-  return fs.existsSync(iconPath) ? iconPath : '';
+  // Try .ico first (best for Windows), then .png
+  const iconNames = ['icon.ico', 'icon.png'];
+  for (const iconName of iconNames) {
+    const iconPath = isDev()
+      ? path.join(__dirname, '..', 'resources', 'icons', iconName)
+      : path.join(process.resourcesPath, 'icons', iconName);
+    if (fs.existsSync(iconPath)) {
+      console.log('[Icon] Found:', iconPath);
+      return iconPath;
+    }
+  }
+  console.warn('[Icon] No icon found!');
+  return '';
 }
 
 // ============ TRAY ============
