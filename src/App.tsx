@@ -166,9 +166,10 @@ function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active
   const [silenceDetected, setSilence] = useState(false);
   const silenceStart = useRef(0);
   const animRef = useRef(0);
+  const hasDetectedAudio = useRef(false);
 
   useEffect(() => {
-    if (!active) { setSilence(false); return; }
+    if (!active) { setSilence(false); hasDetectedAudio.current = false; silenceStart.current = 0; return; }
     const checkAndLoop = () => {
       const analyser = analyserRef.current;
       if (!analyser) { animRef.current = requestAnimationFrame(checkAndLoop); return; }
@@ -177,7 +178,14 @@ function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active
         const data = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(data);
         const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
+
+        // Mark audio as detected when there's meaningful input
+        if (rms >= 6) hasDetectedAudio.current = true;
+
+        // Only trigger silence if audio was ever detected (avoids premature auto-stop
+        // when no mic is connected or mic is not working)
         if (rms < 6) {
+          if (!hasDetectedAudio.current) return;
           if (!silenceStart.current) silenceStart.current = Date.now();
           else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
         } else {
@@ -189,7 +197,7 @@ function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active
       animRef.current = requestAnimationFrame(loop);
     };
     animRef.current = requestAnimationFrame(checkAndLoop);
-    return () => { cancelAnimationFrame(animRef.current); silenceStart.current = 0; setSilence(false); };
+    return () => { cancelAnimationFrame(animRef.current); silenceStart.current = 0; hasDetectedAudio.current = false; setSilence(false); };
   }, [active, timeoutMs]);
 
   return silenceDetected;
@@ -233,6 +241,8 @@ function MiniBar() {
   const [langOpen, setLangOpen] = useState(false);
   const [clipPeak, setClipPeak] = useState(0);
   const [barHover, setBarHover] = useState(false);
+  const [hasModel, setHasModel] = useState<boolean | null>(null);
+  const [gpuStatus, setGpuStatus] = useState<string | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
 
   const wavRecorderRef = useRef<WavRecorder | null>(null);
@@ -306,6 +316,14 @@ function MiniBar() {
     const handleBlur = () => setLangOpen(false);
     window.addEventListener('blur', handleBlur);
 
+    // Check model availability
+    window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
+    // Check GPU/CUDA status
+    window.electronAPI.getGpuStatus().then((s) => {
+      if (s.hasGpu && !s.cudaDllsPresent) setGpuStatus('GPU');
+      else setGpuStatus(null);
+    }).catch(() => {});
+
     return () => {
       unsubs.forEach((u) => u());
       cancelAnimationFrame(animRef.current);
@@ -328,6 +346,27 @@ function MiniBar() {
       } else {
         document.documentElement.classList.remove('light-theme');
       }
+
+      // After settings loaded: proactively request mic permission
+      // so it's ready when user clicks record.
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+        tempStream.getTracks().forEach(t => t.stop());
+
+        // Auto-detect and save default mic if none selected
+        if (!s.selected_mic) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const mics = devices.filter(d => d.kind === 'audioinput');
+          if (mics.length > 0 && mics[0].deviceId) {
+            await window.electronAPI.updateSetting('selected_mic', mics[0].deviceId).catch(() => {});
+            setSettings(prev => ({ ...prev, selected_mic: mics[0].deviceId }));
+          }
+        }
+      } catch (err) {
+        console.warn('[MiniBar] Mic preflight failed:', err);
+      }
     } catch {} 
   };
 
@@ -346,7 +385,6 @@ function MiniBar() {
       });
       recorder.onSilence(() => {
         if (stateRef.current === 'recording') {
-          playSound('stop');
           stopRec();
         }
       });
@@ -355,7 +393,6 @@ function MiniBar() {
       startRef.current = Date.now();
       setState('recording');
       setPartial(''); setTime(0); setClipPeak(0); setMicLevel(0);
-      // Don't clear text here — keep previous text visible during recording
       playSound('start');
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 200);
       const POINTS = 24;
@@ -463,8 +500,12 @@ function MiniBar() {
         errorMsg = 'Mic access denied';
       } else if (err.name === 'NotReadableError') {
         errorMsg = 'Mic in use by other app';
+      } else if (err.name === 'OverconstrainedError' || err.name === 'NotFoundError') {
+        // Saved mic device no longer available — fall back to default
+        errorMsg = 'Mic tidak ditemukan, pakai default';
+        setSettings(prev => ({ ...prev, selected_mic: '' }));
+        window.electronAPI.updateSetting('selected_mic', '').catch(() => {});
       } else if (err.message) {
-        // Show actual error for debugging
         errorMsg = err.message.substring(0, 60);
       }
       setError(errorMsg);
@@ -704,6 +745,18 @@ function MiniBar() {
         </div>
       )}
 
+      {/* Setup warnings */}
+      {hasModel === false && state !== 'recording' && (
+        <div className="m-tooltip warning" onClick={() => window.electronAPI.showMain('models')}>
+          ⚠️ Belum ada model AI — klik untuk download
+        </div>
+      )}
+      {gpuStatus && !hasModel === false && state !== 'recording' && (
+        <div className="m-tooltip info" onClick={() => window.electronAPI.showMain('settings')}>
+          🖥️ GPU terdeteksi — klik untuk download CUDA
+        </div>
+      )}
+
       {/* Tooltips */}
       {partial && state === 'recording' && <div className="m-tooltip">{partial}</div>}
       {error && <div className="m-tooltip error">{error}</div>}
@@ -910,7 +963,6 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
       });
       recorder.onSilence(() => {
         if (stateRef.current === 'recording') {
-          playSound('stop');
           stopRec();
         }
       });
@@ -939,6 +991,9 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
         errorMsg = 'Microphone access denied';
       } else if (err.name === 'NotReadableError') {
         errorMsg = 'Microphone in use by another app';
+      } else if (err.name === 'OverconstrainedError' || err.name === 'NotFoundError') {
+        errorMsg = 'Mic tidak ditemukan — cek koneksi mic';
+        window.electronAPI.updateSetting('selected_mic', '').catch(() => {});
       } else if (err.message) {
         errorMsg = err.message.substring(0, 80);
       }

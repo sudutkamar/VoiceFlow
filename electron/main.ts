@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, screen, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { VoiceFlowDatabase as Database } from './modules/database';
@@ -46,6 +46,7 @@ let cudaDownloader: CudaDownloader;
 let isQuitting = false;
 let isPasting = false;
 let miniWindowReady = false;
+let deferredShowMiniWindow = false;
 
 function isDev(): boolean {
   return process.env.NODE_ENV === 'development';
@@ -180,12 +181,14 @@ function createMiniWindow(): void {
     if (hotkeyManager && miniWindow) {
       hotkeyManager.setMiniWindow(miniWindow);
     }
-    // Show if this was the first load and showMiniWindow was already called
-    if (miniWindowReady && miniWindow && !miniWindow.isDestroyed() && !miniWindow.isVisible()) {
+    // Show if showMiniWindow was called while window was still loading
+    if (deferredShowMiniWindow && miniWindow && !miniWindow.isDestroyed() && !miniWindow.isVisible()) {
+      deferredShowMiniWindow = false;
       const floatingEnabled = database?.getSetting('show_mini_window') !== 'false';
       if (floatingEnabled) {
         miniWindow.showInactive();
         miniWindow.setAlwaysOnTop(true, 'screen-saver');
+        logger?.info('Deferred mini window shown');
       }
     }
   });
@@ -219,6 +222,7 @@ function showMiniWindow(): void {
   }
   // Only show after content is fully loaded to prevent flash
   if (!miniWindowReady) {
+    deferredShowMiniWindow = true;
     logger?.info('Mini window not ready, deferring show');
     return;
   }
@@ -230,6 +234,7 @@ function showMiniWindow(): void {
 }
 
 function hideMiniWindow(): void {
+  deferredShowMiniWindow = false;
   if (miniWindow && !miniWindow.isDestroyed()) {
     miniWindow.hide();
   }
@@ -532,6 +537,16 @@ const ensureCacheDirs = () => {
 ensureCacheDirs();
 
 app.whenReady().then(() => {
+  // Auto-grant microphone & media permissions so the floating UI
+  // can start recording without showing a blocking permission dialog.
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
+
   logger = new Logger();
   logger.info('VoiceFlow starting...');
 
