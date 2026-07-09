@@ -165,11 +165,16 @@ export class CudaDownloader {
       return { success: false, error: 'Already downloading' };
     }
 
+    const isResume = this.downloadState === 'paused';
     this.downloadState = 'downloading';
-    this.downloadedBytes = 0;
-    this.totalBytes = 0;
     this.paused = false;
     this.cancelled = false;
+
+    // Only reset bytes if fresh download, not resume
+    if (!isResume) {
+      this.downloadedBytes = 0;
+      this.totalBytes = 0;
+    }
     this.sendProgress();
 
     // Check if resumable
@@ -397,9 +402,6 @@ export class CudaDownloader {
 
   resume(): void {
     if (this.downloadState !== 'paused') return;
-    this.paused = false;
-    this.downloadState = 'downloading';
-    this.sendProgress();
     this.download().catch(() => {});
   }
 
