@@ -147,26 +147,38 @@ Semua proses terjadi secara lokal di komputer kamu. **Tidak ada data yang dikiri
 
 ### Pakai Installer (Rekomendasi)
 
-Download installer terbaru dari [GitHub Releases](https://github.com/sudutkamar/VoiceFlow/releases).
+**Download langsung:**
 
-1. Download `VoiceFlow.Setup.1.0.0.exe`
-2. Jalankan installer
-3. Ikuti petunjuk instalasi
+| File | Ukuran | Link Download |
+|------|--------|---------------|
+| **VoiceFlow Setup.exe** | 100.6 MB | [Download Installer](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/VoiceFlow.Setup.1.0.0.exe) |
+
+**Langkah install:**
+
+1. Klik link download di atas → file `VoiceFlow.Setup.1.0.0.exe` akan terdownload
+2. Buka file `.exe` yang sudah terdownload
+3. Ikuti petunjuk instalasi (Next → Next → Install)
 4. Buka VoiceFlow dari shortcut desktop atau Start Menu
 
 **Setelah install:**
+
 1. Buka tab **Models** di aplikasi
 2. Download model AI (recommended: `ggml-base-q5_1.bin` — 57 MB)
 3. Jika punya GPU NVIDIA, buka Settings → GPU → Download CUDA
 4. Siap digunakan! Tekan `Ctrl+Shift+Space` untuk mulai merekam
 
-### Pakai Whisper Engine Terpisah
+### Download Tambahan (Opsional)
 
-Jika installer sudah include whisper engine, kamu bisa langsung pakai. Jika belum:
+Jika butuh whisper engine terpisah atau model AI manual:
 
-1. Download `whisper-cpu.zip` atau `whisper-cuda.zip` dari [Releases](https://github.com/sudutkamar/VoiceFlow/releases)
-2. Extract ke folder instalasi VoiceFlow → `resources/whisper/`
-3. Download model AI dari tab **Models** di aplikasi
+| File | Ukuran | Link Download | Deskripsi |
+|------|--------|---------------|-----------|
+| whisper-cpu.zip | 3.3 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cpu.zip) | Whisper engine untuk CPU |
+| whisper-model-tiny.zip | 54.1 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-model-tiny.zip) | Model tiny (cepat, kurang akurat) |
+| whisper-model-base.zip | 127.1 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-model-base.zip) | Model base (recommended) |
+| whisper-model-large-turbo.zip | 508.8 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-model-large-turbo.zip) | Model large (paling akurat) |
+
+> **Catatan:** Model AI bisa juga langsung didownload dari dalam aplikasi di tab **Models**. Tidak perlu download manual kecuali ingin install offline.
 
 ### Install dari Source
 
@@ -373,7 +385,7 @@ Voice commands bisa dimatikan di Settings → Processing.
 | **Hotkey tidak berfungsi** | Mungkin dipakai aplikasi lain. Ganti hotkey di Settings |
 | **GPU tidak terdeteksi** | Pastikan NVIDIA GPU + driver terinstall. Download CUDA dari Settings |
 | **App lambat** | Gunakan model lebih kecil (tiny/base), atau aktifkan CPU mode |
-| **Error "whisper-cli.exe not found"** | Download whisper engine dari Releases, extract ke folder instalasi |
+| **Error "whisper-cli.exe not found"** | Download [whisper-cpu.zip](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cpu.zip), extract ke folder instalasi → `resources/whisper/` |
 | **NotEnoughMemory** | Model terlalu besar untuk RAM kamu. Gunakan model yang lebih kecil |
 | **Floating UI tidak muncul** | Pastikan "Show Mini Window" aktif di Settings |
 | **Hasil tidak ter-paste** | Cek "Auto Paste" di Settings, atau paste manual |
