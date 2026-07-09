@@ -261,21 +261,47 @@ function MiniBar() {
   const resizeTimerRef = useRef<any>(null);
   const startRef = useRef(0);
   const stateRef = useRef<State>(state);
+  const debounceRef = useRef<any>(null);
+  const skipResizeRef = useRef(false);
+
+  const MIN_HEIGHT = 28;
+  const MAX_HEIGHT = 120;
+  const BASE_HEIGHT = 52;
 
   // Calculate zoom based on window height (base bar height = 52px, width is auto)
-  const miniZoom = windowHeight / 52;
+  const miniZoom = windowHeight / BASE_HEIGHT;
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
-  // Listen for window resize to update scale
+  // Listen for window resize to update zoom scale
   useEffect(() => {
     const handleResize = () => {
-      setWindowHeight(window.innerHeight);
-      setWindowWidth(window.innerWidth);
+      if (skipResizeRef.current) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        if (skipResizeRef.current) return;
+        const h = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, window.innerHeight));
+        const w = window.innerWidth;
+        setWindowHeight(h);
+        setWindowWidth(w);
+        // Ensure window width fits the zoomed content
+        // Bar natural width at base: ~244px (40+6+90+6+40+6+40+16 padding)
+        const BAR_BASE_WIDTH = 244;
+        const minW = Math.round(BAR_BASE_WIDTH * (h / BASE_HEIGHT));
+        if (w < minW - 4) {
+          skipResizeRef.current = true;
+          window.electronAPI.resizeMiniWindow(h, minW).finally(() => {
+            setTimeout(() => { skipResizeRef.current = false; }, 100);
+          });
+        }
+      }, 16);
     };
-    handleResize(); // Set initial height
+    handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   const vadEnabled = settings.vad_enabled !== 'false';
@@ -396,17 +422,6 @@ function MiniBar() {
       window.electronAPI.updateSetting('mini_bar_scale', String(miniZoom)).catch(() => {});
     }
   }, [miniZoom]);
-
-  // When window is resized, maintain aspect ratio by scaling width proportionally
-  useEffect(() => {
-    if (windowHeight <= 0) return;
-    const BASE_WIDTH = 380;
-    const BASE_HEIGHT = 52;
-    const proportionalWidth = Math.round(BASE_WIDTH * (windowHeight / BASE_HEIGHT));
-    if (Math.abs(windowWidth - proportionalWidth) > 4) {
-      window.electronAPI.resizeMiniWindow(windowHeight, proportionalWidth);
-    }
-  }, [windowHeight]);
 
   // No window resize on hover — CSS handles all visual transitions smoothly.
   // This prevents the glitch/flicker caused by Electron window bounds changing on hover.

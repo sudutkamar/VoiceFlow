@@ -129,7 +129,7 @@ function createMiniWindow(): void {
   const savedHeight = parseInt(database?.getSetting('mini_window_height') || '0', 10);
   
   const miniWidth = savedWidth > 0 ? Math.min(savedWidth, sw - 40) : Math.min(380, sw - 40);
-  const miniHeight = savedHeight > 0 ? Math.min(savedHeight, 200) : 52;
+  const miniHeight = savedHeight > 0 ? Math.max(28, Math.min(savedHeight, 200)) : 52;
   const taskbarHeight = sh; // workArea already excludes taskbar
 
   miniWindow = new BrowserWindow({
@@ -137,8 +137,8 @@ function createMiniWindow(): void {
     height: miniHeight,
     x: Math.round((sw - miniWidth) / 2),
     y: taskbarHeight - miniHeight - 10,
-    minWidth: 120,
-    minHeight: 40,
+    minWidth: 100,
+    minHeight: 28,
     maxWidth: Math.min(800, sw - 40),
     maxHeight: 200,
     webPreferences: {
@@ -181,7 +181,7 @@ function createMiniWindow(): void {
     if (miniWindow && !miniWindow.isDestroyed() && database) {
       const bounds = miniWindow.getBounds();
       database.updateSetting('mini_window_width', String(bounds.width));
-      database.updateSetting('mini_window_height', String(bounds.height));
+      database.updateSetting('mini_window_height', String(Math.max(28, Math.min(200, bounds.height))));
     }
   });
 
@@ -436,7 +436,7 @@ function setupIPC(): void {
     if (miniWindow && !miniWindow.isDestroyed()) {
       // Resize upward/downward while preserving the user's dragged X position and bottom anchor.
       const bounds = miniWindow.getBounds();
-      const nextHeight = Math.max(64, Math.round(height));
+      const nextHeight = Math.max(28, Math.round(height));
       const nextWidth = width ? Math.round(width) : bounds.width;
       miniWindow.setBounds({
         x: bounds.x,
