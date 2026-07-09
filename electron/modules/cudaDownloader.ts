@@ -88,7 +88,7 @@ export class CudaDownloader {
         if (!fs.existsSync(dllPath)) {
           const whisperDir = this.getResourcesWhisperDir();
           if (!whisperDir) return false;
-          const bundledPath = path.join(whisperDir, dll);
+          const bundledPath = path.join(whisperDir, 'gpu', dll);
           if (!fs.existsSync(bundledPath)) return false;
         }
       }
@@ -102,11 +102,12 @@ export class CudaDownloader {
     try {
       const whisperDir = this.getResourcesWhisperDir();
       if (!whisperDir) return false;
+      const gpuDir = path.join(whisperDir, 'gpu');
       if (!fs.existsSync(this.cudaPath)) {
         fs.mkdirSync(this.cudaPath, { recursive: true });
       }
       for (const dll of CUDA_DLLS) {
-        const srcPath = path.join(whisperDir, dll);
+        const srcPath = path.join(gpuDir, dll);
         const dstPath = path.join(this.cudaPath, dll);
         if (fs.existsSync(srcPath) && !fs.existsSync(dstPath)) {
           fs.copyFileSync(srcPath, dstPath);

@@ -7,7 +7,7 @@
 Download dari **GitHub Releases**:
 1. Buka: https://github.com/ggerganov/whisper.cpp/releases
 2. Cari file `whisper-*.zip` atau `whisper-bin-*.zip`
-3. Extract ke folder ini (`resources/whisper/`)
+3. Extract file CPU ke `resources/whisper/cpu/` dan GPU ke `resources/whisper/gpu/`
 
 **Atau** build dari source:
 ```bash
@@ -15,22 +15,22 @@ git clone https://github.com/ggerganov/whisper.cpp
 cd whisper.cpp
 cmake -B build
 cmake --build build --config Release
-# Copy build/bin/Release/whisper-cli.exe ke folder ini
+# Copy build/bin/Release/whisper-cli.exe dan semua DLL ke folder cpu/ atau gpu/
 ```
 
 #### DLL Files yang Dibutuhkan
 
 | File | Required | Notes |
 |------|----------|-------|
-| `whisper-cli.exe` | ✅ | Main executable |
-| `whisper.dll` | ✅ | Core whisper library |
-| `ggml.dll` | ✅ | GGML tensor library |
-| `ggml-cpu-*.dll` | ✅ | CPU backend (pilih sesuai CPU) |
-| `ggml-base.dll` | ✅ | Base GGML functions |
-| `ggml-cuda.dll` | ⚡ Optional | NVIDIA GPU support |
-| `cublas64_12.dll` | ⚡ Optional | NVIDIA cuBLAS |
-| `cublasLt64_12.dll` | ⚡ Optional | NVIDIA cuBLAS |
-| `cudart64_12.dll` | ⚡ Optional | NVIDIA CUDA Runtime |
+| `whisper-cli.exe` | ✅ | Main executable (letakkan di `cpu/`) |
+| `whisper.dll` | ✅ | Core whisper library (letakkan di `cpu/`) |
+| `ggml.dll` | ✅ | GGML tensor library (letakkan di `cpu/`) |
+| `ggml-cpu-*.dll` | ✅ | CPU backend (letakkan di `cpu/`) |
+| `ggml-base.dll` | ✅ | Base GGML functions (letakkan di `cpu/`) |
+| `ggml-cuda.dll` | ⚡ Optional | NVIDIA GPU support (letakkan di `gpu/`) |
+| `cublas64_12.dll` | ⚡ Optional | NVIDIA cuBLAS (letakkan di `gpu/`) |
+| `cublasLt64_12.dll` | ⚡ Optional | NVIDIA cuBLAS (letakkan di `gpu/`) |
+| `cudart64_12.dll` | ⚡ Optional | NVIDIA CUDA Runtime (letakkan di `gpu/`) |
 
 > 💡 **GPU Support**: Jika punya NVIDIA GPU, install [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) dan copy DLL CUDA files. Transkripsi akan jauh lebih cepat!
 
@@ -63,19 +63,21 @@ Direct download links:
 
 ```
 resources/whisper/
-├── whisper-cli.exe          # Main executable
-├── whisper.dll              # Core library
-├── ggml.dll                 # GGML library
-├── ggml-cpu-*.dll           # CPU backends
-├── ggml-base.dll            # Base functions
-├── ggml-cuda.dll            # (optional) GPU support
-├── cublas64_12.dll          # (optional) NVIDIA cuBLAS
-├── cublasLt64_12.dll        # (optional) NVIDIA cuBLAS
-├── cudart64_12.dll          # (optional) CUDA Runtime
-├── README.md                # This file
+├── cpu/                        # CPU files
+│   ├── whisper-cli.exe         # Main executable
+│   ├── whisper.dll             # Core library
+│   ├── ggml.dll                # GGML library
+│   ├── ggml-cpu-*.dll          # CPU backends
+│   └── ggml-base.dll           # Base functions
+├── gpu/                        # (optional) NVIDIA GPU
+│   ├── ggml-cuda.dll           # GPU support
+│   ├── cublas64_12.dll         # NVIDIA cuBLAS
+│   ├── cublasLt64_12.dll       # NVIDIA cuBLAS
+│   └── cudart64_12.dll         # CUDA Runtime
+├── README.md                   # This file
 └── models/
-    ├── ggml-base.bin        # Recommended for daily use
-    └── ggml-small.bin       # Optional: better accuracy
+    ├── ggml-base.bin           # Recommended for daily use
+    └── ggml-small.bin          # Optional: better accuracy
 ```
 
 ## Troubleshooting
@@ -84,5 +86,5 @@ resources/whisper/
 |-------|----------|
 | `whisper-cli.exe tidak ditemukan` | Download dari GitHub Releases |
 | `Model belum diunduh` | Download model ke folder `models/` |
-| `DLL load failed` | Pastikan semua DLL ada di folder yang sama dengan whisper-cli.exe |
+| `DLL load failed` | Pastikan semua DLL ada di folder `cpu/` (CPU) atau `gpu/` (GPU) |
 | `CUDA not found` | Install CUDA Toolkit atau gunakan CPU-only mode |

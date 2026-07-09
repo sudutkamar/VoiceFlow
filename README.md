@@ -200,11 +200,14 @@ npm install
 #### Download Whisper Engine & Model
 
 ```bash
-# Download whisper engine (CLI + DLLs)
-download-whisper.bat
+# Menu utama (setup, download, build, dev)
+build.bat
+```
 
-# Download model AI
-download-model.bat
+Atau langsung:
+```bash
+build.bat setup      # First-time setup
+build.bat download-model   # Download model AI
 ```
 
 Atau download model langsung dari dalam aplikasi: **tab Models**.

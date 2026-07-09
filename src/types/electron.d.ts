@@ -58,7 +58,7 @@ interface ElectronAPI {
   hasAnyModel: () => Promise<boolean>;
 
   // GPU / CUDA
-  getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
+  getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
   downloadCuda: () => Promise<{ success: boolean; error?: string }>;
   pauseCudaDownload: () => Promise<void>;
   resumeCudaDownload: () => Promise<void>;

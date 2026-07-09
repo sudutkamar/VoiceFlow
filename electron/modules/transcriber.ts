@@ -167,8 +167,8 @@ export class Transcriber {
 
   private detectGpu(): void {
     try {
-      const whisperDir = path.dirname(this.whisperPath);
-      const cudaDllPath = path.join(whisperDir, 'ggml-cuda.dll');
+      const whisperDir = this.getWhisperDir();
+      const cudaDllPath = path.join(whisperDir, 'gpu', 'ggml-cuda.dll');
       const userCudaPath = path.join(app.getPath('userData'), 'cuda', 'ggml-cuda.dll');
       this.hasGpu = cachedPathExists(cudaDllPath) || cachedPathExists(userCudaPath);
       this.logger.info(`GPU: ${this.hasGpu ? 'CUDA ✓' : 'CPU only'}`);
@@ -177,14 +177,17 @@ export class Transcriber {
     }
   }
 
+  private getWhisperDir(): string {
+    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper');
+    return path.join(__dirname, '..', '..', 'resources', 'whisper');
+  }
+
   private getWhisperPath(): string {
-    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper', 'whisper-cli.exe');
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'whisper-cli.exe');
+    return path.join(this.getWhisperDir(), 'cpu', 'whisper-cli.exe');
   }
 
   private getModelsPath(): string {
-    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper', 'models');
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+    return path.join(this.getWhisperDir(), 'models');
   }
 
   setMainWindow(window: BrowserWindow): void { this.mainWindow = window; }

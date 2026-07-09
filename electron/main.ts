@@ -473,17 +473,21 @@ function setupIPC(): void {
       const whisperDir = app.isPackaged
         ? path.join(process.resourcesPath, 'whisper')
         : path.join(__dirname, '..', 'resources', 'whisper');
+      const cpuDir = path.join(whisperDir, 'cpu');
+      const gpuDir = path.join(whisperDir, 'gpu');
       return {
         hasGpu: status.hasNvidiaGpu,
         cudaDllsPresent: status.cudaDllsPresent,
         mode: status.hasNvidiaGpu ? (status.cudaDllsPresent ? 'GPU (CUDA)' : 'GPU (needs download)') : 'CPU Only',
         whisperDir,
+        cpuDir,
+        gpuDir,
         cudaPath: status.cudaPath,
         needsDownload: status.needsDownload,
         downloadUrl: status.needsDownload ? cudaDownloader.getDownloadUrl() : null,
       };
     } catch {
-      return { hasGpu: false, mode: 'CPU Only', whisperDir: '', cudaDllsPresent: false, needsDownload: false };
+      return { hasGpu: false, mode: 'CPU Only', whisperDir: '', cpuDir: '', gpuDir: '', cudaDllsPresent: false, needsDownload: false };
     }
   });
 

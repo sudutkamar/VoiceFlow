@@ -74,7 +74,7 @@ declare global {
       exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
       searchHistory: (query: string) => Promise<any[]>;
       clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
-      getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
+      getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
       isAutoStart: () => Promise<boolean>;
       getVersion: () => Promise<string>;
       onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number; modelName?: string | null }) => void) => () => void;

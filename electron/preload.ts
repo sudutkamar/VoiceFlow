@@ -83,7 +83,7 @@ export interface ElectronAPI {
   minimizeToBar: () => Promise<void>;
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
-  getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
+  getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
   clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
   downloadCuda: () => Promise<{ success: boolean; error?: string }>;
   pauseCudaDownload: () => Promise<void>;

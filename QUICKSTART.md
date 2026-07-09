@@ -12,12 +12,17 @@ cd voiceflow
 npm install
 ```
 
-### 3. Download Whisper Engine & Model
-Double-click file ini di File Explorer:
-- **`download-whisper.bat`** — Download whisper-cli.exe + DLLs (~1.3 GB)
-- **`download-model.bat`** — Download model AI (~142 MB)
+### 3. Setup
+```bash
+build.bat setup
+```
 
-Atau download dari dalam app: **Settings > Models**
+Ini akan:
+- Cek Node.js
+- Install dependencies
+- Buat folder yang diperlukan
+
+Download model dari dalam app: **Settings > Models**
 
 ### 4. Jalankan!
 ```bash
@@ -47,8 +52,8 @@ npm run dev
 | Masalah | Solusi |
 |---------|--------|
 | Node.js tidak ditemukan | Install dari nodejs.org, restart terminal |
-| Whisper tidak ditemukan | Jalankan `download-whisper.bat` |
-| Model tidak ditemukan | Jalankan `download-model.bat` atau download dari Settings > Models |
+| Whisper tidak ditemukan | Jalankan `build.bat download-whisper` |
+| Model tidak ditemukan | Jalankan `build.bat download-model` atau download dari Settings > Models |
 | Mic tidak terdeteksi | Cek Windows Settings → Sound → Input |
 
 ---

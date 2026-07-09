@@ -21,6 +21,16 @@
         "from": "resources/icons",
         "to": "icons",
         "filter": ["**/*"]
+      },
+      {
+        "from": "resources/whisper/cpu",
+        "to": "whisper/cpu",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "resources/whisper/gpu",
+        "to": "whisper/gpu",
+        "filter": ["**/*"]
       }
     ],
     "win": {
