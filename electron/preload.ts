@@ -85,6 +85,11 @@ export interface ElectronAPI {
   maximizeWindow: () => Promise<void>;
   getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
   clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
+  downloadCuda: () => Promise<{ success: boolean; error?: string }>;
+  pauseCudaDownload: () => Promise<void>;
+  resumeCudaDownload: () => Promise<void>;
+  cancelCudaDownload: () => Promise<void>;
+  getCudaDownloadProgress: () => Promise<{ state: string; progress: number; downloadedBytes: number; totalBytes: number }>;
   
   // Events
   onStateChange: (callback: (state: string) => void) => () => void;
@@ -97,6 +102,7 @@ export interface ElectronAPI {
   onNavigate: (callback: (page: string) => void) => () => void;
   onPartialTranscript: (callback: (text: string) => void) => () => void;
   onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number; modelName?: string | null }) => void) => () => void;
+  onCudaDownloadProgress: (callback: (data: { state: string; progress: number; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
   onWpmUpdate: (callback: (wpm: number) => void) => () => void;
   onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
@@ -182,6 +188,11 @@ const api: ElectronAPI = {
   maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
   getGpuStatus: () => ipcRenderer.invoke('get-gpu-status'),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
+  downloadCuda: () => ipcRenderer.invoke('download-cuda'),
+  pauseCudaDownload: () => ipcRenderer.invoke('pause-cuda-download'),
+  resumeCudaDownload: () => ipcRenderer.invoke('resume-cuda-download'),
+  cancelCudaDownload: () => ipcRenderer.invoke('cancel-cuda-download'),
+  getCudaDownloadProgress: () => ipcRenderer.invoke('get-cuda-download-progress'),
   
   onStateChange: (callback) => {
     const handler = (_: any, state: string) => callback(state);
@@ -232,6 +243,11 @@ const api: ElectronAPI = {
     const handler = (_: any, data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => callback(data);
     ipcRenderer.on('download-progress', handler);
     return () => ipcRenderer.removeListener('download-progress', handler);
+  },
+  onCudaDownloadProgress: (callback) => {
+    const handler = (_: any, data: { state: string; progress: number; downloadedBytes: number; totalBytes: number }) => callback(data);
+    ipcRenderer.on('cuda-download-progress', handler);
+    return () => ipcRenderer.removeListener('cuda-download-progress', handler);
   },
   onMiniWindowUpdate: (callback) => {
     const handler = (_: any, data: any) => callback(data);

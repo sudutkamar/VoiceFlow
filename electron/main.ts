@@ -486,6 +486,31 @@ function setupIPC(): void {
       return { hasGpu: false, mode: 'CPU Only', whisperDir: '', cudaDllsPresent: false, needsDownload: false };
     }
   });
+
+  ipcMain.handle('download-cuda', async () => {
+    try {
+      if (mainWindow) cudaDownloader.setMainWindow(mainWindow);
+      return await cudaDownloader.download();
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('pause-cuda-download', async () => {
+    cudaDownloader.pause();
+  });
+
+  ipcMain.handle('resume-cuda-download', async () => {
+    cudaDownloader.resume();
+  });
+
+  ipcMain.handle('cancel-cuda-download', async () => {
+    cudaDownloader.cancel();
+  });
+
+  ipcMain.handle('get-cuda-download-progress', async () => {
+    return cudaDownloader.getProgress();
+  });
   
   ipcMain.handle('clear-cache', async () => {
     try {
