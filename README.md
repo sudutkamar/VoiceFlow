@@ -174,6 +174,7 @@ Jika butuh whisper engine terpisah atau model AI manual:
 | File | Ukuran | Link Download | Deskripsi |
 |------|--------|---------------|-----------|
 | whisper-cpu.zip | 3.3 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cpu.zip) | Whisper engine untuk CPU |
+| whisper-cuda.zip | 619.7 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cuda.zip) | Whisper engine + CUDA untuk GPU NVIDIA |
 | whisper-model-tiny.zip | 54.1 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-model-tiny.zip) | Model tiny (cepat, kurang akurat) |
 | whisper-model-base.zip | 127.1 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-model-base.zip) | Model base (recommended) |
 | whisper-model-large-turbo.zip | 508.8 MB | [Download](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-model-large-turbo.zip) | Model large (paling akurat) |
