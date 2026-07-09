@@ -40,7 +40,7 @@ export class CudaDownloader {
   private downloadState: CudaDownloadState = 'idle';
   private downloadedBytes = 0;
   private totalBytes = 0;
-  private currentRequest: https.ClientRequest | null = null;
+  private currentRequest: any = null;
   private currentStream: fs.WriteStream | null = null;
   private tempPath: string;
   private paused = false;
