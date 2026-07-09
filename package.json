@@ -20,17 +20,23 @@
       {
         "from": "resources/icons",
         "to": "icons",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/whisper/cpu",
         "to": "whisper/cpu",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/whisper/gpu",
         "to": "whisper/gpu",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -54,6 +60,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "@neilurk12/pi-9router": "^0.1.2",
     "better-sqlite3": "^11.0.0",
     "ffmpeg-static": "^5.2.0",
     "react": "^18.3.1",

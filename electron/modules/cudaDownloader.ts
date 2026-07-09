@@ -318,19 +318,31 @@ export class CudaDownloader {
         });
 
         file.on('error', (err) => {
-          this.cleanupTemp();
-          this.currentRequest = null;
-          this.currentStream = null;
-          resolve({ success: false, error: String(err) });
+          if (this.paused) {
+            this.currentRequest = null;
+            this.currentStream = null;
+            resolve({ success: false, error: 'paused' });
+          } else {
+            this.cleanupTemp();
+            this.currentRequest = null;
+            this.currentStream = null;
+            resolve({ success: false, error: String(err) });
+          }
         });
       });
 
       request.on('error', (err) => {
         file.close();
-        this.cleanupTemp();
-        this.currentRequest = null;
-        this.currentStream = null;
-        resolve({ success: false, error: String(err) });
+        if (this.paused) {
+          this.currentRequest = null;
+          this.currentStream = null;
+          resolve({ success: false, error: 'paused' });
+        } else {
+          this.cleanupTemp();
+          this.currentRequest = null;
+          this.currentStream = null;
+          resolve({ success: false, error: String(err) });
+        }
       });
 
       this.currentRequest = request;
@@ -397,8 +409,14 @@ export class CudaDownloader {
     if (this.downloadState !== 'downloading') return;
     this.paused = true;
     if (this.currentRequest) {
-      this.currentRequest.destroy();
+      this.currentRequest.destroy(new Error('paused'));
     }
+    if (this.currentStream) {
+      try { this.currentStream.close(); } catch {}
+    }
+    // Always set state and notify renderer immediately
+    this.downloadState = 'paused';
+    this.sendProgress();
   }
 
   resume(): void {

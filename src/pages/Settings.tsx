@@ -37,22 +37,56 @@ function Settings({ onSuccess, onError }: SettingsProps) {
   const [availableModels, setAvailableModels] = useState<{ name: string; downloaded?: boolean }[]>([]);
   const [appVersion, setAppVersion] = useState('');
   const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cudaPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
-    return () => { if (promptTimerRef.current) clearTimeout(promptTimerRef.current); };
+    return () => {
+      if (promptTimerRef.current) clearTimeout(promptTimerRef.current);
+      if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+    };
   }, []);
 
   useEffect(() => { loadData(); loadMics(); loadGpuStatus(); loadModels(); loadVersion(); loadLearnedCorrections(); }, []);
 
-  // CUDA download progress listener
+  const pollCudaProgress = useCallback(() => {
+    if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+    cudaPollRef.current = setInterval(async () => {
+      try {
+        const progress = await window.electronAPI.getCudaDownloadProgress();
+        setCudaDownload(progress);
+        if (progress.state === 'completed') {
+          if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+          cudaPollRef.current = null;
+          loadGpuStatus();
+          onSuccess('CUDA berhasil di-download dan di-extract!');
+        } else if (progress.state === 'error') {
+          if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+          cudaPollRef.current = null;
+          onError('CUDA download gagal');
+        } else if (progress.state === 'idle') {
+          if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+          cudaPollRef.current = null;
+        }
+      } catch {
+        if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+        cudaPollRef.current = null;
+      }
+    }, 300);
+  }, [onSuccess, onError]);
+
+  // CUDA download progress listener (backup)
   useEffect(() => {
     const unsub = window.electronAPI.onCudaDownloadProgress((data) => {
       setCudaDownload(data);
       if (data.state === 'completed') {
+        if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+        cudaPollRef.current = null;
         loadGpuStatus();
         onSuccess('CUDA berhasil di-download dan di-extract!');
       } else if (data.state === 'error') {
+        if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+        cudaPollRef.current = null;
         onError('CUDA download gagal');
       }
     });
@@ -68,20 +102,26 @@ function Settings({ onSuccess, onError }: SettingsProps) {
 
   const handleCudaDownload = async () => {
     const result = await window.electronAPI.downloadCuda();
-    if (!result.success && result.error !== 'paused') {
+    if (result.success) {
+      pollCudaProgress();
+    } else if (result.error !== 'paused') {
       onError(result.error || 'Download gagal');
     }
   };
 
   const handleCudaPause = async () => {
     await window.electronAPI.pauseCudaDownload();
+    pollCudaProgress();
   };
 
   const handleCudaResume = async () => {
     await window.electronAPI.resumeCudaDownload();
+    pollCudaProgress();
   };
 
   const handleCudaCancel = async () => {
+    if (cudaPollRef.current) clearInterval(cudaPollRef.current);
+    cudaPollRef.current = null;
     await window.electronAPI.cancelCudaDownload();
     setCudaDownload(null);
   };
@@ -388,12 +428,12 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   {gpuStatus?.hasGpu
                     ? gpuStatus?.cudaDllsPresent
                       ? 'GPU detected (CUDA). Choose processing device.'
-                      : 'GPU detected. CUDA perlu di-download.'
+                      : 'GPU detected. Download CUDA for GPU acceleration.'
                     : 'No GPU detected. CPU only.'}
                 </span>
               </div>
-              <div className="setting-control">
-                {gpuStatus?.hasGpu && gpuStatus?.cudaDllsPresent ? (
+              <div className="setting-control" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+                {gpuStatus?.hasGpu ? (
                   <select
                     value={settings.whisper_device || 'auto'}
                     onChange={(e) => {
@@ -402,11 +442,17 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                       onSuccess(`Device: ${labels[e.target.value] || e.target.value}`);
                     }}
                   >
-                    <option value="auto">Auto (GPU)</option>
-                    <option value="gpu">Force GPU</option>
+                    {gpuStatus?.cudaDllsPresent && <option value="auto">Auto (GPU)</option>}
+                    {gpuStatus?.cudaDllsPresent && <option value="gpu">Force GPU</option>}
                     <option value="cpu">Force CPU</option>
                   </select>
-                ) : gpuStatus?.hasGpu && gpuStatus?.needsDownload ? (
+                ) : (
+                  <div className="gpu-badge gpu-badge-cpu">
+                    <span className="gpu-badge-icon">🖥️</span>
+                    <span className="gpu-badge-text">CPU Only</span>
+                  </div>
+                )}
+                {gpuStatus?.hasGpu && gpuStatus?.needsDownload && (
                   <div className="cuda-download-section">
                     {cudaDownload && cudaDownload.state !== 'idle' ? (
                       <div className="cuda-download-progress">
@@ -416,7 +462,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                             {cudaDownload.state === 'paused' && 'Paused'}
                             {cudaDownload.state === 'extracting' && 'Extracting...'}
                             {cudaDownload.state === 'completed' && 'Done!'}
-                            {cudaDownload.state === 'error' && 'Error'}
+                            {cudaDownload.state === 'error' && 'Download Error'}
                           </span>
                           <span className="cuda-progress-percent">{cudaDownload.progress}%</span>
                         </div>
@@ -430,11 +476,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                           <div className="cuda-progress-details">
                             <span>{formatBytes(cudaDownload.downloadedBytes)} / {formatBytes(cudaDownload.totalBytes)}</span>
                             <div className="cuda-progress-actions">
-                              {cudaDownload.state === 'downloading' ? (
-                                <button className="btn btn-sm" onClick={handleCudaPause}>Pause</button>
-                              ) : (
-                                <button className="btn btn-sm" onClick={handleCudaResume}>Resume</button>
-                              )}
+                              <button className="btn btn-sm" onClick={handleCudaPause}>Pause</button>
                               <button className="btn btn-sm btn-danger" onClick={handleCudaCancel}>Cancel</button>
                             </div>
                           </div>
@@ -443,8 +485,16 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                           <div className="cuda-progress-details">
                             <span>{formatBytes(cudaDownload.downloadedBytes)} / {formatBytes(cudaDownload.totalBytes)}</span>
                             <div className="cuda-progress-actions">
-                              <button className="btn btn-sm btn-primary" onClick={handleCudaResume}>Resume</button>
+                              <button className="btn btn-sm btn-primary" onClick={handleCudaResume}>Continue</button>
                               <button className="btn btn-sm btn-danger" onClick={handleCudaCancel}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                        {cudaDownload.state === 'error' && (
+                          <div className="cuda-progress-details">
+                            <div className="cuda-progress-actions">
+                              <button className="btn btn-sm btn-primary" onClick={handleCudaDownload}>Retry</button>
+                              <button className="btn btn-sm btn-danger" onClick={handleCudaCancel}>Dismiss</button>
                             </div>
                           </div>
                         )}
@@ -454,11 +504,6 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                         Download CUDA
                       </button>
                     )}
-                  </div>
-                ) : (
-                  <div className="gpu-badge gpu-badge-cpu">
-                    <span className="gpu-badge-icon">🖥️</span>
-                    <span className="gpu-badge-text">CPU Only</span>
                   </div>
                 )}
               </div>
