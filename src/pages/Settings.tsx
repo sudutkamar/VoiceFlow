@@ -442,7 +442,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 <span className="setting-name">GitHub</span>
                 <span className="setting-hint">Source code, issues, and updates</span>
               </div>
-              <button className="btn btn-sm" onClick={() => window.open('https://github.com/AriProject/VoiceFlow', '_blank')}>
+              <button className="btn btn-sm" onClick={() => window.open('https://github.com/sudutkamar/VoiceFlow', '_blank')}>
                 Open
               </button>
             </div>
