@@ -137,4 +137,13 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     }
     return { success: true, path: modelDownloader.getModelsPathValue() };
   });
+
+  ipcMain.handle('set-speed-limit', async (event, bytesPerSecond: number) => {
+    modelDownloader.setSpeedLimit(bytesPerSecond);
+    return { success: true };
+  });
+
+  ipcMain.handle('get-speed-limit', async () => {
+    return { bytesPerSecond: 0 }; // default unlimited, track in memory if needed
+  });
 }

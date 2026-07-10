@@ -64,6 +64,7 @@ interface ElectronAPI {
   resumeCudaDownload: () => Promise<void>;
   cancelCudaDownload: () => Promise<void>;
   getCudaDownloadProgress: () => Promise<{ state: string; progress: number; downloadedBytes: number; totalBytes: number }>;
+  deleteWhisperEngine: (type: 'cpu' | 'gpu') => Promise<{ success: boolean; deletedFiles?: number; error?: string }>;
 
   // App
   getVersion: () => Promise<string>;

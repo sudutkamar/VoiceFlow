@@ -33,6 +33,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
   const [newTrigger, setNewTrigger] = useState('');
   const [newOutput, setNewOutput] = useState('');
   const [gpuStatus, setGpuStatus] = useState<{ hasGpu: boolean; mode: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string } | null>(null);
+  const [confirmDeleteEngine, setConfirmDeleteEngine] = useState<'cpu' | 'gpu' | null>(null);
   const [cudaDownload, setCudaDownload] = useState<{ state: string; progress: number; downloadedBytes: number; totalBytes: number } | null>(null);
   const [availableModels, setAvailableModels] = useState<{ name: string; downloaded?: boolean }[]>([]);
   const [appVersion, setAppVersion] = useState('');
@@ -124,6 +125,29 @@ function Settings({ onSuccess, onError }: SettingsProps) {
     cudaPollRef.current = null;
     await window.electronAPI.cancelCudaDownload();
     setCudaDownload(null);
+  };
+
+  const handleDeleteEngine = (type: 'cpu' | 'gpu') => {
+    setConfirmDeleteEngine(type);
+  };
+
+  const confirmDeleteEngineAction = async () => {
+    if (!confirmDeleteEngine) return;
+    const type = confirmDeleteEngine;
+    const label = type === 'cpu' ? 'CPU Engine' : 'GPU / CUDA';
+    try {
+      const result = await window.electronAPI.deleteWhisperEngine(type);
+      if (result.success) {
+        loadGpuStatus();
+        onSuccess(`${label} berhasil dihapus (${result.deletedFiles || 0} file)`);
+      } else {
+        onError(result.error || `Gagal hapus ${label}`);
+      }
+    } catch (err: any) {
+      onError(err.message || `Gagal hapus ${label}`);
+    } finally {
+      setConfirmDeleteEngine(null);
+    }
   };
 
   const formatBytes = (bytes: number) => {
@@ -510,6 +534,26 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             </div>
             <div className="setting-row">
               <div className="setting-info">
+                <span className="setting-name">Whisper Engine</span>
+                <span className="setting-hint">CPU engine files (wajib)</span>
+              </div>
+              <button className="btn btn-sm btn-danger" onClick={() => handleDeleteEngine('cpu')}>
+                🗑 Hapus CPU
+              </button>
+            </div>
+            {gpuStatus?.cudaDllsPresent && (
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-name">CUDA / GPU</span>
+                  <span className="setting-hint">GPU acceleration files (opsional)</span>
+                </div>
+                <button className="btn btn-sm btn-danger" onClick={() => handleDeleteEngine('gpu')}>
+                  🗑 Hapus GPU
+                </button>
+              </div>
+            )}
+            <div className="setting-row">
+              <div className="setting-info">
                 <span className="setting-name">Language</span>
                 <span className="setting-hint">Transcription language</span>
               </div>
@@ -877,6 +921,27 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Engine Confirmation Modal */}
+      {confirmDeleteEngine && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteEngine(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Hapus {confirmDeleteEngine === 'cpu' ? 'CPU Engine' : 'GPU / CUDA'}</h3>
+            <p>
+              Yakin ingin menghapus semua file <strong>{confirmDeleteEngine === 'cpu' ? 'Whisper CPU' : 'CUDA GPU'}</strong>?
+            </p>
+            <p className="text-warning">
+              {confirmDeleteEngine === 'cpu'
+                ? 'Aplikasi tidak bisa transcribe tanpa CPU engine. Download ulang diperlukan.'
+                : 'GPU acceleration tidak akan aktif. Download ulang CUDA jika ingin GPU lagi.'}
+            </p>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setConfirmDeleteEngine(null)}>Batal</button>
+              <button className="btn btn-danger" onClick={confirmDeleteEngineAction}>Hapus</button>
             </div>
           </div>
         </div>

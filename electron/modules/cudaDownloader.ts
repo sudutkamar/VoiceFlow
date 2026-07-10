@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
+import * as crypto from 'crypto';
 import { app, BrowserWindow } from 'electron';
 import { execFile } from 'child_process';
 import { Logger } from './logger';
@@ -14,6 +15,10 @@ const CUDA_DLLS = [
 ];
 
 const CUDA_DOWNLOAD_URL = 'https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cuda.zip';
+
+// SHA256 hash for the CUDA zip (compute once and fill in after verifying)
+// To compute: certUtil -hashfile whisper-cuda.zip SHA256
+const CUDA_ZIP_EXPECTED_SHA256: string | null = null; // TODO: fill after verifying release asset
 
 export type CudaDownloadState = 'idle' | 'downloading' | 'paused' | 'extracting' | 'completed' | 'error';
 
@@ -47,14 +52,151 @@ export class CudaDownloader {
   private cancelled = false;
   private lastProgressUpdate = 0;
 
+  // Retry config
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_BASE_DELAY_MS = 1000;
+
+  // Speed limit (bytes per second, 0 = unlimited)
+  private maxSpeedBytesPerSecond = 0;
+
   constructor(logger: Logger) {
     this.logger = logger;
-    this.cudaPath = path.join(app.getPath('userData'), 'cuda');
+    const whisperDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'whisper')
+      : path.join(__dirname, '..', '..', 'resources', 'whisper');
+    this.cudaPath = path.join(whisperDir, 'gpu');
     this.tempPath = path.join(app.getPath('userData'), 'cuda-temp.zip');
   }
 
   setMainWindow(win: BrowserWindow) {
     this.mainWindow = win;
+  }
+
+  /**
+   * Set download speed limit in bytes per second (0 = unlimited).
+   */
+  setSpeedLimit(bytesPerSecond: number): void {
+    this.maxSpeedBytesPerSecond = Math.max(0, bytesPerSecond);
+    this.logger.info(`CUDA download speed limit set to ${this.maxSpeedBytesPerSecond} B/s`);
+  }
+
+  /**
+   * Check if there is enough disk space for the download.
+   * Returns { enough: boolean, freeBytes: number }.
+   */
+  private async checkDiskSpace(requiredBytes: number): Promise<{ enough: boolean; freeBytes: number }> {
+    try {
+      // Get the drive root from the temp path
+      const drivePath = path.parse(this.tempPath).root || 'C:\\';
+      const info = await fs.promises.statfs(drivePath);
+      const freeBytes = info.bfree * info.bsize;
+      const enough = freeBytes >= requiredBytes;
+
+      if (!enough) {
+        this.logger.warn(
+          `Disk space check failed: need ${requiredBytes} bytes, only ${freeBytes} free on ${drivePath}`
+        );
+      } else {
+        this.logger.info(
+          `Disk space OK: ${freeBytes} bytes free, need ${requiredBytes} bytes`
+        );
+      }
+      return { enough, freeBytes };
+    } catch (err) {
+      this.logger.warn('Failed to check disk space, proceeding anyway', err);
+      // If we can't check, assume it's OK (proceed with download)
+      return { enough: true, freeBytes: Infinity };
+    }
+  }
+
+  /**
+   * Verify SHA256 hash of a file.
+   */
+  private async verifySha256(filePath: string, expectedHash: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      try {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('data', (data) => hash.update(data));
+        stream.on('end', () => {
+          const actual = hash.digest('hex');
+          const match = actual === expectedHash;
+          if (!match) {
+            this.logger.error(
+              `SHA256 mismatch for ${path.basename(filePath)}: expected ${expectedHash}, got ${actual}`
+            );
+          } else {
+            this.logger.info(`SHA256 verified for ${path.basename(filePath)}`);
+          }
+          resolve(match);
+        });
+        stream.on('error', (err) => {
+          this.logger.error('SHA256 verification stream error', err);
+          resolve(false);
+        });
+      } catch (err) {
+        this.logger.error('SHA256 verification failed', err);
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Download with retry logic (exponential backoff).
+   * Handles transient network errors automatically.
+   */
+  private async downloadWithRetry(
+    url: string,
+    destPath: string,
+    resumeOffset: number = 0,
+    attempt: number = 1
+  ): Promise<{ success: boolean; error?: string }> {
+    const result = await this.downloadFile(url, destPath, resumeOffset);
+
+    // If successful or user-initiated pause/cancel, return immediately
+    if (result.success) return result;
+    if (result.error === 'paused' || result.error === 'cancelled') return result;
+
+    // Don't retry on certain HTTP errors that are not transient
+    if (result.error && /^HTTP (4[0-4][0-9]|4[6-9][0-9]|5[0-1][0-9])$/.test(result.error)) {
+      // 400-449 (except 408/429), 460-499, 500-519 are not retried
+      // We only retry: 408 (timeout), 429 (rate limit), 520+ (server errors), network errors
+      const code = parseInt(result.error.replace('HTTP ', ''), 10);
+      if (code !== 408 && code !== 429 && code < 520) {
+        return result;
+      }
+    }
+
+    if (attempt > this.MAX_RETRIES) {
+      this.logger.error(`Download failed after ${this.MAX_RETRIES} retries: ${result.error}`);
+      return { success: false, error: `Download failed after ${this.MAX_RETRIES + 1} attempts: ${result.error}` };
+    }
+
+    const delay = this.RETRY_BASE_DELAY_MS * Math.pow(3, attempt - 1);
+    this.logger.warn(
+      `Download attempt ${attempt} failed (${result.error}), retrying in ${delay}ms... (attempt ${attempt}/${this.MAX_RETRIES + 1})`
+    );
+
+    // Update UI to show retry status
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('cuda-download-progress', {
+        ...this.getProgress(),
+        state: 'downloading' as CudaDownloadState,
+        retryInfo: `Retry ${attempt}/${this.MAX_RETRIES + 1} in ${Math.round(delay / 1000)}s`,
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    // On retry, check if temp file still exists for resume
+    let newOffset = 0;
+    if (fs.existsSync(destPath)) {
+      try {
+        newOffset = fs.statSync(destPath).size;
+      } catch {}
+    }
+
+    return this.downloadWithRetry(url, destPath, newOffset, attempt + 1);
   }
 
   async checkStatus(): Promise<CudaStatus> {
@@ -85,12 +227,7 @@ export class CudaDownloader {
     try {
       for (const dll of CUDA_DLLS) {
         const dllPath = path.join(this.cudaPath, dll);
-        if (!fs.existsSync(dllPath)) {
-          const whisperDir = this.getResourcesWhisperDir();
-          if (!whisperDir) return false;
-          const bundledPath = path.join(whisperDir, 'gpu', dll);
-          if (!fs.existsSync(bundledPath)) return false;
-        }
+        if (!fs.existsSync(dllPath)) return false;
       }
       return true;
     } catch {
@@ -99,38 +236,7 @@ export class CudaDownloader {
   }
 
   copyFromResources(): boolean {
-    try {
-      const whisperDir = this.getResourcesWhisperDir();
-      if (!whisperDir) return false;
-      const gpuDir = path.join(whisperDir, 'gpu');
-      if (!fs.existsSync(this.cudaPath)) {
-        fs.mkdirSync(this.cudaPath, { recursive: true });
-      }
-      for (const dll of CUDA_DLLS) {
-        const srcPath = path.join(gpuDir, dll);
-        const dstPath = path.join(this.cudaPath, dll);
-        if (fs.existsSync(srcPath) && !fs.existsSync(dstPath)) {
-          fs.copyFileSync(srcPath, dstPath);
-          this.logger.info(`Copied ${dll} to cuda folder`);
-        }
-      }
-      return this.areCudaDllsPresent();
-    } catch (err) {
-      this.logger.error('Failed to copy CUDA DLLs from resources', err);
-      return false;
-    }
-  }
-
-  private getResourcesWhisperDir(): string | null {
-    try {
-      const whisperDir = app.isPackaged
-        ? path.join(process.resourcesPath, 'whisper')
-        : path.join(__dirname, '..', '..', 'resources', 'whisper');
-      if (fs.existsSync(whisperDir)) return whisperDir;
-      return null;
-    } catch {
-      return null;
-    }
+    return this.areCudaDllsPresent();
   }
 
   getCudaPath(): string | null {
@@ -189,9 +295,38 @@ export class CudaDownloader {
       } catch {}
     }
 
-    const result = await this.downloadFile(CUDA_DOWNLOAD_URL, this.tempPath, resumeOffset);
+    // ── Disk space check ──
+    // Estimate total size: if resuming, total is known; otherwise assume ~50MB for CUDA zip
+    const estimatedSize = this.totalBytes > 0 ? this.totalBytes : 50 * 1024 * 1024;
+    const requiredSpace = Math.max(estimatedSize, 50 * 1024 * 1024) * 1.1; // 10% buffer
+    const diskCheck = await this.checkDiskSpace(requiredSpace);
+    if (!diskCheck.enough) {
+      this.downloadState = 'error';
+      this.sendProgress();
+      const errorMsg = `Disk space tidak cukup. Dibutuhkan ~${this.formatBytes(requiredSpace)}, tersedia ${this.formatBytes(diskCheck.freeBytes)}`;
+      this.logger.error(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+
+    // ── Download with retry ──
+    const result = await this.downloadWithRetry(CUDA_DOWNLOAD_URL, this.tempPath, resumeOffset);
 
     if (result.success) {
+      // ── SHA256 verification (if hash is configured) ──
+      if (CUDA_ZIP_EXPECTED_SHA256) {
+        this.logger.info('Verifying CUDA zip SHA256...');
+        this.sendProgress();
+        const hashOk = await this.verifySha256(this.tempPath, CUDA_ZIP_EXPECTED_SHA256);
+        if (!hashOk) {
+          this.cleanupTemp();
+          this.downloadState = 'error';
+          this.sendProgress();
+          return { success: false, error: 'SHA256 hash mismatch — file mungkin corrupt. Coba download ulang.' };
+        }
+      } else {
+        this.logger.warn('SHA256 hash not configured, skipping verification');
+      }
+
       this.downloadState = 'extracting';
       this.sendProgress();
       const extractResult = await this.extractZip();
@@ -216,15 +351,25 @@ export class CudaDownloader {
     }
   }
 
+  /**
+   * Core download function - handles one HTTP request.
+   * Supports resume via Range header, redirect following, and speed limiting.
+   */
   private downloadFile(
     url: string,
     destPath: string,
     resumeOffset: number = 0
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
-      const file = resumeOffset > 0
-        ? fs.createWriteStream(destPath, { flags: 'a' })
-        : fs.createWriteStream(destPath);
+      let file: fs.WriteStream;
+      try {
+        file = resumeOffset > 0
+          ? fs.createWriteStream(destPath, { flags: 'a' })
+          : fs.createWriteStream(destPath);
+      } catch (err) {
+        resolve({ success: false, error: `Failed to create temp file: ${err}` });
+        return;
+      }
 
       this.currentStream = file;
       const protocol = url.startsWith('https') ? https : http;
@@ -235,13 +380,14 @@ export class CudaDownloader {
         path: urlObj.pathname + urlObj.search,
         port: urlObj.port,
         headers: {} as Record<string, string>,
+        timeout: 120000,
       };
 
       if (resumeOffset > 0) {
         (options.headers as Record<string, string>)['Range'] = `bytes=${resumeOffset}-`;
       }
 
-      const request = protocol.get(url, { headers: options.headers }, (response) => {
+      const request = protocol.get(url, options, (response) => {
         if (this.cancelled) {
           file.close();
           this.cleanupTemp();
@@ -267,10 +413,12 @@ export class CudaDownloader {
           resolve({ success: false, error: `HTTP ${response.statusCode}` });
           return;
         } else if (resumeOffset > 0 && response.statusCode === 200) {
-          // Server doesn't support resume
+          // Server doesn't support resume — restart from 0
           file.close();
           fs.unlinkSync(destPath);
           this.downloadedBytes = 0;
+          // totalBytes will be recalculated when the new request gets content-length
+          this.totalBytes = 0;
           this.downloadFile(url, destPath, 0).then(resolve);
           return;
         }
@@ -306,6 +454,41 @@ export class CudaDownloader {
           }
         });
 
+        // Apply speed limit by pausing/resuming the response stream
+        if (this.maxSpeedBytesPerSecond > 0) {
+          const speedLimitBytesPerMs = this.maxSpeedBytesPerSecond / 1000;
+          let lastChunkTime = Date.now();
+          let bytesSinceLastChunk = 0;
+
+          response.on('data', (chunk: Buffer) => {
+            const now = Date.now();
+            bytesSinceLastChunk += chunk.length;
+            const elapsed = now - lastChunkTime;
+
+            if (elapsed > 0) {
+              const currentSpeed = bytesSinceLastChunk / elapsed;
+              if (currentSpeed > speedLimitBytesPerMs) {
+                // Need to slow down
+                const targetTime = bytesSinceLastChunk / speedLimitBytesPerMs;
+                const delay = Math.max(0, targetTime - elapsed);
+                if (delay > 5 && !this.cancelled && !this.paused) {
+                  response.pause();
+                  setTimeout(() => {
+                    if (!this.cancelled && !this.paused) {
+                      response.resume();
+                    }
+                  }, Math.min(delay, 500));
+                }
+              }
+            }
+          });
+
+          response.on('resume', () => {
+            lastChunkTime = Date.now();
+            bytesSinceLastChunk = 0;
+          });
+        }
+
         response.pipe(file);
 
         file.on('finish', () => {
@@ -331,7 +514,23 @@ export class CudaDownloader {
         });
       });
 
+      this.currentRequest = request;
+      let handled = false;
+
+      request.on('timeout', () => {
+        if (handled) return;
+        handled = true;
+        request.destroy();
+        file.close();
+        this.cleanupTemp();
+        this.currentRequest = null;
+        this.currentStream = null;
+        resolve({ success: false, error: 'Request timeout' });
+      });
+
       request.on('error', (err) => {
+        if (handled) return;
+        handled = true;
         file.close();
         if (this.paused) {
           this.currentRequest = null;
@@ -344,8 +543,6 @@ export class CudaDownloader {
           resolve({ success: false, error: String(err) });
         }
       });
-
-      this.currentRequest = request;
     });
   }
 
@@ -360,9 +557,8 @@ export class CudaDownloader {
         fs.mkdirSync(this.cudaPath, { recursive: true });
       }
 
-      // Use PowerShell Expand-Archive to extract
       const psCommand = `Expand-Archive -Path '${this.tempPath}' -DestinationPath '${this.cudaPath}' -Force`;
-      
+
       execFile('powershell', ['-NoProfile', '-Command', psCommand], {
         windowsHide: true,
         timeout: 120000,
@@ -373,12 +569,10 @@ export class CudaDownloader {
           return;
         }
 
-        // Verify DLLs exist after extraction
         if (this.areCudaDllsPresent()) {
           this.logger.info('CUDA DLLs extracted successfully');
           resolve({ success: true });
         } else {
-          // Try copying from nested folder (zip might have a root folder)
           try {
             const entries = fs.readdirSync(this.cudaPath);
             for (const entry of entries) {
@@ -437,11 +631,48 @@ export class CudaDownloader {
     this.sendProgress();
   }
 
+  deleteEngineFiles(type: 'cpu' | 'gpu'): { success: boolean; deletedFiles?: number; error?: string } {
+    const dir = type === 'cpu'
+      ? path.join(path.dirname(this.cudaPath), 'cpu')
+      : this.cudaPath;
+
+    if (!fs.existsSync(dir)) {
+      return { success: true, deletedFiles: 0 };
+    }
+
+    try {
+      let count = 0;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        try {
+          fs.rmSync(fullPath, { recursive: true });
+          count++;
+        } catch (err) {
+          this.logger.warn(`Failed to delete ${fullPath}`, err);
+        }
+      }
+      this.logger.info(`Deleted ${count} files from ${type} engine directory`);
+      return { success: true, deletedFiles: count };
+    } catch (err) {
+      this.logger.error(`Failed to delete ${type} engine files`, err);
+      return { success: false, error: String(err) };
+    }
+  }
+
   private cleanupTemp(): void {
     try {
       if (fs.existsSync(this.tempPath)) {
         fs.unlinkSync(this.tempPath);
       }
     } catch {}
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 }

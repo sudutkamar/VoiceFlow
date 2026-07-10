@@ -6,49 +6,6 @@
   "author": "VoiceFlow",
   "license": "MIT",
   "private": true,
-  "build": {
-    "appId": "com.voiceflow.app",
-    "productName": "VoiceFlow",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "resources/icons",
-        "to": "icons",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "resources/whisper/cpu",
-        "to": "whisper/cpu",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "resources/whisper/gpu",
-        "to": "whisper/gpu",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "resources/icons/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
-    }
-  },
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "dev:first-run": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development VOICEFLOW_FIRST_RUN=1 electron .\"",
@@ -56,7 +13,6 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --win",
-    "dist:win": "npm run build && electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

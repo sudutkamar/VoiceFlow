@@ -55,7 +55,44 @@ echo.
 
 if not exist "resources\whisper\cpu" mkdir "resources\whisper\cpu"
 if not exist "resources\whisper\gpu" mkdir "resources\whisper\gpu"
+if not exist "resources\whisper\models" mkdir "resources\whisper\models"
 
+echo [0/3] Copying whisper binaries from resources-whisper-slim...
+
+if exist "resources\whisper\cpu\whisper-cli.exe" goto skip_cpu
+if not exist "resources-whisper-slim\whisper-cli.exe" goto warn_cpu
+echo   Copying CPU files...
+xcopy /Y "resources-whisper-slim\whisper-cli.exe" "resources\whisper\cpu\" >nul
+xcopy /Y "resources-whisper-slim\whisper.dll" "resources\whisper\cpu\" >nul
+xcopy /Y "resources-whisper-slim\ggml.dll" "resources\whisper\cpu\" >nul
+xcopy /Y "resources-whisper-slim\ggml-base.dll" "resources\whisper\cpu\" >nul
+xcopy /Y "resources-whisper-slim\ggml-cpu-*.dll" "resources\whisper\cpu\" >nul
+echo   CPU OK
+goto gpu_check
+:warn_cpu
+echo   WARNING: resources-whisper-slim not found.
+echo   Run: build.bat download-whisper
+goto gpu_check
+:skip_cpu
+echo   CPU already present, skipping.
+
+:gpu_check
+if exist "resources\whisper\gpu\ggml-cuda.dll" goto skip_gpu
+if not exist "resources-whisper-slim\ggml-cuda.dll" goto warn_gpu
+echo   Copying GPU/CUDA files...
+xcopy /Y "resources-whisper-slim\ggml-cuda.dll" "resources\whisper\gpu\" >nul
+xcopy /Y "resources-whisper-slim\cublas64_12.dll" "resources\whisper\gpu\" >nul
+xcopy /Y "resources-whisper-slim\cublasLt64_12.dll" "resources\whisper\gpu\" >nul
+xcopy /Y "resources-whisper-slim\cudart64_12.dll" "resources\whisper\gpu\" >nul
+echo   GPU OK
+goto build_start
+:warn_gpu
+echo   GPU files not found (CPU mode still works).
+goto build_start
+:skip_gpu
+echo   GPU already present, skipping.
+
+:build_start
 echo [1/3] Building React frontend...
 call npm run build:renderer
 if %errorlevel% neq 0 ( echo FAILED & pause & exit /b 1 )

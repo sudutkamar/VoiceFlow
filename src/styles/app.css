@@ -1781,12 +1781,17 @@ body {
   box-shadow: 0 6px 20px var(--accent-glow);
 }
 
-.btn-danger { color: var(--error); }
-.btn-danger:hover { 
-  background: rgba(248, 113, 113, 0.15); 
+.btn-danger { 
+  color: var(--error); 
+  background: rgba(248, 113, 113, 0.12); 
   border-color: rgba(248, 113, 113, 0.3);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+}
+.btn-danger:hover { 
+  background: var(--error); 
+  border-color: var(--error);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3);
 }
 
 .btn-sm { padding: 5px 10px; font-size: 12px; }
@@ -4643,16 +4648,17 @@ body.mini-mode, html.mini-mode { background: transparent; }
 }
 
 .modal-actions .btn-danger {
-  background: var(--danger-gradient);
-  border: 1px solid var(--danger);
+  background: var(--error);
+  border: 1px solid var(--error);
   color: white;
-  box-shadow: 0 0 15px var(--danger-glow);
+  box-shadow: 0 0 15px rgba(248, 113, 113, 0.3);
 }
 
 .modal-actions .btn-danger:hover {
-  background: linear-gradient(135deg, var(--danger-hover), var(--danger));
+  background: var(--error);
+  border-color: var(--error);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--danger-glow);
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.4);
 }
 
 /* Light theme modal */

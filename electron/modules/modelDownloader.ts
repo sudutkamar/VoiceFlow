@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { app } from 'electron';
 import { Logger } from './logger';
 import { VoiceFlowDatabase } from './database';
@@ -17,8 +18,12 @@ export interface ModelInfo {
   downloaded?: boolean;
   fileSize?: number;
   isValid?: boolean;
+  sha256?: string; // optional SHA256 hash for verification
 }
 
+// NOTE: SHA256 hashes are left as null for now.
+// To generate: certUtil -hashfile <model.bin> SHA256
+// Fill in after verifying against HuggingFace published hashes.
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
     name: 'ggml-tiny.bin',
@@ -27,6 +32,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
     description: 'Tercepat, akurasi rendah',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-base.bin',
@@ -35,6 +41,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
     description: 'Seimbang untuk daily use',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-base-q5_1.bin',
@@ -43,6 +50,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin',
     description: 'Base yang lebih kecil & cepat (quantized)',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-large-v3-turbo-q5_0.bin',
@@ -51,6 +59,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin',
     description: 'Large v3 Turbo yang lebih kecil (quantized)',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-small.bin',
@@ -59,6 +68,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
     description: 'Lebih akurat, cocok untuk bahasa campuran',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-medium.bin',
@@ -67,6 +77,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
     description: 'Sangat akurat untuk semua bahasa',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-large-v3-turbo.bin',
@@ -75,6 +86,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
     description: '⭐ Akurasi tinggi + cepat (recommended)',
     isKnown: true,
+    sha256: undefined,
   },
   {
     name: 'ggml-large-v3.bin',
@@ -83,6 +95,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
     description: 'Akurasi tertinggi, butuh RAM besar',
     isKnown: true,
+    sha256: undefined,
   },
 ];
 
@@ -109,6 +122,13 @@ export class ModelDownloader {
   private totalBytes: number = 0;
   private downloadState: DownloadState = 'idle';
 
+  // Retry config
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_BASE_DELAY_MS = 1000;
+
+  // Speed limit (bytes per second, 0 = unlimited)
+  private maxSpeedBytesPerSecond = 0;
+
   constructor(logger: Logger, savedModelsPath?: string | null, database?: VoiceFlowDatabase) {
     this.logger = logger;
     this.database = database || null;
@@ -117,6 +137,15 @@ export class ModelDownloader {
       this.modelsPath = savedModelsPath;
     } else {
       this.modelsPath = this.getModelsPath();
+    }
+
+    // Ensure models directory exists
+    try {
+      if (!fs.existsSync(this.modelsPath)) {
+        fs.mkdirSync(this.modelsPath, { recursive: true });
+      }
+    } catch (err) {
+      this.logger.warn('Cannot create models directory', err);
     }
 
     // Migrate models from old resources path (production) to new userData path
@@ -130,46 +159,132 @@ export class ModelDownloader {
     this.restoreDownloadState();
   }
 
-  private migrateOldModels(): void {
+  /**
+   * Set download speed limit in bytes per second (0 = unlimited).
+   */
+  setSpeedLimit(bytesPerSecond: number): void {
+    this.maxSpeedBytesPerSecond = Math.max(0, bytesPerSecond);
+    this.logger.info(`Model download speed limit set to ${this.maxSpeedBytesPerSecond} B/s`);
+  }
+
+  /**
+   * Check if there is enough disk space for the download.
+   */
+  private async checkDiskSpace(requiredBytes: number): Promise<{ enough: boolean; freeBytes: number }> {
     try {
-      const oldPath = path.join(process.resourcesPath, 'whisper', 'models');
-      if (oldPath === this.modelsPath || !fs.existsSync(oldPath)) return;
-      
-      const files = fs.readdirSync(oldPath).filter(f => f.endsWith('.bin'));
-      if (files.length === 0) return;
+      const drivePath = path.parse(this.modelsPath).root || 'C:\\';
+      const info = await fs.promises.statfs(drivePath);
+      const freeBytes = info.bfree * info.bsize;
+      const enough = freeBytes >= requiredBytes;
 
-      if (!fs.existsSync(this.modelsPath)) {
-        fs.mkdirSync(this.modelsPath, { recursive: true });
+      if (!enough) {
+        this.logger.warn(
+          `Disk space check failed: need ${requiredBytes} bytes, only ${freeBytes} free on ${drivePath}`
+        );
+      } else {
+        this.logger.info(
+          `Disk space OK: ${freeBytes} bytes free, need ${requiredBytes} bytes`
+        );
       }
-
-      let migrated = 0;
-      for (const file of files) {
-        const src = path.join(oldPath, file);
-        const dest = path.join(this.modelsPath, file);
-        if (!fs.existsSync(dest)) {
-          fs.copyFileSync(src, dest);
-          this.logger.info(`Migrated model: ${file} → ${this.modelsPath}`);
-          migrated++;
-        }
-      }
-      if (migrated > 0) {
-        this.logger.info(`Migrated ${migrated} models from old location to ${this.modelsPath}`);
-      }
+      return { enough, freeBytes };
     } catch (err) {
-      this.logger.warn('Failed to migrate old models', err);
+      this.logger.warn('Failed to check disk space, proceeding anyway', err);
+      return { enough: true, freeBytes: Infinity };
     }
   }
 
-  private getModelsPath(): string {
-    // Use userData directory so models persist across reinstalls and are user-writable
-    const defaultPath = path.join(app.getPath('userData'), 'whisper', 'models');
-    if (!app.isPackaged) {
-      // In dev, still use project resources folder for convenience
-      return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+  /**
+   * Verify SHA256 hash of a downloaded file.
+   */
+  private async verifySha256(filePath: string, expectedHash: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      try {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('data', (data) => hash.update(data));
+        stream.on('end', () => {
+          const actual = hash.digest('hex');
+          const match = actual === expectedHash;
+          if (!match) {
+            this.logger.error(
+              `SHA256 mismatch for ${path.basename(filePath)}: expected ${expectedHash}, got ${actual}`
+            );
+          } else {
+            this.logger.info(`SHA256 verified for ${path.basename(filePath)}`);
+          }
+          resolve(match);
+        });
+        stream.on('error', (err) => {
+          this.logger.error('SHA256 verification stream error', err);
+          resolve(false);
+        });
+      } catch (err) {
+        this.logger.error('SHA256 verification failed', err);
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Download with retry logic (exponential backoff).
+   * Retries on transient network errors only.
+   */
+  private async downloadWithRetry(
+    url: string,
+    tempPath: string,
+    modelName: string,
+    resumeOffset: number = 0,
+    attempt: number = 1
+  ): Promise<{ success: boolean; error?: string }> {
+    const result = await this.downloadFromUrl(url, tempPath, modelName, resumeOffset);
+
+    // If successful or user-initiated pause/cancel, return immediately
+    if (result.success) return result;
+    if (result.error === 'paused' || result.error === 'cancelled') return result;
+
+    // Don't retry on certain non-transient HTTP errors
+    if (result.error && /^HTTP (4[0-4][0-9]|4[6-9][0-9]|5[0-1][0-9])$/.test(result.error)) {
+      const code = parseInt(result.error.replace('HTTP ', ''), 10);
+      if (code !== 408 && code !== 429 && code < 520) {
+        return result;
+      }
     }
-    const logger = this.logger;
-    logger.info(`Models path (userData): ${defaultPath}`);
-    return defaultPath;
+
+    if (attempt > this.MAX_RETRIES) {
+      this.logger.error(`Download failed after ${this.MAX_RETRIES} retries: ${result.error}`);
+      return { success: false, error: `Download failed after ${this.MAX_RETRIES + 1} attempts: ${result.error}` };
+    }
+
+    const delay = this.RETRY_BASE_DELAY_MS * Math.pow(3, attempt - 1);
+    this.logger.warn(
+      `Download attempt ${attempt} failed (${result.error}), retrying in ${delay}ms... (attempt ${attempt}/${this.MAX_RETRIES + 1})`
+    );
+
+    // Update UI to show retry status
+    this.sendProgressToUI(this.downloadProgress, 'downloading');
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    // On retry, check if temp file still exists for resume
+    let newOffset = 0;
+    if (fs.existsSync(tempPath)) {
+      try {
+        newOffset = fs.statSync(tempPath).size;
+      } catch {}
+    }
+
+    return this.downloadWithRetry(url, tempPath, modelName, newOffset, attempt + 1);
+  }
+
+  private migrateOldModels(): void {
+    // Bundled and download paths are the same — no migration needed
+  }
+
+  private getModelsPath(): string {
+    const whisperDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'whisper')
+      : path.join(__dirname, '..', '..', 'resources', 'whisper');
+    return path.join(whisperDir, 'models');
   }
 
   private cleanupInvalidFiles(): void {
@@ -498,10 +613,20 @@ export class ModelDownloader {
         this.mainWindow.setProgressBar(-1);
       } else if (mode === 'paused') {
         // Show paused state (yellow/indeterminate on Windows)
-        this.mainWindow.setProgressBar(progress, { mode: 'paused' });
+        // Try with mode option first, fall back to simple progress if it fails
+        try {
+          this.mainWindow.setProgressBar(progress, { mode: 'paused' });
+        } catch {
+          // Fallback for older Windows versions that don't support mode option
+          this.mainWindow.setProgressBar(progress);
+        }
       } else if (mode === 'error') {
         // Show error state (red on Windows)
-        this.mainWindow.setProgressBar(progress, { mode: 'error' });
+        try {
+          this.mainWindow.setProgressBar(progress, { mode: 'error' });
+        } catch {
+          this.mainWindow.setProgressBar(progress);
+        }
       } else {
         // Normal progress
         this.mainWindow.setProgressBar(progress, { mode: 'normal' });
@@ -562,6 +687,10 @@ export class ModelDownloader {
     }
   }
 
+  /**
+   * Core download function - handles one HTTP request.
+   * Supports resume via Range header, redirect following, and speed limiting.
+   */
   private downloadFromUrl(
     url: string, 
     tempPath: string, 
@@ -575,9 +704,15 @@ export class ModelDownloader {
       }
 
       // Open file in append mode if resuming, otherwise create new
-      const file = resumeOffset > 0 
-        ? fs.createWriteStream(tempPath, { flags: 'a' })
-        : fs.createWriteStream(tempPath);
+      let file: fs.WriteStream;
+      try {
+        file = resumeOffset > 0 
+          ? fs.createWriteStream(tempPath, { flags: 'a' })
+          : fs.createWriteStream(tempPath);
+      } catch (err) {
+        resolve({ success: false, error: `Failed to create temp file: ${err}` });
+        return;
+      }
       
       this.currentDownload = { request: null as any, stream: file };
       this.currentTempPath = tempPath;
@@ -591,6 +726,7 @@ export class ModelDownloader {
         path: urlObj.pathname + urlObj.search,
         port: urlObj.port,
         headers: {} as Record<string, string>,
+        timeout: 120000,
       };
 
       // Add Range header for resume
@@ -599,7 +735,7 @@ export class ModelDownloader {
         this.logger.info(`Resuming download from byte ${resumeOffset}`);
       }
 
-      const request = protocol.get(url, { headers: options.headers }, (response) => {
+      const request = protocol.get(url, options, (response) => {
         if (this.cancelled) {
           file.close();
           this.cleanupTempFile();
@@ -633,7 +769,7 @@ export class ModelDownloader {
           file.close();
           fs.unlinkSync(tempPath);
           this.downloadedBytes = 0;
-          // Restart without resume offset
+          this.totalBytes = 0; // Reset totalBytes for the fresh download
           this.downloadFromUrl(url, tempPath, modelName, 0).then(resolve);
           return;
         }
@@ -643,6 +779,40 @@ export class ModelDownloader {
         
         let downloadedSize = resumeOffset;
         let lastProgressUpdate = Date.now();
+
+        // Apply speed limit by pausing/resuming the response stream
+        if (this.maxSpeedBytesPerSecond > 0) {
+          const speedLimitBytesPerMs = this.maxSpeedBytesPerSecond / 1000;
+          let lastChunkTime = Date.now();
+          let bytesSinceLastChunk = 0;
+
+          response.on('data', (chunk: Buffer) => {
+            const now = Date.now();
+            bytesSinceLastChunk += chunk.length;
+            const elapsed = now - lastChunkTime;
+
+            if (elapsed > 0) {
+              const currentSpeed = bytesSinceLastChunk / elapsed;
+              if (currentSpeed > speedLimitBytesPerMs) {
+                const targetTime = bytesSinceLastChunk / speedLimitBytesPerMs;
+                const delay = Math.max(0, targetTime - elapsed);
+                if (delay > 5 && !this.cancelled && !this.paused) {
+                  response.pause();
+                  setTimeout(() => {
+                    if (!this.cancelled && !this.paused) {
+                      response.resume();
+                    }
+                  }, Math.min(delay, 500));
+                }
+              }
+            }
+          });
+
+          response.on('resume', () => {
+            lastChunkTime = Date.now();
+            bytesSinceLastChunk = 0;
+          });
+        }
 
         response.on('data', (chunk) => {
           if (this.cancelled || this.paused) {
@@ -725,8 +895,22 @@ export class ModelDownloader {
       });
 
       this.currentDownload.request = request;
+      let handled = false;
+
+      request.on('timeout', () => {
+        if (handled) return;
+        handled = true;
+        request.destroy();
+        file.close();
+        this.currentDownload = null;
+        this.sendProgressToUI(0, 'error');
+        this.cleanupTempFile();
+        resolve({ success: false, error: 'Request timeout' });
+      });
 
       request.on('error', (error) => {
+        if (handled) return;
+        handled = true;
         file.close();
         this.currentDownload = null;
         this.sendProgressToUI(0, 'error');
@@ -757,6 +941,15 @@ export class ModelDownloader {
       return { success: false, error: `Model ${modelName} sudah di-download` };
     }
 
+    // ── Disk space check ──
+    const requiredSpace = model.sizeBytes * 1.1; // 10% buffer
+    const diskCheck = await this.checkDiskSpace(requiredSpace);
+    if (!diskCheck.enough) {
+      const errorMsg = `Disk space tidak cukup untuk ${modelName}. Dibutuhkan ~${this.formatBytes(requiredSpace)}, tersedia ${this.formatBytes(diskCheck.freeBytes)}`;
+      this.logger.error(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+
     // Clean up existing temp file
     this.removeTempFile(modelName);
 
@@ -779,7 +972,8 @@ export class ModelDownloader {
     
     this.sendProgressToUI(0, 'downloading');
 
-    const result = await this.downloadFromUrl(model.url, tempPath, modelName, 0);
+    // ── Download with retry ──
+    const result = await this.downloadWithRetry(model.url, tempPath, modelName, 0);
     
     if (this.cancelled) {
       this.cleanupTempFile();
@@ -803,6 +997,19 @@ export class ModelDownloader {
           this.cleanupTempFile();
           this.sendProgressToUI(0, 'error');
           return { success: false, error: 'Downloaded file is too small or corrupt' };
+        }
+
+        // ── SHA256 verification (if hash is configured for this model) ──
+        if (model.sha256) {
+          this.logger.info(`Verifying SHA256 for ${modelName}...`);
+          const hashOk = await this.verifySha256(tempPath, model.sha256);
+          if (!hashOk) {
+            this.cleanupTempFile();
+            this.sendProgressToUI(0, 'error');
+            return { success: false, error: `SHA256 hash mismatch — ${modelName} mungkin corrupt. Coba download ulang.` };
+          }
+        } else {
+          this.logger.warn(`SHA256 not configured for ${modelName}, skipping hash verification`);
         }
 
         fs.renameSync(tempPath, modelPath);
@@ -868,12 +1075,14 @@ export class ModelDownloader {
     if (!fs.existsSync(tempPath)) {
       this.logger.warn('Temp file not found, restarting download');
       this.downloadedBytes = 0;
+      this.totalBytes = 0;
       return this.downloadModel(this.currentModelName);
     }
 
     this.sendProgressToUI(this.downloadProgress, 'downloading');
 
-    const result = await this.downloadFromUrl(this.currentModelUrl, tempPath, this.currentModelName, this.downloadedBytes);
+    // Use retry for resume as well
+    const result = await this.downloadWithRetry(this.currentModelUrl, tempPath, this.currentModelName, this.downloadedBytes);
     
     if (this.cancelled) {
       this.cleanupTempFile();
@@ -897,6 +1106,19 @@ export class ModelDownloader {
           this.sendProgressToUI(0, 'error');
           this.saveDownloadState();
           return { success: false, error: 'Downloaded file is too small or corrupt' };
+        }
+
+        // SHA256 verification
+        const model = AVAILABLE_MODELS.find(m => m.name === this.currentModelName);
+        if (model?.sha256) {
+          this.logger.info(`Verifying SHA256 for ${this.currentModelName}...`);
+          const hashOk = await this.verifySha256(tempPath, model.sha256);
+          if (!hashOk) {
+            this.cleanupTempFile();
+            this.sendProgressToUI(0, 'error');
+            this.saveDownloadState();
+            return { success: false, error: `SHA256 hash mismatch — ${this.currentModelName} mungkin corrupt. Coba download ulang.` };
+          }
         }
 
         fs.renameSync(tempPath, modelPath);
@@ -937,6 +1159,7 @@ export class ModelDownloader {
     this.currentModelUrl = null;
     this.currentModelName = null;
     this.downloadedBytes = 0;
+    this.totalBytes = 0;
     this.sendProgressToUI(0, 'idle');
     this.saveDownloadState();
     this.logger.info('Download cancelled and cleaned up');

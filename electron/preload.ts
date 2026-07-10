@@ -60,6 +60,8 @@ export interface ElectronAPI {
   chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
   hasAnyModel: () => Promise<boolean>;
+  setSpeedLimit: (bytesPerSecond: number) => Promise<{ success: boolean }>;
+  getSpeedLimit: () => Promise<{ bytesPerSecond: number }>;
   
   // Adaptive Learning
   learnCorrection: (original: string, corrected: string) => Promise<{ success: boolean; error?: string }>;
@@ -90,6 +92,7 @@ export interface ElectronAPI {
   resumeCudaDownload: () => Promise<void>;
   cancelCudaDownload: () => Promise<void>;
   getCudaDownloadProgress: () => Promise<{ state: string; progress: number; downloadedBytes: number; totalBytes: number }>;
+  deleteWhisperEngine: (type: 'cpu' | 'gpu') => Promise<{ success: boolean; deletedFiles?: number; error?: string }>;
   
   // Events
   onStateChange: (callback: (state: string) => void) => () => void;
@@ -166,6 +169,8 @@ const api: ElectronAPI = {
   getCustomModelsPath: () => ipcRenderer.invoke('get-custom-models-path'),
   chooseModelsFolder: () => ipcRenderer.invoke('choose-models-folder'),
   resetModelsPath: () => ipcRenderer.invoke('reset-models-path'),
+  setSpeedLimit: (bytesPerSecond) => ipcRenderer.invoke('set-speed-limit', bytesPerSecond),
+  getSpeedLimit: () => ipcRenderer.invoke('get-speed-limit'),
   
   learnCorrection: (original, corrected) => ipcRenderer.invoke('learn-correction', original, corrected),
   getLearnedCorrections: () => ipcRenderer.invoke('get-learned-corrections'),
@@ -193,6 +198,7 @@ const api: ElectronAPI = {
   resumeCudaDownload: () => ipcRenderer.invoke('resume-cuda-download'),
   cancelCudaDownload: () => ipcRenderer.invoke('cancel-cuda-download'),
   getCudaDownloadProgress: () => ipcRenderer.invoke('get-cuda-download-progress'),
+  deleteWhisperEngine: (type) => ipcRenderer.invoke('delete-whisper-engine', type),
   
   onStateChange: (callback) => {
     const handler = (_: any, state: string) => callback(state);

@@ -389,7 +389,7 @@ function setupIPC(): void {
     if (status.needsDownload) {
       const copied = cudaDownloader.copyFromResources();
       if (copied) {
-        logger.info('CUDA DLLs copied from resources to user data');
+        logger.info('CUDA DLLs verified in resources');
       }
     }
   }).catch(err => logger.warn('CUDA check failed', err));
@@ -514,6 +514,10 @@ function setupIPC(): void {
 
   ipcMain.handle('get-cuda-download-progress', async () => {
     return cudaDownloader.getProgress();
+  });
+
+  ipcMain.handle('delete-whisper-engine', async (event, type: 'cpu' | 'gpu') => {
+    return cudaDownloader.deleteEngineFiles(type);
   });
   
   ipcMain.handle('clear-cache', async () => {

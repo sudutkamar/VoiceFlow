@@ -169,8 +169,7 @@ export class Transcriber {
     try {
       const whisperDir = this.getWhisperDir();
       const cudaDllPath = path.join(whisperDir, 'gpu', 'ggml-cuda.dll');
-      const userCudaPath = path.join(app.getPath('userData'), 'cuda', 'ggml-cuda.dll');
-      this.hasGpu = cachedPathExists(cudaDllPath) || cachedPathExists(userCudaPath);
+      this.hasGpu = cachedPathExists(cudaDllPath);
       this.logger.info(`GPU: ${this.hasGpu ? 'CUDA ✓' : 'CPU only'}`);
     } catch {
       this.hasGpu = false;
@@ -193,11 +192,17 @@ export class Transcriber {
   setMainWindow(window: BrowserWindow): void { this.mainWindow = window; }
 
   updateModelsPath(newPath: string): void {
-    if (newPath && cachedPathExists(newPath)) {
-      this.modelsPath = newPath;
-      invalidatePathCache(newPath);
-      this.logger.info(`Models path: ${newPath}`);
+    if (!newPath) return;
+    if (!cachedPathExists(newPath)) {
+      try {
+        fs.mkdirSync(newPath, { recursive: true });
+      } catch (err) {
+        this.logger.warn(`Cannot create models dir: ${newPath}`, err);
+      }
     }
+    this.modelsPath = newPath;
+    invalidatePathCache(newPath);
+    this.logger.info(`Models path: ${newPath}`);
   }
 
   getModelsPathValue(): string { return this.modelsPath; }

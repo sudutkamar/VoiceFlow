@@ -34,9 +34,15 @@ files:
   - "!node_modules/rxjs/**"
   - "!node_modules/@babel/**"
 extraResources:
-  # Whisper engine (CPU + CUDA DLLs, no models)
-  - from: resources-whisper-slim
-    to: whisper
+  # CPU whisper engine — from build.bat or manual download
+  - from: resources/whisper/cpu
+    to: whisper/cpu
+  # GPU/CUDA DLLs — user download sendiri kalo perlu
+  # - from: resources/whisper/gpu
+  #   to: whisper/gpu
+  # AI models — user download sendiri via app
+  # - from: resources/whisper/models
+  #   to: whisper/models
   # App icons
   - from: resources/icons
     to: icons
