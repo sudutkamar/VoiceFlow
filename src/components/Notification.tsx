@@ -156,8 +156,8 @@ function NotificationItem({ notification, onClose }: { notification: Notificatio
     switch (notification.type) {
       case 'success': return '✓';
       case 'error': return '✕';
-      case 'warning': return '⚠';
-      case 'info': return 'ℹ';
+      case 'warning': return '!';
+      case 'info': return 'i';
     }
   };
 

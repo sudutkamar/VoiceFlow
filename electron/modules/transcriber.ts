@@ -186,6 +186,9 @@ export class Transcriber {
   }
 
   private getModelsPath(): string {
+    if (app.isPackaged) {
+      return path.join(app.getPath('userData'), 'models');
+    }
     return path.join(this.getWhisperDir(), 'models');
   }
 
@@ -498,7 +501,7 @@ export class Transcriber {
     // --- Build initial prompt ---
     const fullPrompt = this.buildInitialPrompt(initialPrompt, language);
 
-    this.logger.info('🎯 Transcription start', {
+    this.logger.info('[Transcriber] Start', {
       model: selectedModel,
       profile: profile.name,
       language,
@@ -549,7 +552,7 @@ export class Transcriber {
           this.lastUsedModel = currentModel;
           this.lastUsedModelPath = currentModelPath;
 
-          this.logger.info('🎯 Transcription complete', {
+          this.logger.info('[Transcriber] Complete', {
             model: currentModel,
             profile: currentProfile.name,
             attempt: attempt + 1,
@@ -794,7 +797,7 @@ export class Transcriber {
         args.push('--prompt', initialPrompt);
       }
 
-      this.logger.info('🎯 Whisper args', {
+      this.logger.info('[Transcriber] Args', {
         model: path.basename(modelPath),
         beam: profile.beamSize,
         bestOf: profile.bestOf,

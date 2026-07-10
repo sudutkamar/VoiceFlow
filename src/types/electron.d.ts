@@ -41,14 +41,14 @@ interface ElectronAPI {
   // Models
   getModelsPath: () => Promise<string>;
   setModelsPath: (p: string) => Promise<{ success: boolean }>;
-  chooseModelsFolder: () => Promise<{ success: boolean; path?: string }>;
-  resetModelsPath: () => Promise<{ success: boolean }>;
+  chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
   getAvailableModels: () => Promise<any[]>;
   scanModelsFolder: () => Promise<any[]>;
   downloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
   forceDownloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
-  pauseDownload: () => Promise<{ success: boolean }>;
-  resumeDownload: () => Promise<{ success: boolean }>;
+  pauseDownload: () => Promise<{ success: boolean; error?: string }>;
+  resumeDownload: () => Promise<{ success: boolean; error?: string }>;
   cancelDownload: () => Promise<{ success: boolean }>;
   getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes: number; totalBytes: number }>;
   isModelDownloaded: (model: string) => Promise<boolean>;

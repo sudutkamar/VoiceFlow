@@ -4,6 +4,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as os from 'os';
 import { app } from 'electron';
 import { Logger } from './logger';
 import { VoiceFlowDatabase } from './database';
@@ -113,6 +114,7 @@ export class ModelDownloader {
   private cancelled: boolean = false;
   private paused: boolean = false;
   private currentTempPath: string | null = null;
+  private tempDir: string;
   private database: VoiceFlowDatabase | null = null;
   
   // Resume support
@@ -129,6 +131,58 @@ export class ModelDownloader {
   // Speed limit (bytes per second, 0 = unlimited)
   private maxSpeedBytesPerSecond = 0;
 
+  // ═══════════════════════════════════════════════════════════════
+  //  Retry helpers for file operations (EPERM / EBUSY resilience)
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Retry a synchronous file operation with busy-wait backoff.
+   * Used when async is not available (e.g. inside event callbacks).
+   */
+  private retrySync<T>(fn: () => T, maxRetries: number = 5, baseDelayMs: number = 200): T {
+    let lastError: any;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return fn();
+      } catch (err: any) {
+        lastError = err;
+        if (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES') {
+          if (attempt < maxRetries - 1) {
+            const delay = baseDelayMs * Math.pow(2, attempt);
+            const deadline = Date.now() + delay;
+            while (Date.now() < deadline) { /* busy-wait */ }
+            continue;
+          }
+        }
+        throw err;
+      }
+    }
+    throw lastError;
+  }
+
+  /**
+   * Retry an async file operation with proper await+delay backoff.
+   */
+  private async retryAsync<T>(fn: () => Promise<T>, maxRetries: number = 5, baseDelayMs: number = 200): Promise<T> {
+    let lastError: any;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        lastError = err;
+        if (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES') {
+          if (attempt < maxRetries - 1) {
+            const delay = baseDelayMs * Math.pow(2, attempt);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+        throw err;
+      }
+    }
+    throw lastError;
+  }
+
   constructor(logger: Logger, savedModelsPath?: string | null, database?: VoiceFlowDatabase) {
     this.logger = logger;
     this.database = database || null;
@@ -137,6 +191,19 @@ export class ModelDownloader {
       this.modelsPath = savedModelsPath;
     } else {
       this.modelsPath = this.getModelsPath();
+    }
+
+    // Use userData/temp-downloads instead of OS tmpdir to avoid Windows Defender / cleanup interference
+    const userDataPath = app.getPath('userData');
+    this.logger.info(`userData path: ${userDataPath}`);
+    this.tempDir = path.join(userDataPath, 'temp-downloads');
+    this.logger.info(`Temp download dir: ${this.tempDir}`);
+    try {
+      if (!fs.existsSync(this.tempDir)) {
+        fs.mkdirSync(this.tempDir, { recursive: true });
+      }
+    } catch (err) {
+      this.logger.warn('Cannot create temp download directory', err);
     }
 
     // Ensure models directory exists
@@ -148,13 +215,16 @@ export class ModelDownloader {
       this.logger.warn('Cannot create models directory', err);
     }
 
-    // Migrate models from old resources path (production) to new userData path
-    if (app.isPackaged) {
-      this.migrateOldModels();
+    // Read pending temp path from DB BEFORE cleanup so we don't delete active paused downloads
+    let pendingTempPath: string | null = null;
+    if (this.database) {
+      try {
+        pendingTempPath = this.database.getSetting('download_temp_path') || null;
+      } catch {}
     }
 
-    this.cleanupInvalidFiles();
-    
+    this.cleanupInvalidFiles(pendingTempPath);
+
     // Restore interrupted download state from database
     this.restoreDownloadState();
   }
@@ -242,13 +312,14 @@ export class ModelDownloader {
     if (result.success) return result;
     if (result.error === 'paused' || result.error === 'cancelled') return result;
 
-    // Don't retry on certain non-transient HTTP errors
-    if (result.error && /^HTTP (4[0-4][0-9]|4[6-9][0-9]|5[0-1][0-9])$/.test(result.error)) {
+    // Don't retry on non-transient HTTP client errors (4xx except 408 timeout / 429 rate-limit)
+    if (result.error && /^HTTP (4[0-4][0-9]|4[6-9][0-9])$/.test(result.error)) {
       const code = parseInt(result.error.replace('HTTP ', ''), 10);
-      if (code !== 408 && code !== 429 && code < 520) {
+      if (code !== 408 && code !== 429) {
         return result;
       }
     }
+    // 5xx server errors ARE transient — always retry
 
     if (attempt > this.MAX_RETRIES) {
       this.logger.error(`Download failed after ${this.MAX_RETRIES} retries: ${result.error}`);
@@ -265,56 +336,83 @@ export class ModelDownloader {
 
     await new Promise((resolve) => setTimeout(resolve, delay));
 
-    // On retry, check if temp file still exists for resume
-    let newOffset = 0;
+    // Generate a FRESH temp path for each retry to avoid EPERM on createWriteStream
+    // when the previous temp file is still locked by Windows Defender.
+    // Best-effort cleanup of the old temp file — may fail if Defender is still scanning it.
+    const newTempPath = this.generateTempPath(modelName);
     if (fs.existsSync(tempPath)) {
-      try {
-        newOffset = fs.statSync(tempPath).size;
-      } catch {}
+      try { fs.unlinkSync(tempPath); } catch {}
     }
 
-    return this.downloadWithRetry(url, tempPath, modelName, newOffset, attempt + 1);
-  }
-
-  private migrateOldModels(): void {
-    // Bundled and download paths are the same — no migration needed
+    return this.downloadWithRetry(url, newTempPath, modelName, 0, attempt + 1);
   }
 
   private getModelsPath(): string {
-    const whisperDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'whisper')
-      : path.join(__dirname, '..', '..', 'resources', 'whisper');
-    return path.join(whisperDir, 'models');
+    if (app.isPackaged) {
+      return path.join(app.getPath('userData'), 'models');
+    }
+    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
   }
 
-  private cleanupInvalidFiles(): void {
-    try {
-      if (!fs.existsSync(this.modelsPath)) return;
+  private cleanupInvalidFiles(skipTempPath?: string | null): void {
+    // Clean OS temp download dir first
+    this.cleanupDirectory(this.tempDir, skipTempPath);
+    // Then clean models dir
+    this.cleanupDirectory(this.modelsPath, skipTempPath);
+  }
 
-      const files = fs.readdirSync(this.modelsPath);
+  private cleanupDirectory(dirPath: string, skipFilePath?: string | null): void {
+    try {
+      if (!fs.existsSync(dirPath)) return;
+
+      const files = fs.readdirSync(dirPath);
       let cleanedCount = 0;
+      const skipResolved = skipFilePath ? path.resolve(skipFilePath) : null;
 
       for (const file of files) {
-        const filePath = path.join(this.modelsPath, file);
+        const filePath = path.join(dirPath, file);
+
+        // NEVER delete a temp file belonging to an active paused download
+        if (skipResolved && path.resolve(filePath) === skipResolved) {
+          this.logger.info(`Skipping active paused download temp: ${file}`);
+          continue;
+        }
+
         try {
-          const stat = fs.statSync(filePath);
-          // Don't remove .tmp files - they're needed for resume after app restart
-          // Only remove invalid .bin files (too small to be valid models)
-          if (file.endsWith('.bin') && stat.size < MIN_VALID_MODEL_SIZE) {
-            fs.unlinkSync(filePath);
-            this.logger.info(`Removed invalid model: ${file} (${stat.size} bytes)`);
-            cleanedCount++;
+          const isTemp = file.includes('.tmp');
+          const isBin = file.endsWith('.bin') && !file.endsWith('.tmp');
+
+          if (isBin) {
+            this.retrySync(() => {
+              const stat = fs.statSync(filePath);
+              if (stat.size < MIN_VALID_MODEL_SIZE) {
+                try { fs.chmodSync(filePath, 0o666); } catch {}
+                fs.unlinkSync(filePath);
+                this.logger.info(`Removed invalid model: ${file} (${stat.size} bytes)`);
+                cleanedCount++;
+              }
+            }, 3, 200);
+          }
+
+          if (isTemp) {
+            this.retrySync(() => {
+              if (!fs.existsSync(filePath)) return;
+              try { fs.chmodSync(filePath, 0o666); } catch {}
+              fs.unlinkSync(filePath);
+              this.logger.info(`Removed orphaned temp: ${file}`);
+              cleanedCount++;
+            }, 3, 200);
           }
         } catch (err) {
-          this.logger.warn(`Failed to check file: ${file}`, err);
+          this.logger.warn(`Failed to process: ${file}`, err);
         }
       }
 
       if (cleanedCount > 0) {
-        this.logger.info(`Cleaned up ${cleanedCount} invalid files`);
+        this.logger.info(`Cleaned up ${cleanedCount} files from ${dirPath}`);
       }
     } catch (err) {
-      this.logger.warn('Failed to cleanup invalid files', err);
+      this.logger.warn(`Failed to cleanup files in ${dirPath}`, err);
     }
   }
 
@@ -326,22 +424,22 @@ export class ModelDownloader {
     
     try {
       if (this.downloadState === 'downloading' || this.downloadState === 'paused') {
-        // Save active download state
         this.database.updateSetting('download_state', this.downloadState);
         this.database.updateSetting('download_model_name', this.currentModelName || '');
         this.database.updateSetting('download_model_url', this.currentModelUrl || '');
         this.database.updateSetting('download_progress', String(this.downloadProgress));
         this.database.updateSetting('downloaded_bytes', String(this.downloadedBytes));
         this.database.updateSetting('total_bytes', String(this.totalBytes));
+        this.database.updateSetting('download_temp_path', this.currentTempPath || '');
         this.logger.info(`Saved download state: ${this.downloadState} for ${this.currentModelName}`);
       } else {
-        // Clear download state when idle/completed/error
         this.database.updateSetting('download_state', 'idle');
         this.database.updateSetting('download_model_name', '');
         this.database.updateSetting('download_model_url', '');
         this.database.updateSetting('download_progress', '0');
         this.database.updateSetting('downloaded_bytes', '0');
         this.database.updateSetting('total_bytes', '0');
+        this.database.updateSetting('download_temp_path', '');
       }
     } catch (err) {
       this.logger.warn('Failed to save download state', err);
@@ -361,37 +459,71 @@ export class ModelDownloader {
       const progress = this.database.getSetting('download_progress');
       const downloaded = this.database.getSetting('downloaded_bytes');
       const total = this.database.getSetting('total_bytes');
+      const savedTempPath = this.database.getSetting('download_temp_path');
       
-      if (state && state !== 'idle' && modelName && modelUrl) {
-        // Check if temp file still exists
-        const tempPath = path.join(this.modelsPath, modelName + '.tmp');
-        if (fs.existsSync(tempPath)) {
-          // Restore state - will show as paused so user can resume
-          this.downloadState = 'paused';
-          this.currentModelName = modelName;
-          this.currentModelUrl = modelUrl;
-          this.downloadProgress = parseInt(progress || '0', 10);
-          this.downloadedBytes = parseInt(downloaded || '0', 10);
-          this.totalBytes = parseInt(total || '0', 10);
-          this.paused = true;
-          
-          this.logger.info(`Restored download state: ${modelName} at ${this.downloadProgress}% (${this.downloadedBytes}/${this.totalBytes} bytes)`);
-          
-          // Send progress to UI if window is ready
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            setTimeout(() => {
-              this.sendProgressToUI(this.downloadProgress, 'paused');
-            }, 500);
+      if (!state || state === 'idle' || !modelName || !modelUrl) return;
+
+      // Determine the temp path: saved path, or fallback to model+.tmp
+      let tempPath: string | null = savedTempPath || path.join(this.modelsPath, modelName + '.tmp');
+
+      // Validate temp file is actually accessible (exists + stat succeeds)
+      let tempOk = false;
+      try {
+        if (tempPath) fs.statSync(tempPath);
+        tempOk = true;
+      } catch {
+        // If primary path fails, scan for any temp file matching this model
+        tempPath = this.findTempFile(modelName);
+        if (tempPath) {
+          try {
+            fs.statSync(tempPath);
+            tempOk = true;
+          } catch {
+            tempOk = false;
           }
-        } else {
-          // Temp file missing, clear stale state
-          this.logger.info('Temp file missing, clearing stale download state');
-          this.saveDownloadState();
         }
+      }
+
+      if (tempOk && tempPath) {
+        this.downloadState = 'paused';
+        this.currentModelName = modelName;
+        this.currentModelUrl = modelUrl;
+        this.downloadProgress = parseInt(progress || '0', 10);
+        this.downloadedBytes = parseInt(downloaded || '0', 10);
+        this.totalBytes = parseInt(total || '0', 10);
+        this.paused = true;
+        this.currentTempPath = tempPath;
+
+        this.logger.info(`Restored download: ${modelName} at ${this.downloadProgress}% (${this.downloadedBytes}/${this.totalBytes})`);
+
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          setTimeout(() => this.sendProgressToUI(this.downloadProgress, 'paused'), 500);
+        }
+      } else {
+        this.logger.info('Temp file missing/inaccessible, clearing stale download state');
+        this.saveDownloadState();
       }
     } catch (err) {
       this.logger.warn('Failed to restore download state', err);
     }
+  }
+
+  private findTempFile(modelName: string): string | null {
+    for (const baseDir of [this.tempDir, this.modelsPath]) {
+      try {
+        if (!fs.existsSync(baseDir)) continue;
+        const dir = fs.readdirSync(baseDir);
+        const candidates = dir.filter(f => f.startsWith(modelName + '.tmp')).sort().reverse();
+        for (const c of candidates) {
+          const fp = path.join(baseDir, c);
+          try {
+            fs.statSync(fp);
+            return fp;
+          } catch {}
+        }
+      } catch {}
+    }
+    return null;
   }
 
   /**
@@ -404,15 +536,17 @@ export class ModelDownloader {
     const modelName = this.database.getSetting('download_model_name');
     
     if (state && state !== 'idle' && modelName) {
+      const savedTempPath = this.database.getSetting('download_temp_path');
+      if (savedTempPath) {
+        try { fs.statSync(savedTempPath); return true; } catch {}
+      }
       const tempPath = path.join(this.modelsPath, modelName + '.tmp');
-      return fs.existsSync(tempPath);
+      try { fs.statSync(tempPath); return true; } catch {}
+      return !!this.findTempFile(modelName);
     }
     return false;
   }
 
-  /**
-   * Get info about interrupted download for UI display
-   */
   getInterruptedDownloadInfo(): { modelName: string; progress: number } | null {
     if (!this.database) return null;
     
@@ -421,12 +555,16 @@ export class ModelDownloader {
     const progress = this.database.getSetting('download_progress');
     
     if (state && state !== 'idle' && modelName) {
-      const tempPath = path.join(this.modelsPath, modelName + '.tmp');
-      if (fs.existsSync(tempPath)) {
-        return {
-          modelName,
-          progress: parseInt(progress || '0', 10),
-        };
+      const savedTempPath = this.database.getSetting('download_temp_path');
+      let tempPath = savedTempPath || path.join(this.modelsPath, modelName + '.tmp');
+      try { fs.statSync(tempPath); } catch {
+        tempPath = this.findTempFile(modelName) || '';
+      }
+      if (tempPath) {
+        try {
+          fs.statSync(tempPath);
+          return { modelName, progress: parseInt(progress || '0', 10) };
+        } catch {}
       }
     }
     return null;
@@ -491,7 +629,7 @@ export class ModelDownloader {
             size: this.formatBytes(sizeBytes),
             sizeBytes,
             url: '',
-            description: '📁 Custom model — terdeteksi di folder',
+            description: 'Custom model — terdeteksi di folder',
             isKnown: false,
           });
         }
@@ -554,9 +692,11 @@ export class ModelDownloader {
   private isValidModelFile(modelName: string): boolean {
     try {
       const modelPath = path.join(this.modelsPath, modelName);
-      if (!fs.existsSync(modelPath)) return false;
-      const stat = fs.statSync(modelPath);
-      return stat.size >= MIN_VALID_MODEL_SIZE;
+      return this.retrySync(() => {
+        if (!fs.existsSync(modelPath)) return false;
+        const stat = fs.statSync(modelPath);
+        return stat.size >= MIN_VALID_MODEL_SIZE;
+      }, 3, 200);
     } catch {
       return false;
     }
@@ -569,8 +709,10 @@ export class ModelDownloader {
   getModelFileSize(modelName: string): number {
     try {
       const modelPath = path.join(this.modelsPath, modelName);
-      if (!fs.existsSync(modelPath)) return 0;
-      return fs.statSync(modelPath).size;
+      return this.retrySync(() => {
+        if (!fs.existsSync(modelPath)) return 0;
+        return fs.statSync(modelPath).size;
+      }, 3, 200);
     } catch {
       return 0;
     }
@@ -661,30 +803,57 @@ export class ModelDownloader {
     }
   }
 
+  private generateTempPath(modelName: string): string {
+    const ts = Date.now();
+    const rnd = crypto.randomBytes(4).toString('hex');
+    const fname = `${modelName}.tmp.${ts}.${rnd}`;
+    return path.join(this.tempDir, fname);
+  }
+
   private cleanupTempFile(): void {
-    if (this.currentTempPath) {
-      try {
-        if (fs.existsSync(this.currentTempPath)) {
-          fs.unlinkSync(this.currentTempPath);
-          this.logger.info(`Cleaned up temp file: ${this.currentTempPath}`);
-        }
-      } catch (err) {
-        this.logger.warn(`Failed to clean temp file: ${this.currentTempPath}`, err);
-      }
-      this.currentTempPath = null;
+    if (!this.currentTempPath) return;
+    const p = this.currentTempPath;
+    this.currentTempPath = null;
+    // Use retry helper: up to 5 attempts with backoff
+    try {
+      this.retrySync(() => {
+        if (!fs.existsSync(p)) return;
+        try { fs.chmodSync(p, 0o666); } catch {}
+        fs.unlinkSync(p);
+        this.logger.info(`Cleaned up temp file: ${p}`);
+      }, 5, 200);
+    } catch (err) {
+      this.logger.warn(`Failed to clean temp file: ${p}`, err);
     }
   }
 
-  removeTempFile(modelName: string): void {
-    const tempPath = path.join(this.modelsPath, modelName + '.tmp');
-    try {
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-        this.logger.info(`Removed temp file for: ${modelName}`);
+  removeTempFile(modelName: string): boolean {
+    let removed = true;
+    for (const baseDir of [this.tempDir, this.modelsPath]) {
+      try {
+        this.retrySync(() => {
+          if (!fs.existsSync(baseDir)) return;
+          const dir = fs.readdirSync(baseDir);
+          for (const f of dir) {
+            if (f.startsWith(modelName + '.tmp')) {
+              const fp = path.join(baseDir, f);
+              try {
+                if (!fs.existsSync(fp)) break;
+                try { fs.chmodSync(fp, 0o666); } catch {}
+                fs.unlinkSync(fp);
+                this.logger.info(`Removed temp file: ${f}`);
+              } catch (err) {
+                this.logger.warn(`Failed to remove ${f}`, err);
+                removed = false;
+              }
+            }
+          }
+        }, 3, 200);
+      } catch (err) {
+        this.logger.warn(`Failed to list dir for temp cleanup: ${baseDir}`, err);
       }
-    } catch (err) {
-      this.logger.warn(`Failed to remove temp file for: ${modelName}`, err);
     }
+    return removed;
   }
 
   /**
@@ -704,18 +873,52 @@ export class ModelDownloader {
       }
 
       // Open file in append mode if resuming, otherwise create new
+      // If EPERM on the primary path, fall back to a unique temp path
+      let actualPath = tempPath;
       let file: fs.WriteStream;
       try {
         file = resumeOffset > 0 
-          ? fs.createWriteStream(tempPath, { flags: 'a' })
-          : fs.createWriteStream(tempPath);
-      } catch (err) {
-        resolve({ success: false, error: `Failed to create temp file: ${err}` });
-        return;
+          ? fs.createWriteStream(actualPath, { flags: 'a' })
+          : fs.createWriteStream(actualPath);
+      } catch (err: any) {
+        if (err.code === 'EPERM' || err.code === 'EACCES') {
+          actualPath = this.generateTempPath(modelName);
+          this.logger.warn(`EPERM on primary temp path, falling back to: ${actualPath}`);
+          try {
+            file = resumeOffset > 0
+              ? fs.createWriteStream(actualPath, { flags: 'a' })
+              : fs.createWriteStream(actualPath);
+          } catch (err2) {
+            resolve({ success: false, error: `Failed to create temp file: ${err2}` });
+            return;
+          }
+        } else {
+          resolve({ success: false, error: `Failed to create temp file: ${err}` });
+          return;
+        }
+      }
+
+      // If we had to fall back, override tempPath so cleanup and completion use the right path
+      if (actualPath !== tempPath) {
+        tempPath = actualPath;
       }
       
       this.currentDownload = { request: null as any, stream: file };
       this.currentTempPath = tempPath;
+
+      let fileErrored = false;
+      file.on('error', (error: any) => {
+        if (fileErrored) return;
+        fileErrored = true;
+        this.logger.error('File stream error', error);
+        // Do NOT attempt EPERM recovery here — it's broken (response is piped to old stream, not the new one).
+        // Let downloadWithRetry handle retries with a fresh temp path.
+        try { file.destroy(); } catch {}
+        this.currentDownload = null;
+        this.sendProgressToUI(0, 'error');
+        this.cleanupTempFile();
+        resolve({ success: false, error: `File error: ${error.message}` });
+      });
 
       const protocol = url.startsWith('https') ? https : http;
       
@@ -726,7 +929,6 @@ export class ModelDownloader {
         path: urlObj.pathname + urlObj.search,
         port: urlObj.port,
         headers: {} as Record<string, string>,
-        timeout: 120000,
       };
 
       // Add Range header for resume
@@ -735,11 +937,18 @@ export class ModelDownloader {
         this.logger.info(`Resuming download from byte ${resumeOffset}`);
       }
 
+      let handled = false;
+      const finish = (result: { success: boolean; error?: string }) => {
+        if (handled) return;
+        handled = true;
+        resolve(result);
+      };
+
       const request = protocol.get(url, options, (response) => {
         if (this.cancelled) {
-          file.close();
+          file.destroy();
           this.cleanupTempFile();
-          resolve({ success: false, error: 'Download cancelled' });
+          finish({ success: false, error: 'Download cancelled' });
           return;
         }
 
@@ -747,9 +956,9 @@ export class ModelDownloader {
         if ([301, 302, 303, 307, 308].includes(response.statusCode || 0)) {
           const redirectUrl = response.headers.location;
           if (redirectUrl) {
-            file.close();
+            file.destroy();
             this.logger.info(`Following redirect to: ${redirectUrl}`);
-            this.downloadFromUrl(redirectUrl, tempPath, modelName, resumeOffset).then(resolve);
+            this.downloadFromUrl(redirectUrl, tempPath, modelName, resumeOffset).then(finish);
             return;
           }
         }
@@ -759,18 +968,18 @@ export class ModelDownloader {
         if (response.statusCode === 206 && resumeOffset > 0) {
           this.logger.info('Resume successful, continuing download');
         } else if (response.statusCode !== 200) {
-          file.close();
+          file.destroy();
           this.cleanupTempFile();
-          resolve({ success: false, error: `Download failed: HTTP ${response.statusCode}` });
+          finish({ success: false, error: `Download failed: HTTP ${response.statusCode}` });
           return;
         } else if (resumeOffset > 0 && response.statusCode === 200) {
           // Server doesn't support resume, start fresh
           this.logger.warn('Server does not support resume, starting fresh');
-          file.close();
-          fs.unlinkSync(tempPath);
+          file.destroy();
+          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
           this.downloadedBytes = 0;
-          this.totalBytes = 0; // Reset totalBytes for the fresh download
-          this.downloadFromUrl(url, tempPath, modelName, 0).then(resolve);
+          this.totalBytes = 0;
+          this.downloadFromUrl(url, tempPath, modelName, 0).then(finish);
           return;
         }
 
@@ -790,7 +999,6 @@ export class ModelDownloader {
             const now = Date.now();
             bytesSinceLastChunk += chunk.length;
             const elapsed = now - lastChunkTime;
-
             if (elapsed > 0) {
               const currentSpeed = bytesSinceLastChunk / elapsed;
               if (currentSpeed > speedLimitBytesPerMs) {
@@ -799,9 +1007,7 @@ export class ModelDownloader {
                 if (delay > 5 && !this.cancelled && !this.paused) {
                   response.pause();
                   setTimeout(() => {
-                    if (!this.cancelled && !this.paused) {
-                      response.resume();
-                    }
+                    if (!this.cancelled && !this.paused) response.resume();
                   }, Math.min(delay, 500));
                 }
               }
@@ -817,16 +1023,14 @@ export class ModelDownloader {
         response.on('data', (chunk) => {
           if (this.cancelled || this.paused) {
             response.destroy();
-            file.close();
-            
+            file.end();
             if (this.cancelled) {
               this.cleanupTempFile();
-              resolve({ success: false, error: 'Download cancelled' });
+              finish({ success: false, error: 'Download cancelled' });
             } else {
-              // Paused - keep temp file for resume
               this.currentDownload = null;
               this.downloadedBytes = downloadedSize;
-              resolve({ success: false, error: 'paused' });
+              finish({ success: false, error: 'paused' });
             }
             return;
           }
@@ -834,7 +1038,6 @@ export class ModelDownloader {
           downloadedSize += chunk.length;
           this.downloadedBytes = downloadedSize;
           
-          // Throttle UI updates to every 100ms
           const now = Date.now();
           if (now - lastProgressUpdate > 100) {
             if (this.totalBytes > 0) {
@@ -854,69 +1057,46 @@ export class ModelDownloader {
             this.cleanupTempFile();
             this.currentDownload = null;
             this.sendProgressToUI(0, 'idle');
-            resolve({ success: false, error: 'Download cancelled' });
+            finish({ success: false, error: 'Download cancelled' });
             return;
           }
 
           if (this.paused) {
             this.currentDownload = null;
-            resolve({ success: false, error: 'paused' });
+            finish({ success: false, error: 'paused' });
             return;
           }
 
-          // Verify file size
-          try {
-            const stat = fs.statSync(tempPath);
-            if (this.totalBytes > 0 && stat.size < this.totalBytes * 0.95) {
-              this.cleanupTempFile();
-              this.currentDownload = null;
-              this.sendProgressToUI(0, 'error');
-              resolve({ success: false, error: 'Download incomplete - file too small' });
-              return;
-            }
-          } catch (err) {
-            this.logger.warn('Failed to verify file size', err);
+          // Verify size using tracked bytes instead of stat'ing the file.
+          // fs.statSync on a just-downloaded file triggers antivirus scanning → EPERM.
+          // this.downloadedBytes is tracked via data handler and is accurate.
+          const minExpectedSize = this.totalBytes > 0
+            ? this.totalBytes * 0.95
+            : MIN_VALID_MODEL_SIZE;
+          if (this.downloadedBytes < minExpectedSize) {
+            this.cleanupTempFile();
+            this.currentDownload = null;
+            this.sendProgressToUI(0, 'error');
+            finish({ success: false, error: 'Download incomplete - file too small' });
+            return;
           }
 
           this.currentDownload = null;
-          // Send 'finalizing' instead of 'completed' - let downloadModel handle 'completed'
           this.sendProgressToUI(100, 'finalizing');
-          resolve({ success: true });
-        });
-
-        file.on('error', (error) => {
-          file.close();
-          this.currentDownload = null;
-          this.sendProgressToUI(0, 'error');
-          this.cleanupTempFile();
-          this.logger.error('Download error', error);
-          resolve({ success: false, error: `Download failed: ${error.message}` });
+          finish({ success: true });
         });
       });
 
       this.currentDownload.request = request;
-      let handled = false;
-
-      request.on('timeout', () => {
-        if (handled) return;
-        handled = true;
-        request.destroy();
-        file.close();
-        this.currentDownload = null;
-        this.sendProgressToUI(0, 'error');
-        this.cleanupTempFile();
-        resolve({ success: false, error: 'Request timeout' });
-      });
 
       request.on('error', (error) => {
         if (handled) return;
         handled = true;
-        file.close();
+        file.destroy();
         this.currentDownload = null;
         this.sendProgressToUI(0, 'error');
         this.cleanupTempFile();
-        this.logger.error('Request error', error);
-        resolve({ success: false, error: `Download failed: ${error.message}` });
+        resolve({ success: false, error: `Request failed: ${error.message}` });
       });
     });
   }
@@ -936,13 +1116,13 @@ export class ModelDownloader {
     this.currentModelUrl = model.url;
     this.currentModelName = modelName;
     this.downloadedBytes = 0;
+    this.totalBytes = 0;
 
     if (this.isModelDownloaded(modelName)) {
       return { success: false, error: `Model ${modelName} sudah di-download` };
     }
 
-    // ── Disk space check ──
-    const requiredSpace = model.sizeBytes * 1.1; // 10% buffer
+    const requiredSpace = model.sizeBytes * 1.1;
     const diskCheck = await this.checkDiskSpace(requiredSpace);
     if (!diskCheck.enough) {
       const errorMsg = `Disk space tidak cukup untuk ${modelName}. Dibutuhkan ~${this.formatBytes(requiredSpace)}, tersedia ${this.formatBytes(diskCheck.freeBytes)}`;
@@ -950,17 +1130,18 @@ export class ModelDownloader {
       return { success: false, error: errorMsg };
     }
 
-    // Clean up existing temp file
     this.removeTempFile(modelName);
 
-    // Clean up invalid model file
     const modelPath = path.join(this.modelsPath, modelName);
     if (fs.existsSync(modelPath)) {
       try {
-        const stat = fs.statSync(modelPath);
-        if (stat.size < MIN_VALID_MODEL_SIZE) {
-          fs.unlinkSync(modelPath);
-        }
+        this.retrySync(() => {
+          const stat = fs.statSync(modelPath);
+          if (stat.size < MIN_VALID_MODEL_SIZE) {
+            try { fs.chmodSync(modelPath, 0o666); } catch {}
+            fs.unlinkSync(modelPath);
+          }
+        }, 3, 200);
       } catch {}
     }
 
@@ -968,13 +1149,13 @@ export class ModelDownloader {
       fs.mkdirSync(this.modelsPath, { recursive: true });
     }
 
-    const tempPath = modelPath + '.tmp';
-    
+    // Always use a unique temp name to avoid EPERM collisions with stuck old .tmp files
+    const tempPath = this.generateTempPath(modelName);
+
     this.sendProgressToUI(0, 'downloading');
 
-    // ── Download with retry ──
     const result = await this.downloadWithRetry(model.url, tempPath, modelName, 0);
-    
+
     if (this.cancelled) {
       this.cleanupTempFile();
       this.cancelled = false;
@@ -985,21 +1166,22 @@ export class ModelDownloader {
     }
 
     if (result.error === 'paused') {
-      // Download was paused, keep state
       this.saveDownloadState();
       return { success: false, error: 'Download di-pause' };
     }
 
     if (result.success) {
       try {
-        const stat = fs.statSync(tempPath);
-        if (stat.size < MIN_VALID_MODEL_SIZE) {
+        // Use tracked downloadedBytes instead of statSync to avoid EPERM from antivirus.
+        // fs.statSync on a just-downloaded file triggers Defender scan → file locked.
+        if (this.downloadedBytes < MIN_VALID_MODEL_SIZE) {
           this.cleanupTempFile();
           this.sendProgressToUI(0, 'error');
           return { success: false, error: 'Downloaded file is too small or corrupt' };
         }
 
-        // ── SHA256 verification (if hash is configured for this model) ──
+        // SHA256 verification uses fs.createReadStream which opens the file — may also trigger
+        // antivirus, but only happens if sha256 is configured (currently all undefined).
         if (model.sha256) {
           this.logger.info(`Verifying SHA256 for ${modelName}...`);
           const hashOk = await this.verifySha256(tempPath, model.sha256);
@@ -1008,26 +1190,38 @@ export class ModelDownloader {
             this.sendProgressToUI(0, 'error');
             return { success: false, error: `SHA256 hash mismatch — ${modelName} mungkin corrupt. Coba download ulang.` };
           }
-        } else {
-          this.logger.warn(`SHA256 not configured for ${modelName}, skipping hash verification`);
         }
 
-        fs.renameSync(tempPath, modelPath);
+        // renameSync is atomic on same drive — does NOT trigger antivirus scanning.
+        // It only changes directory metadata, not file content.
+        try {
+          fs.renameSync(tempPath, modelPath);
+        } catch (renameErr: any) {
+          if (renameErr.code === 'EXDEV') {
+            // Cross-device: fall back to copy + unlink
+            this.logger.warn('Cross-device rename, falling back to copy+unlink', renameErr);
+            fs.copyFileSync(tempPath, modelPath);
+            try { fs.unlinkSync(tempPath); } catch {}
+          } else {
+            throw renameErr;
+          }
+        }
+        try { fs.chmodSync(modelPath, 0o666); } catch {}
         this.currentTempPath = null;
         this.currentModelUrl = null;
         this.sendProgressToUI(100, 'completed');
         this.currentModelName = null;
         this.saveDownloadState();
-        this.logger.info(`Model downloaded successfully: ${modelName} (${stat.size} bytes)`);
+        this.logger.info(`Model downloaded successfully: ${modelName} (${this.downloadedBytes} bytes)`);
         return { success: true };
       } catch (error) {
-        this.logger.error('Failed to rename downloaded file', error);
+        this.logger.error('Failed to save downloaded file', error);
         this.cleanupTempFile();
         this.sendProgressToUI(0, 'error');
         return { success: false, error: 'Gagal menyimpan file model' };
       }
     }
-    
+
     return result;
   }
 
@@ -1052,7 +1246,7 @@ export class ModelDownloader {
     this.sendProgressToUI(this.downloadProgress, 'paused');
     this.logger.info(`Download paused at ${this.downloadProgress}% (${this.downloadedBytes} bytes)`);
     this.saveDownloadState();
-    
+
     return { success: true };
   }
 
@@ -1069,21 +1263,40 @@ export class ModelDownloader {
     this.paused = false;
 
     const modelPath = path.join(this.modelsPath, this.currentModelName);
-    const tempPath = modelPath + '.tmp';
 
-    // Check if temp file still exists
-    if (!fs.existsSync(tempPath)) {
-      this.logger.warn('Temp file not found, restarting download');
+    // Use saved temp path, or scan for existing temp file, or restart
+    let tempPath = this.currentTempPath;
+    if (!tempPath || !fs.existsSync(tempPath)) {
+      tempPath = path.join(this.modelsPath, this.currentModelName + '.tmp');
+    }
+    if (!tempPath || !fs.existsSync(tempPath)) {
+      const found = this.findTempFile(this.currentModelName);
+      tempPath = found || '';
+    }
+    if (!tempPath || !fs.existsSync(tempPath)) {
+      this.logger.warn('Temp file not found / inaccessible, restarting download');
       this.downloadedBytes = 0;
       this.totalBytes = 0;
+      this.currentTempPath = null;
       return this.downloadModel(this.currentModelName);
     }
 
+    // Verify we can actually access the temp file (stat succeeds)
+    try {
+      fs.statSync(tempPath);
+    } catch {
+      this.logger.warn('Temp file has EPERM / inaccessible, restarting download');
+      this.downloadedBytes = 0;
+      this.totalBytes = 0;
+      this.currentTempPath = null;
+      return this.downloadModel(this.currentModelName);
+    }
+
+    this.currentTempPath = tempPath;
     this.sendProgressToUI(this.downloadProgress, 'downloading');
 
-    // Use retry for resume as well
     const result = await this.downloadWithRetry(this.currentModelUrl, tempPath, this.currentModelName, this.downloadedBytes);
-    
+
     if (this.cancelled) {
       this.cleanupTempFile();
       this.cancelled = false;
@@ -1100,15 +1313,14 @@ export class ModelDownloader {
 
     if (result.success) {
       try {
-        const stat = fs.statSync(tempPath);
-        if (stat.size < MIN_VALID_MODEL_SIZE) {
+        // Use tracked downloadedBytes instead of statSync to avoid EPERM from antivirus
+        if (this.downloadedBytes < MIN_VALID_MODEL_SIZE) {
           this.cleanupTempFile();
           this.sendProgressToUI(0, 'error');
           this.saveDownloadState();
           return { success: false, error: 'Downloaded file is too small or corrupt' };
         }
 
-        // SHA256 verification
         const model = AVAILABLE_MODELS.find(m => m.name === this.currentModelName);
         if (model?.sha256) {
           this.logger.info(`Verifying SHA256 for ${this.currentModelName}...`);
@@ -1121,22 +1333,35 @@ export class ModelDownloader {
           }
         }
 
-        fs.renameSync(tempPath, modelPath);
+        // renameSync is atomic on same drive — does NOT trigger antivirus scanning
+        try {
+          fs.renameSync(tempPath, modelPath);
+        } catch (renameErr: any) {
+          if (renameErr.code === 'EXDEV') {
+            this.logger.warn('Cross-device rename, falling back to copy+unlink', renameErr);
+            fs.copyFileSync(tempPath, modelPath);
+            try { fs.unlinkSync(tempPath); } catch {}
+          } else {
+            throw renameErr;
+          }
+        }
+
+        try { fs.chmodSync(modelPath, 0o666); } catch {}
         this.currentTempPath = null;
         this.currentModelUrl = null;
         this.sendProgressToUI(100, 'completed');
-        this.logger.info(`Model downloaded successfully: ${this.currentModelName} (${stat.size} bytes)`);
+        this.logger.info(`Model downloaded successfully: ${this.currentModelName} (${this.downloadedBytes} bytes)`);
         this.currentModelName = null;
         this.saveDownloadState();
         return { success: true };
       } catch (error) {
-        this.logger.error('Failed to rename downloaded file', error);
+        this.logger.error('Failed to save downloaded file', error);
         this.cleanupTempFile();
         this.sendProgressToUI(0, 'error');
         return { success: false, error: 'Gagal menyimpan file model' };
       }
     }
-    
+
     return result;
   }
 
@@ -1169,7 +1394,10 @@ export class ModelDownloader {
     try {
       const modelPath = path.join(this.modelsPath, modelName);
       if (fs.existsSync(modelPath)) {
-        fs.unlinkSync(modelPath);
+        this.retrySync(() => {
+          try { fs.chmodSync(modelPath, 0o666); } catch {}
+          fs.unlinkSync(modelPath);
+        }, 5, 200);
         this.logger.info(`Model deleted: ${modelName}`);
         return true;
       }
@@ -1184,7 +1412,10 @@ export class ModelDownloader {
     const modelPath = path.join(this.modelsPath, modelName);
     if (fs.existsSync(modelPath)) {
       try {
-        fs.unlinkSync(modelPath);
+        this.retrySync(() => {
+          try { fs.chmodSync(modelPath, 0o666); } catch {}
+          fs.unlinkSync(modelPath);
+        }, 5, 200);
         this.logger.info(`Deleted existing model for re-download: ${modelName}`);
       } catch (err) {
         this.logger.warn(`Failed to delete existing model: ${modelName}`, err);

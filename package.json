@@ -16,6 +16,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "@iconify/react": "^6.0.2",
     "@neilurk12/pi-9router": "^0.1.2",
     "better-sqlite3": "^11.0.0",
     "ffmpeg-static": "^5.2.0",

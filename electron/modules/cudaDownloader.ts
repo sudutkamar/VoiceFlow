@@ -157,15 +157,14 @@ export class CudaDownloader {
     if (result.success) return result;
     if (result.error === 'paused' || result.error === 'cancelled') return result;
 
-    // Don't retry on certain HTTP errors that are not transient
-    if (result.error && /^HTTP (4[0-4][0-9]|4[6-9][0-9]|5[0-1][0-9])$/.test(result.error)) {
-      // 400-449 (except 408/429), 460-499, 500-519 are not retried
-      // We only retry: 408 (timeout), 429 (rate limit), 520+ (server errors), network errors
+    // Don't retry on non-transient HTTP client errors (4xx except 408 timeout / 429 rate-limit)
+    if (result.error && /^HTTP (4[0-4][0-9]|4[6-9][0-9])$/.test(result.error)) {
       const code = parseInt(result.error.replace('HTTP ', ''), 10);
-      if (code !== 408 && code !== 429 && code < 520) {
+      if (code !== 408 && code !== 429) {
         return result;
       }
     }
+    // 5xx server errors ARE transient — always retry
 
     if (attempt > this.MAX_RETRIES) {
       this.logger.error(`Download failed after ${this.MAX_RETRIES} retries: ${result.error}`);
@@ -380,7 +379,6 @@ export class CudaDownloader {
         path: urlObj.pathname + urlObj.search,
         port: urlObj.port,
         headers: {} as Record<string, string>,
-        timeout: 120000,
       };
 
       if (resumeOffset > 0) {
@@ -515,22 +513,8 @@ export class CudaDownloader {
       });
 
       this.currentRequest = request;
-      let handled = false;
-
-      request.on('timeout', () => {
-        if (handled) return;
-        handled = true;
-        request.destroy();
-        file.close();
-        this.cleanupTemp();
-        this.currentRequest = null;
-        this.currentStream = null;
-        resolve({ success: false, error: 'Request timeout' });
-      });
 
       request.on('error', (err) => {
-        if (handled) return;
-        handled = true;
         file.close();
         if (this.paused) {
           this.currentRequest = null;
@@ -561,7 +545,7 @@ export class CudaDownloader {
 
       execFile('powershell', ['-NoProfile', '-Command', psCommand], {
         windowsHide: true,
-        timeout: 120000,
+        timeout: 600000,
       }, (error) => {
         if (error) {
           this.logger.error('Failed to extract CUDA zip', error);
