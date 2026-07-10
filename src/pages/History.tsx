@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Iconify } from '../utils/icons';
 
 interface HistoryProps {
   onSuccess: (message: string) => void;
@@ -168,10 +169,7 @@ function History({ onSuccess }: HistoryProps) {
 
       {/* Search Bar */}
       <div className="search-bar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
+        <Iconify icon="search" size={18} className="search-icon" />
         <input
           type="text"
           placeholder="Search..."
@@ -181,10 +179,10 @@ function History({ onSuccess }: HistoryProps) {
         {history.length > 0 && (
           <>
             <button className="btn btn-sm" onClick={handleExport}>
-              Export CSV
+              <Iconify icon="export" size={14} /> Export CSV
             </button>
             <button className="btn btn-sm btn-danger" onClick={handleClear}>
-              Clear All
+              <Iconify icon="clear" size={14} /> Clear All
             </button>
           </>
         )}
@@ -216,13 +214,10 @@ function History({ onSuccess }: HistoryProps) {
                         </div>
                         <div className="card-actions">
                           <button className="btn btn-sm" onClick={() => handleCopy(item.final_text || item.raw_text, item.id)}>
-                            {copiedId === item.id ? 'Copied!' : 'Copy'}
+                            <Iconify icon="copy" size={14} /> {copiedId === item.id ? 'Copied!' : 'Copy'}
                           </button>
                           <button className="btn btn-sm btn-icon" onClick={() => handleDelete(item.id)} title="Delete">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                              <polyline points="3 6 5 6 21 6"/>
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                            </svg>
+                            <Iconify icon="delete" size={14} />
                           </button>
                         </div>
                       </div>
@@ -235,7 +230,7 @@ function History({ onSuccess }: HistoryProps) {
         </div>
       ) : (
         <div className="empty-state">
-          <div className="empty-icon">📝</div>
+          <div className="empty-icon"><Iconify icon="history" size={48} /></div>
           <h3>{search ? 'No Results' : 'No History'}</h3>
           <p>{search ? 'Try a different search' : 'Your transcriptions will appear here'}</p>
         </div>

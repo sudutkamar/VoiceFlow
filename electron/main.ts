@@ -352,19 +352,19 @@ function createTray(): void {
   tray = new Tray(trayIcon.resize({ width: 16, height: 16 }));
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: '🎤 VoiceFlow', enabled: false },
+    { label: 'VoiceFlow', enabled: false },
     { type: 'separator' },
     {
-      label: '📖 Open VoiceFlow',
+      label: 'Open VoiceFlow',
       click: () => showMainWindow(),
     },
     {
-      label: '🎙️ Record',
+      label: 'Record',
       click: () => hotkeyManager.simulateHotkey(),
     },
     { type: 'separator' },
     {
-      label: '❌ Quit',
+      label: 'Quit',
       click: () => {
         isQuitting = true;
         app.quit();
@@ -597,6 +597,18 @@ app.whenReady().then(() => {
     } else {
       callback(false);
     }
+  });
+
+  // Allow loading icons from Iconify CDN
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* https://api.iconify.design; img-src 'self' data: https://api.iconify.design; font-src 'self' data:;"
+        ]
+      }
+    });
   });
 
   logger = new Logger();

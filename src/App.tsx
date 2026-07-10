@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 
 import './styles/app.css';
 import { WavRecorder } from './utils/wavRecorder';
 import { NotificationProvider, useNotification } from './components/Notification';
+import { Iconify, getModelIcon, getModelSizeColor } from './utils/icons';
 import appLogo from './assets/logo.png';
 
 // Lazy load page components for better performance
@@ -635,11 +636,11 @@ function MiniBar() {
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
   const langs = [
     { c: 'auto', f: '🌐', l: 'Auto Detect', s: 'AUTO' },
-    { c: 'id', f: '🇮🇩', l: 'Indonesia', s: 'ID' },
-    { c: 'en', f: '🇺🇸', l: 'English', s: 'EN' },
-    { c: 'ja', f: '🇯🇵', l: '日本語', s: 'JA' },
-    { c: 'ko', f: '🇰🇷', l: '한국어', s: 'KO' },
-    { c: 'zh', f: '🇨🇳', l: '中文', s: 'ZH' },
+    { c: 'id', f: 'ID', l: 'Indonesia', s: 'ID' },
+    { c: 'en', f: 'EN', l: 'English', s: 'EN' },
+    { c: 'ja', f: 'JA', l: '日本語', s: 'JA' },
+    { c: 'ko', f: 'KO', l: '한국어', s: 'KO' },
+    { c: 'zh', f: 'CN', l: '中文', s: 'ZH' },
   ];
   const currentLang = langs.find((l) => l.c === (settings.language || 'auto')) || langs[0];
   const formatHotkey = (hk: string) => hk.replace('CommandOrControl', 'Ctrl').replace('Control', 'Ctrl').replace(/\+/g, ' + ');
@@ -796,12 +797,12 @@ function MiniBar() {
       {/* Setup warnings */}
       {hasModel === false && state !== 'recording' && (
         <div className="m-tooltip warning" onClick={() => window.electronAPI.showMain('models')}>
-          ⚠️ Belum ada model AI — klik untuk download
+          Belum ada model AI — klik untuk download
         </div>
       )}
       {gpuStatus && !hasModel === false && state !== 'recording' && (
         <div className="m-tooltip info" onClick={() => window.electronAPI.showMain('settings')}>
-          🖥️ GPU terdeteksi — klik untuk download CUDA
+          GPU terdeteksi — klik untuk download CUDA
         </div>
       )}
 
@@ -856,12 +857,12 @@ function MainApp() {
     notif.error(msg);
   };
 
-  const navItems: { id: Page; icon: React.ReactNode; label: string }[] = [
-    { id: 'home', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>, label: 'Record' },
-    { id: 'models', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>, label: 'Models' },
-    { id: 'history', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, label: 'History' },
-    { id: 'benchmark', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>, label: 'Benchmark' },
-    { id: 'settings', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>, label: 'Settings' },
+  const navItems: { id: Page; icon: IconName; label: string }[] = [
+    { id: 'home', icon: 'record', label: 'Record' },
+    { id: 'models', icon: 'models', label: 'Models' },
+    { id: 'history', icon: 'history', label: 'History' },
+    { id: 'benchmark', icon: 'benchmark', label: 'Benchmark' },
+    { id: 'settings', icon: 'settings', label: 'Settings' },
   ];
 
   return (
@@ -876,13 +877,13 @@ function MainApp() {
         </div>
         <div className="title-bar-controls">
           <button className="title-btn minimize" onClick={() => window.electronAPI.minimizeWindow()} title="Minimize">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <Iconify icon="minimize" size={16} />
           </button>
           <button className="title-btn maximize" onClick={() => window.electronAPI.maximizeWindow()} title="Maximize">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+            <Iconify icon="maximize" size={16} />
           </button>
           <button className="title-btn close" onClick={() => window.electronAPI.minimizeToBar()} title="Close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <Iconify icon="closeWindow" size={16} />
           </button>
         </div>
       </div>
@@ -899,7 +900,7 @@ function MainApp() {
                 onClick={() => setCurrentPage(item.id)}
                 title={item.label}
               >
-                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-icon"><Iconify icon={item.icon} size={20} /></span>
                 {sidebarOpen && <span className="nav-label">{item.label}</span>}
               </button>
             ))}
@@ -907,11 +908,7 @@ function MainApp() {
           <div className="sidebar-footer">
             <button className="nav-item" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Collapse' : 'Expand'}>
               <span className="nav-icon">
-                {sidebarOpen ? (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="11 17 6 12 11 7"/></svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                )}
+                <Iconify icon={sidebarOpen ? 'chevronLeft' : 'chevronRight'} size={20} />
               </span>
               {sidebarOpen && <span className="nav-label">Collapse</span>}
             </button>
@@ -1133,9 +1130,40 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
   // Determine active profile based on model and audio settings
   const getActiveProfile = () => {
     const model = settings.model || '';
-    const isLargeModel = model.includes('large') || model.includes('medium');
-    if (isLargeModel) return { name: 'Turbo', icon: '⚡', desc: 'Fast + Accurate (large model)' };
-    return { name: 'Turbo', icon: '⚡', desc: 'Fast transcription' };
+    const modelName = model.replace('ggml-', '').replace('.bin', '');
+    
+    // Get model display name
+    let displayName = 'No Model';
+    if (model.includes('large-v3-turbo-q5_0')) displayName = 'Large v3 Turbo Q5';
+    else if (model.includes('large-v3-turbo')) displayName = 'Large v3 Turbo';
+    else if (model.includes('large-v3')) displayName = 'Large v3';
+    else if (model.includes('large')) displayName = 'Large';
+    else if (model.includes('medium')) displayName = 'Medium';
+    else if (model.includes('small')) displayName = 'Small';
+    else if (model.includes('base-q5_1')) displayName = 'Base Q5';
+    else if (model.includes('base')) displayName = 'Base';
+    else if (model.includes('tiny')) displayName = 'Tiny';
+    else if (model) displayName = modelName;
+    
+    // Get speed hint
+    let speed = '';
+    if (model.includes('tiny')) speed = '~1s';
+    else if (model.includes('base-q5_1')) speed = '~1-2s';
+    else if (model.includes('base')) speed = '~2-3s';
+    else if (model.includes('small')) speed = '~5-7s';
+    else if (model.includes('medium')) speed = '~10-15s';
+    else if (model.includes('large-v3-turbo-q5_0')) speed = '~5-8s';
+    else if (model.includes('large-v3-turbo')) speed = '~8-12s';
+    else if (model.includes('large-v3')) speed = '~15-25s';
+    else if (model.includes('large')) speed = '~15-25s';
+    
+    return {
+      name: displayName,
+      icon: getModelIcon(model),
+      color: getModelSizeColor(model),
+      desc: speed ? `Est. ${speed}` : 'Select a model',
+      model: model,
+    };
   };
   const activeProfile = getActiveProfile();
 
@@ -1143,7 +1171,7 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
     <div className="page home-page">
       {hasModel === false && (
         <div className="model-warning-banner">
-          <span>⚠️</span>
+          <span className="warning-icon">!</span>
           <div className="model-warning-text">
             <strong>Belum ada model AI!</strong>
             <p>Download model untuk mulai transcribe.</p>
@@ -1156,13 +1184,18 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
       
       {/* Profile Indicator */}
       <div className="profile-indicator">
-        <div className={`profile-badge ${activeProfile.name.toLowerCase()}`}>
-          <span className="profile-badge-icon">{activeProfile.icon}</span>
-          {activeProfile.name}
+        <div className="profile-badge" style={{ borderColor: activeProfile.color }}>
+          <span className="profile-badge-icon" style={{ color: activeProfile.color }}>
+            <Iconify icon={activeProfile.icon} size={20} />
+          </span>
+          <span className="profile-badge-text">
+            <span className="profile-badge-name">{activeProfile.name}</span>
+            <span className="profile-badge-speed">{activeProfile.desc}</span>
+          </span>
         </div>
         <div className="profile-info">
-          <span className="profile-name">Transcription Profile</span>
-          <span className="profile-desc">{activeProfile.desc}</span>
+          <span className="profile-name">Active Model</span>
+          <span className="profile-desc">{activeProfile.model || 'Not selected'}</span>
         </div>
       </div>
 
@@ -1218,7 +1251,7 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
               </div>
             </div>
             <div className={`mic-diag ${clipPeak >= 2 ? 'clip' : clipPeak >= 1 ? 'loud' : micLevel < 3 ? 'low' : 'ok'}`}>
-              {clipPeak >= 2 ? '⚠️ Clipping - move mic away' : micLevel < 3 ? '🔇 No input detected - check mic' : clipPeak >= 1 ? '🔊 Loud - may distort' : '🎙️ Good level'}
+              {clipPeak >= 2 ? 'Clipping - move mic away' : micLevel < 3 ? 'No input detected - check mic' : clipPeak >= 1 ? 'Loud - may distort' : 'Good level'}
               {vadEnabled && <span className="vad-badge">VAD</span>}
             </div>
           </>
@@ -1262,13 +1295,13 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
                 </div>
                 {fuzzyChanges > 0 && (
                   <div className="fuzzy-info">
-                    <span>✨ {fuzzyChanges} words auto-corrected</span>
+                    <span>{fuzzyChanges} words auto-corrected</span>
                   </div>
                 )}
                 {confidence.suggestions && confidence.suggestions.length > 0 && (
                   <div className="suggestions">
                     {confidence.suggestions.slice(0, 2).map((s: string, i: number) => (
-                      <div key={i} className="suggestion-item">💡 {s}</div>
+                      <div key={i} className="suggestion-item">{s}</div>
                     ))}
                   </div>
                 )}
@@ -1289,7 +1322,7 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
         )}
 
         {/* Error */}
-        {error && <div className="error-box">⚠️ {error}</div>}
+        {error && <div className="error-box">{error}</div>}
 
         {/* History Link */}
         <div className="history-link-section">

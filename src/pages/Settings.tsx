@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Iconify } from '../utils/icons';
 import appLogo from '../assets/logo.png';
 
 interface SettingsProps {
@@ -296,11 +297,11 @@ function Settings({ onSuccess, onError }: SettingsProps) {
 
   const langs = [
     { code: 'auto', name: 'Auto Detect', flag: '🌐' },
-    { code: 'id', name: 'Indonesia', flag: '🇮🇩' },
-    { code: 'en', name: 'English', flag: '🇺🇸' },
-    { code: 'ja', name: '日本語', flag: '🇯🇵' },
-    { code: 'ko', name: '한국어', flag: '🇰🇷' },
-    { code: 'zh', name: '中文', flag: '🇨🇳' },
+    { code: 'id', name: 'Indonesia', flag: 'ID' },
+    { code: 'en', name: 'English', flag: 'EN' },
+    { code: 'ja', name: '日本語', flag: 'JA' },
+    { code: 'ko', name: '한국어', flag: 'KO' },
+    { code: 'zh', name: '中文', flag: 'CN' },
   ];
 
   if (loading) {
@@ -328,20 +329,20 @@ function Settings({ onSuccess, onError }: SettingsProps) {
         if (e.key === 'ArrowLeft' && idx > 0) { e.preventDefault(); setTab(tabIds[idx - 1] as any); }
       }}>
         {[
-          { id: 'general', label: 'General', icon: '⚙️' },
-          { id: 'recording', label: 'Recording', icon: '🎤' },
-          { id: 'processing', label: 'Processing', icon: '✨' },
-          { id: 'presets', label: 'Presets', icon: '🎯' },
-          { id: 'dictionary', label: 'Dictionary', icon: '📖' },
-          { id: 'snippets', label: 'Snippets', icon: '📝' },
-          { id: 'learning', label: 'Learning', icon: '🧠' },
+          { id: 'general', label: 'General', icon: 'cog' },
+          { id: 'recording', label: 'Recording', icon: 'mic' },
+          { id: 'processing', label: 'Processing', icon: 'spark' },
+          { id: 'presets', label: 'Presets', icon: 'modelSmall' },
+          { id: 'dictionary', label: 'Dictionary', icon: 'dictionary' },
+          { id: 'snippets', label: 'Snippets', icon: 'snippets' },
+          { id: 'learning', label: 'Learning', icon: 'learning' },
         ].map(t => (
           <button
             key={t.id}
             className={`tab ${tab === t.id ? 'tab-active' : ''}`}
             onClick={() => setTab(t.id as any)}
           >
-            {t.icon} {t.label}
+            <Iconify icon={t.icon as any} size={16} /> {t.label}
           </button>
         ))}
       </div>
@@ -362,14 +363,14 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   onClick={async () => { await save('theme', 'dark'); document.documentElement.classList.remove('light-theme'); }}
                   title="Dark Theme"
                 >
-                  🌙 Dark
+                  <Iconify icon="theme" size={14} /> Dark
                 </button>
                 <button
                   className={`theme-btn ${settings.theme === 'light' ? 'active' : ''}`}
                   onClick={async () => { await save('theme', 'light'); document.documentElement.classList.add('light-theme'); }}
                   title="Light Theme"
                 >
-                  ☀️ Light
+                  <Iconify icon="theme" size={14} /> Light
                 </button>
               </div>
             </div>
@@ -472,7 +473,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   </select>
                 ) : (
                   <div className="gpu-badge gpu-badge-cpu">
-                    <span className="gpu-badge-icon">🖥️</span>
+                    <span className="gpu-badge-icon">C</span>
                     <span className="gpu-badge-text">CPU Only</span>
                   </div>
                 )}
@@ -525,7 +526,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                       </div>
                     ) : (
                       <button className="btn btn-primary" onClick={handleCudaDownload}>
-                        Download CUDA
+                        <Iconify icon="download" size={14} /> Download CUDA
                       </button>
                     )}
                   </div>
@@ -538,7 +539,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 <span className="setting-hint">CPU engine files (wajib)</span>
               </div>
               <button className="btn btn-sm btn-danger" onClick={() => handleDeleteEngine('cpu')}>
-                🗑 Hapus CPU
+                <Iconify icon="delete" size={14} /> Hapus CPU
               </button>
             </div>
             {gpuStatus?.cudaDllsPresent && (
@@ -548,7 +549,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   <span className="setting-hint">GPU acceleration files (opsional)</span>
                 </div>
                 <button className="btn btn-sm btn-danger" onClick={() => handleDeleteEngine('gpu')}>
-                  🗑 Hapus GPU
+                  <Iconify icon="delete" size={14} /> Hapus GPU
                 </button>
               </div>
             )}
@@ -585,7 +586,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   onError(err.message || 'Failed to clear cache');
                 }
               }}>
-                🗑️ Clear Cache
+                <Iconify icon="clear" size={14} /> Clear Cache
               </button>
             </div>
           </div>
@@ -612,7 +613,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 <span className="setting-hint">Source code, issues, and updates</span>
               </div>
               <button className="btn btn-sm" onClick={() => window.open('https://github.com/sudutkamar/VoiceFlow', '_blank')}>
-                Open
+                <Iconify icon="github" size={14} /> Open
               </button>
             </div>
           </div>
@@ -634,7 +635,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                   <option value="">Default</option>
                   {mics.map(m => <option key={m.deviceId} value={m.deviceId}>{m.label || `Mic ${m.deviceId.slice(0, 6)}`}</option>)}
                 </select>
-                <button className="btn btn-sm btn-icon" onClick={loadMics} title="Refresh">🔄</button>
+                <button className="btn btn-sm btn-icon" onClick={loadMics} title="Refresh"><Iconify icon="refresh" /></button>
               </div>
             </div>
           </div>
@@ -676,9 +677,9 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 <span className="setting-hint">How text is processed after transcription</span>
               </div>
               <select value={settings.processing_mode || 'natural'} onChange={(e) => save('processing_mode', e.target.value)}>
-                <option value="raw">🔴 Raw - Whisper output as-is</option>
-                <option value="natural">🟡 Natural - Spoken punctuation only</option>
-                <option value="clean">🟢 Clean - Full cleanup + capitalization</option>
+                <option value="raw">Raw - Whisper output as-is</option>
+                <option value="natural">Natural - Spoken punctuation only</option>
+                <option value="clean">Clean - Full cleanup + capitalization</option>
               </select>
             </div>
             <div className="setting-row">
@@ -764,12 +765,12 @@ function Settings({ onSuccess, onError }: SettingsProps) {
               <p className="section-hint">One-click setup for common use cases. Overwrites language, processing mode, and initial prompt.</p>
               <div className="preset-grid">
                 {[
-                  { id: 'id-casual', name: 'Indonesia Casual', icon: '🇮🇩', desc: 'Natural Indonesian, spoken punctuation, no formalization', language: 'id', mode: 'natural', prompt: '' },
-                  { id: 'id-formal', name: 'Indonesia Formal', icon: '📝', desc: 'Full cleanup, capitalization, proper punctuation', language: 'id', mode: 'clean', prompt: '' },
-                  { id: 'en', name: 'English', icon: '🇺🇸', desc: 'English with natural cleanup', language: 'en', mode: 'natural', prompt: '' },
-                  { id: 'auto', name: 'Auto Detect', icon: '🌐', desc: 'Auto language, raw output, no changes', language: 'auto', mode: 'raw', prompt: '' },
-                  { id: 'mixed', name: 'Mixed ID/EN', icon: '🔀', desc: 'Code-switching Indonesian-English, raw output', language: 'auto', mode: 'raw', prompt: '' },
-                  { id: 'coding', name: 'Coding Dictation', icon: '💻', desc: 'Code terms hint, no cleanup', language: 'en', mode: 'raw', prompt: 'function, const, let, var, return, import, export, async, await, interface, type, class, if, else, for, while, try, catch, throw, null, undefined, true, false, console.log, React, TypeScript, JavaScript, npm, git' },
+                  { id: 'id-casual', name: 'Indonesia Casual', icon: 'language', desc: 'Natural Indonesian, spoken punctuation, no formalization', language: 'id', mode: 'natural', prompt: '' },
+                  { id: 'id-formal', name: 'Indonesia Formal', icon: 'text', desc: 'Full cleanup, capitalization, proper punctuation', language: 'id', mode: 'clean', prompt: '' },
+                  { id: 'en', name: 'English', icon: 'language', desc: 'English with natural cleanup', language: 'en', mode: 'natural', prompt: '' },
+                  { id: 'auto', name: 'Auto Detect', icon: 'search', desc: 'Auto language, raw output, no changes', language: 'auto', mode: 'raw', prompt: '' },
+                  { id: 'mixed', name: 'Mixed ID/EN', icon: 'note', desc: 'Code-switching Indonesian-English, raw output', language: 'auto', mode: 'raw', prompt: '' },
+                  { id: 'coding', name: 'Coding Dictation', icon: 'spark', desc: 'Code terms hint, no cleanup', language: 'en', mode: 'raw', prompt: 'function, const, let, var, return, import, export, async, await, interface, type, class, if, else, for, while, try, catch, throw, null, undefined, true, false, console.log, React, TypeScript, JavaScript, npm, git' },
                 ].map(p => (
                   <button key={p.id} className="preset-card" onClick={async () => {
                     await save('language', p.language);
@@ -777,7 +778,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                     await save('initial_prompt', p.prompt);
                     onSuccess(`Preset "${p.name}" applied`);
                   }}>
-                    <div className="preset-icon">{p.icon}</div>
+                    <div className="preset-icon"><Iconify icon={p.icon as any} /></div>
                     <div className="preset-name">{p.name}</div>
                     <div className="preset-desc">{p.desc}</div>
                   </button>
@@ -798,7 +799,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
               <div className="form-row">
                 <input type="text" placeholder="Original word" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addDict()} />
                 <input type="text" placeholder="Replacement" value={newReplacement} onChange={(e) => setNewReplacement(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addDict()} />
-                <button className="btn btn-primary" onClick={addDict}>Add</button>
+                <button className="btn btn-primary" onClick={addDict}><Iconify icon="add" size={14} /> Add</button>
               </div>
               {dict.length > 0 ? (
                 <div className="list">
@@ -807,7 +808,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                       <span className="list-key">{entry.phrase}</span>
                       <span className="list-arrow">→</span>
                       <span className="list-value">{entry.replacement}</span>
-                      <button className="btn btn-sm btn-icon" onClick={() => deleteDict(entry.id)}>✕</button>
+                      <button className="btn btn-sm btn-icon" onClick={() => deleteDict(entry.id)}><Iconify icon="cancel" size={14} /></button>
                     </div>
                   ))}
                 </div>
@@ -829,7 +830,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
               <div className="form-row">
                 <input type="text" placeholder="Trigger phrase" value={newTrigger} onChange={(e) => setNewTrigger(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addSnippet()} />
                 <input type="text" placeholder="Output text" value={newOutput} onChange={(e) => setNewOutput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addSnippet()} />
-                <button className="btn btn-primary" onClick={addSnippet}>Add</button>
+                <button className="btn btn-primary" onClick={addSnippet}><Iconify icon="add" size={14} /> Add</button>
               </div>
               {snippets.length > 0 ? (
                 <div className="list">
@@ -837,7 +838,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                     <div key={snippet.id} className="list-item snippet">
                       <div className="snippet-top">
                         <span className="list-key">{snippet.trigger_phrase}</span>
-                        <button className="btn btn-sm btn-icon" onClick={() => deleteSnippet(snippet.id)}>✕</button>
+                        <button className="btn btn-sm btn-icon" onClick={() => deleteSnippet(snippet.id)}><Iconify icon="cancel" size={14} /></button>
                       </div>
                       <div className="snippet-output">{snippet.output_text}</div>
                     </div>
@@ -895,7 +896,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                           <button className="btn btn-sm btn-icon" onClick={async () => {
                             await window.electronAPI.deleteLearnedCorrection(c.id);
                             loadLearnedCorrections();
-                          }}>✕</button>
+                          }}><Iconify icon="cancel" size={14} /></button>
                         </div>
                       </div>
                     ))}
@@ -908,7 +909,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                         onSuccess('All learned corrections cleared');
                       }
                     }}>
-                      Clear All Learned Data
+                      <Iconify icon="clear" size={14} /> Clear All Learned Data
                     </button>
                   </div>
                 </>
@@ -940,8 +941,8 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 : 'GPU acceleration tidak akan aktif. Download ulang CUDA jika ingin GPU lagi.'}
             </p>
             <div className="modal-actions">
-              <button className="btn" onClick={() => setConfirmDeleteEngine(null)}>Batal</button>
-              <button className="btn btn-danger" onClick={confirmDeleteEngineAction}>Hapus</button>
+              <button className="btn" onClick={() => setConfirmDeleteEngine(null)}><Iconify icon="cancel" size={14} /> Batal</button>
+              <button className="btn btn-danger" onClick={confirmDeleteEngineAction}><Iconify icon="delete" size={14} /> Hapus</button>
             </div>
           </div>
         </div>

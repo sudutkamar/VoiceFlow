@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { WavRecorder } from '../utils/wavRecorder';
+import { Iconify, getModelIcon, getModelSizeColor } from '../utils/icons';
 
 interface BenchResult {
   model: string;
@@ -28,12 +29,12 @@ const MODEL_LABELS: Record<string, string> = {
 };
 
 const MODEL_ICONS: Record<string, string> = {
-  'ggml-tiny.bin': '⚡',
-  'ggml-base.bin': '⚖️',
-  'ggml-small.bin': '🎯',
-  'ggml-medium.bin': '💎',
-  'ggml-large-v3-turbo.bin': '🏆',
-  'ggml-large-v3.bin': '👑',
+  'ggml-tiny.bin': 'T',
+  'ggml-base.bin': 'B',
+  'ggml-small.bin': 'S',
+  'ggml-medium.bin': 'M',
+  'ggml-large-v3-turbo.bin': 'V3',
+  'ggml-large-v3.bin': 'XL',
 };
 
 export default function Benchmark() {
@@ -122,18 +123,24 @@ export default function Benchmark() {
       {/* Steps Indicator */}
       <div className="bench-steps">
         <div className={`bench-step-item ${currentStep === 1 ? 'active' : step1Complete ? 'complete' : ''}`}>
-          <div className="bench-step-dot">{step1Complete ? '✓' : '1'}</div>
-          <span className="bench-step-label">Record Sample</span>
+          <div className="bench-step-dot">
+            {step1Complete ? <Iconify icon="check" size={14} /> : '1'}
+          </div>
+          <span className="bench-step-label"><Iconify icon="mic" size={14} /> Record Sample</span>
         </div>
         <div className={`bench-step-line ${step1Complete ? 'complete' : ''}`} />
         <div className={`bench-step-item ${currentStep === 2 ? 'active' : step2Complete && step1Complete ? 'complete' : ''}`}>
-          <div className="bench-step-dot">{step2Complete && step1Complete ? '✓' : '2'}</div>
-          <span className="bench-step-label">Select Models</span>
+          <div className="bench-step-dot">
+            {step2Complete && step1Complete ? <Iconify icon="check" size={14} /> : '2'}
+          </div>
+          <span className="bench-step-label"><Iconify icon="models" size={14} /> Select Models</span>
         </div>
         <div className={`bench-step-line ${results.length > 0 ? 'complete' : ''}`} />
         <div className={`bench-step-item ${currentStep === 3 ? 'active' : results.length > 0 && !running ? 'complete' : ''}`}>
-          <div className="bench-step-dot">{results.length > 0 && !running ? '✓' : '3'}</div>
-          <span className="bench-step-label">Run & Compare</span>
+          <div className="bench-step-dot">
+            {results.length > 0 && !running ? <Iconify icon="check" size={14} /> : '3'}
+          </div>
+          <span className="bench-step-label"><Iconify icon="benchmark" size={14} /> Run & Compare</span>
         </div>
       </div>
 
@@ -151,11 +158,7 @@ export default function Benchmark() {
           {!recording && !audioBuffer && (
             <>
               <button className="bench-record-btn" onClick={recordSample} title="Start recording">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/>
-                </svg>
+                <Iconify icon="mic" size={48} />
               </button>
               <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Click to start recording (5 seconds)</span>
             </>
@@ -205,10 +208,13 @@ export default function Benchmark() {
               className={`bench-model-btn ${selectedModels.includes(m) ? 'selected' : ''}`}
               onClick={() => toggleModel(m)}
             >
-              <span className="bench-model-check">
-                {selectedModels.includes(m) && '✓'}
+              <span className="bench-model-icon" style={{ color: getModelSizeColor(m) }}>
+                <Iconify icon={getModelIcon(m) as any} size={16} />
               </span>
-              <span>{MODEL_ICONS[m] || '🧠'} {MODEL_LABELS[m] || m}</span>
+              <span className="bench-model-check">
+                {selectedModels.includes(m) && <Iconify icon="check" size={12} />}
+              </span>
+              <span>{MODEL_LABELS[m] || m}</span>
             </button>
           ))}
         </div>
@@ -251,7 +257,7 @@ export default function Benchmark() {
               </>
             ) : (
               <>
-                🚀 Run Benchmark
+                <Iconify icon="benchmark" size={18} /> Run Benchmark
               </>
             )}
           </button>
@@ -262,7 +268,7 @@ export default function Benchmark() {
       {results.length > 0 && (
         <div className="bench-section">
           <div className="bench-section-header">
-            <div className="bench-section-num" style={{ background: 'rgba(74, 222, 128, 0.12)', color: 'var(--success)' }}>📊</div>
+            <div className="bench-section-num" style={{ background: 'rgba(74, 222, 128, 0.12)', color: 'var(--success)' }}>R</div>
             <span className="bench-section-title">Results</span>
             {fastest && slowest && fastest.model !== slowest.model && (
               <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-dim)' }}>
@@ -275,12 +281,14 @@ export default function Benchmark() {
             {results.map(r => (
               <div key={r.model} className={`bench-result-card ${r.status} ${fastest?.model === r.model ? 'fastest' : ''}`}>
                 <div className="bench-result-header">
-                  <span className="bench-model-name">{MODEL_ICONS[r.model]} {MODEL_LABELS[r.model] || r.model}</span>
-                  {fastest?.model === r.model && r.status === 'done' && <span className="bench-fastest-badge">⚡ FASTEST</span>}
+                  <span className="bench-model-name" style={{ color: getModelSizeColor(r.model) }}>
+                    <Iconify icon={getModelIcon(r.model) as any} size={16} /> {MODEL_LABELS[r.model] || r.model}
+                  </span>
+                  {fastest?.model === r.model && r.status === 'done' && <span className="bench-fastest-badge"><Iconify icon="spark" size={12} /> FASTEST</span>}
                   {r.status === 'pending' && <span className="bench-pending-icon" />}
                   {r.status === 'running' && <span className="bench-spinner" />}
-                  {r.status === 'done' && <span className="bench-time">{((r.elapsedMs || 0) / 1000).toFixed(2)}s</span>}
-                  {r.status === 'error' && <span className="bench-error">❌ {r.error || 'Failed'}</span>}
+                  {r.status === 'done' && <span className="bench-time"><Iconify icon="benchmark" size={14} /> {((r.elapsedMs || 0) / 1000).toFixed(2)}s</span>}
+                  {r.status === 'error' && <span className="bench-error"><Iconify icon="error" size={14} /> {r.error || 'Failed'}</span>}
                 </div>
                 {r.status === 'running' && (
                   <div className="bench-result-progress">
@@ -306,17 +314,17 @@ export default function Benchmark() {
                 </div>
                 {fastest && (
                   <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fastest</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}><Iconify icon="spark" size={12} /> Fastest</span>
                     <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--success)' }}>
-                      {MODEL_ICONS[fastest.model]} {((fastest.elapsedMs || 0) / 1000).toFixed(2)}s
+                      <Iconify icon={getModelIcon(fastest.model) as any} size={16} /> {((fastest.elapsedMs || 0) / 1000).toFixed(2)}s
                     </div>
                   </div>
                 )}
                 {slowest && slowest.model !== fastest?.model && (
                   <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Slowest</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}><Iconify icon="warning" size={12} /> Slowest</span>
                     <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--error)' }}>
-                      {MODEL_ICONS[slowest.model]} {((slowest.elapsedMs || 0) / 1000).toFixed(2)}s
+                      <Iconify icon={getModelIcon(slowest.model) as any} size={16} /> {((slowest.elapsedMs || 0) / 1000).toFixed(2)}s
                     </div>
                   </div>
                 )}
@@ -329,7 +337,7 @@ export default function Benchmark() {
       {/* Empty state when no results */}
       {results.length === 0 && !running && (
         <div className="bench-empty">
-          <div className="bench-empty-icon">📊</div>
+          <div className="bench-empty-icon"><Iconify icon="benchmark" size={48} /></div>
           <h3>No Results Yet</h3>
           <p>Record a sample, select models, and run the benchmark to see comparison results here.</p>
         </div>

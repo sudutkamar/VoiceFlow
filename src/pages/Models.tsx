@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNotification } from '../components/Notification';
+import { Iconify, getModelIcon, getModelSizeColor } from '../utils/icons';
 
 interface ModelsProps {
   onSuccess: (message: string) => void;
@@ -229,6 +230,8 @@ function Models({ onSuccess, onError }: ModelsProps) {
     setDownloading(modelName);
     setDownloadState('downloading');
     setProgress(0);
+    setDownloadedBytes(0);
+    setTotalBytes(0);
     
     try {
       const result = await window.electronAPI.forceDownloadModel(modelName);
@@ -355,50 +358,53 @@ function Models({ onSuccess, onError }: ModelsProps) {
   };
 
   const getIcon = (name: string) => {
-    if (name.includes('tiny')) return '⚡';
-    if (name.includes('base-q5_1')) return '⚡';
-    if (name.includes('base')) return '⚖️';
-    if (name.includes('small')) return '🎯';
-    if (name.includes('medium')) return '💎';
-    if (name.includes('large-v3-turbo')) return '🏆';
-    if (name.includes('large-v3')) return '👑';
-    if (name.includes('large')) return '👑';
-    return '🧠';
+    if (name.includes('tiny')) return 'T';
+    if (name.includes('base-q5_1')) return 'BQ';
+    if (name.includes('base')) return 'B';
+    if (name.includes('small')) return 'S';
+    if (name.includes('medium')) return 'M';
+    if (name.includes('large-v3-turbo')) return 'V3T';
+    if (name.includes('large-v3')) return 'XL';
+    if (name.includes('large')) return 'L';
+    return '?';
   };
 
   const getLabel = (name: string) => {
-    if (name.includes('tiny')) return 'Tiny';
-    if (name.includes('base-q5_1')) return 'Base Q5_1';
-    if (name.includes('base')) return 'Base';
-    if (name.includes('small')) return 'Small';
-    if (name.includes('medium')) return 'Medium';
+    if (name.includes('large-v3-turbo-q5_0')) return 'Large v3 Turbo Q5';
     if (name.includes('large-v3-turbo')) return 'Large v3 Turbo';
     if (name.includes('large-v3')) return 'Large v3';
     if (name.includes('large')) return 'Large';
+    if (name.includes('medium')) return 'Medium';
+    if (name.includes('small')) return 'Small';
+    if (name.includes('base-q5_1')) return 'Base Q5_1';
+    if (name.includes('base')) return 'Base';
+    if (name.includes('tiny')) return 'Tiny';
     return name.replace('ggml-', '').replace('.bin', '');
   };
 
   const getSpeed = (name: string) => {
-    if (name.includes('tiny')) return '~1s';
-    if (name.includes('base-q5_1')) return '~1-2s';
-    if (name.includes('base')) return '~2-3s';
-    if (name.includes('small')) return '~5-7s';
-    if (name.includes('medium')) return '~10-15s';
+    if (name.includes('large-v3-turbo-q5_0')) return '~5-8s';
     if (name.includes('large-v3-turbo')) return '~8-12s';
     if (name.includes('large-v3')) return '~15-25s';
     if (name.includes('large')) return '~15-25s';
+    if (name.includes('medium')) return '~10-15s';
+    if (name.includes('small')) return '~5-7s';
+    if (name.includes('base-q5_1')) return '~1-2s';
+    if (name.includes('base')) return '~2-3s';
+    if (name.includes('tiny')) return '~1s';
     return '';
   };
 
   const getAccuracy = (name: string) => {
-    if (name.includes('tiny')) return 'Low';
-    if (name.includes('base-q5_1')) return 'Good';
-    if (name.includes('base')) return 'Good';
-    if (name.includes('small')) return 'Better';
-    if (name.includes('medium')) return 'Great';
+    if (name.includes('large-v3-turbo-q5_0')) return 'Excellent';
     if (name.includes('large-v3-turbo')) return 'Excellent';
     if (name.includes('large-v3')) return 'Best';
     if (name.includes('large')) return 'Best';
+    if (name.includes('medium')) return 'Great';
+    if (name.includes('small')) return 'Better';
+    if (name.includes('base-q5_1')) return 'Good';
+    if (name.includes('base')) return 'Good';
+    if (name.includes('tiny')) return 'Low';
     return '';
   };
 
@@ -428,8 +434,19 @@ function Models({ onSuccess, onError }: ModelsProps) {
 
       {/* Current Model */}
       <div className="info-card accent">
-        <span className="info-label">Active Model:</span>
-        <span className="info-value">{getIcon(selectedModel)} {getLabel(selectedModel)}</span>
+        <div className="active-model-info">
+          <div className="active-model-icon" style={{ color: getModelSizeColor(selectedModel) }}>
+            <Iconify icon={getModelIcon(selectedModel)} size={24} />
+          </div>
+          <div className="active-model-details">
+            <span className="active-model-name">{getLabel(selectedModel)}</span>
+            <span className="active-model-file">{selectedModel || 'No model selected'}</span>
+          </div>
+          <div className="active-model-speed">
+            <Iconify icon="benchmark" size={14} />
+            <span>{getSpeed(selectedModel) || 'N/A'}</span>
+          </div>
+        </div>
       </div>
 
       {/* Models Save Location */}
@@ -441,10 +458,10 @@ function Models({ onSuccess, onError }: ModelsProps) {
           </div>
           <div className="info-card-actions">
             <button className="btn btn-secondary btn-sm" onClick={handleChooseFolder}>
-              Pilih Folder
+              <Iconify icon="folder" size={14} /> Pilih Folder
             </button>
             <button className="btn btn-secondary btn-sm" onClick={handleResetPath}>
-              Reset
+              <Iconify icon="refresh" size={14} /> Reset
             </button>
             <button 
               className="btn btn-secondary btn-sm" 
@@ -456,7 +473,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
                   <span className="btn-spinner" /> Scanning...
                 </>
               ) : (
-                '🔍 Scan Folder'
+                <><Iconify icon="scan" size={14} /> Scan Folder</>
               )}
             </button>
           </div>
@@ -469,24 +486,24 @@ function Models({ onSuccess, onError }: ModelsProps) {
           <div className="download-progress-header">
             <div className="download-progress-info">
               <span className="download-model-name">
-                {downloadState === 'paused' ? '⏸️' : downloadState === 'finalizing' ? '✅' : '⬇️'} {getLabel(downloading)}
+                {downloadState === 'paused' ? <Iconify icon="pause" size={16} /> : downloadState === 'finalizing' ? <Iconify icon="done" size={16} /> : <Iconify icon="download" size={16} />} {getLabel(downloading)}
               </span>
               <span className="download-progress-percent">{Math.round(progress)}%</span>
             </div>
             <div className="download-progress-actions">
               {downloadState === 'downloading' && (
                 <button className="btn btn-secondary btn-sm" onClick={handlePause}>
-                  ⏸ Pause
+                  <Iconify icon="pause" size={14} /> Pause
                 </button>
               )}
               {downloadState === 'paused' && (
                 <button className="btn btn-primary btn-sm" onClick={handleResume}>
-                  ▶ Resume
+                  <Iconify icon="resume" size={14} /> Resume
                 </button>
               )}
               {downloadState !== 'finalizing' && (
                 <button className="btn btn-danger btn-sm" onClick={handleCancel}>
-                  ✕ Cancel
+                  <Iconify icon="cancel" size={14} /> Cancel
                 </button>
               )}
             </div>
@@ -519,15 +536,15 @@ function Models({ onSuccess, onError }: ModelsProps) {
         <div className="download-progress-card paused">
           <div className="download-progress-header">
             <div className="download-progress-info">
-              <span className="download-model-name">⏸️ {getLabel(interruptedDownload.modelName)}</span>
+              <span className="download-model-name"><Iconify icon="pause" size={16} /> {getLabel(interruptedDownload.modelName)}</span>
               <span className="download-progress-percent">{interruptedDownload.progress}%</span>
             </div>
             <div className="download-progress-actions">
               <button className="btn btn-primary btn-sm" onClick={handleResumeInterrupted}>
-                ▶ Resume Download
+                <Iconify icon="resume" size={14} /> Resume Download
               </button>
               <button className="btn btn-danger btn-sm" onClick={handleDismissInterrupted}>
-                ✕ Dismiss
+                <Iconify icon="cancel" size={14} /> Dismiss
               </button>
             </div>
           </div>
@@ -548,7 +565,9 @@ function Models({ onSuccess, onError }: ModelsProps) {
           return (
             <div key={model.name} className={`card ${isActive ? 'card-active' : ''} ${isCorrupt ? 'card-corrupt' : ''}`}>
               <div className="card-left">
-                <div className="card-icon">{getIcon(model.name)}</div>
+                <div className="card-icon" style={{ color: getModelSizeColor(model.name) }}>
+                  <Iconify icon={getModelIcon(model.name)} size={24} />
+                </div>
                 <div className="card-body">
                   <div className="card-title">
                     {getLabel(model.name)}
@@ -558,19 +577,19 @@ function Models({ onSuccess, onError }: ModelsProps) {
                   </div>
                   <div className="card-desc">{model.description}</div>
                   <div className="card-meta">
-                    <span>📦 {model.size}</span>
-                    <span>⚡ {getSpeed(model.name)}</span>
-                    <span>🎯 {getAccuracy(model.name)}</span>
+                    <span>{model.size}</span>
+                    <span>{getSpeed(model.name)}</span>
+                    <span>{getAccuracy(model.name)}</span>
                     {model.fileSize !== undefined && model.fileSize > 0 && (
                       <span className={isCorrupt ? 'text-warning' : ''}>
-                        💾 {formatBytes(model.fileSize)}
+                        {formatBytes(model.fileSize)}
                         {isCorrupt && ' (incomplete)'}
                       </span>
                     )}
                   </div>
                   {isCorrupt && (
                     <div className="card-warning">
-                      ⚠️ File tidak valid atau tidak lengkap. Silakan download ulang.
+                      File tidak valid atau tidak lengkap. Silakan download ulang.
                     </div>
                   )}
                 </div>
@@ -579,10 +598,10 @@ function Models({ onSuccess, onError }: ModelsProps) {
                 {model.downloaded && !isCorrupt ? (
                   <div className="card-actions-row">
                     {isActive ? (
-                      <span className="status-active">✓ Active</span>
+                      <span className="status-active"><Iconify icon="active" size={14} /> Active</span>
                     ) : (
                       <button className="btn btn-primary" onClick={() => handleSelect(model.name)}>
-                        Use
+                        <Iconify icon="check" size={14} /> Use
                       </button>
                     )}
                     <button 
@@ -590,7 +609,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
                       onClick={() => handleDelete(model.name)}
                       title="Hapus model"
                     >
-                      🗑
+                      <Iconify icon="delete" />
                     </button>
                   </div>
                 ) : isDownloading ? (
@@ -605,14 +624,14 @@ function Models({ onSuccess, onError }: ModelsProps) {
                       onClick={() => handleForceDownload(model.name)}
                       disabled={!!downloading}
                     >
-                      Re-download
+                      <Iconify icon="refresh" size={14} /> Re-download
                     </button>
                     <button 
                       className="btn btn-danger btn-icon" 
                       onClick={() => handleDelete(model.name)}
                       title="Hapus file corrupt"
                     >
-                      🗑
+                      <Iconify icon="delete" />
                     </button>
                   </div>
                 ) : (
@@ -621,7 +640,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
                     onClick={() => handleDownload(model.name)}
                     disabled={!!downloading}
                   >
-                    Download
+                    <Iconify icon="download" size={14} /> Download
                   </button>
                 )}
               </div>
@@ -632,7 +651,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
 
       {/* Tips */}
       <div className="info-box">
-        <h3>💡 Tips</h3>
+        <h3><Iconify icon="tip" size={16} /> Tips</h3>
         <ul>
           <li><strong>Base</strong> is good enough for daily use</li>
           <li><strong>Medium</strong> gives best accuracy but uses more RAM</li>
@@ -651,8 +670,8 @@ function Models({ onSuccess, onError }: ModelsProps) {
               <p className="text-warning">This is your active model. It will be replaced with Base.</p>
             )}
             <div className="modal-actions">
-              <button className="btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDeleteModel}>Delete</button>
+              <button className="btn" onClick={() => setConfirmDelete(null)}><Iconify icon="cancel" size={14} /> Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDeleteModel}><Iconify icon="delete" size={14} /> Delete</button>
             </div>
           </div>
         </div>
