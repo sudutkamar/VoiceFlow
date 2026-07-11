@@ -168,7 +168,7 @@ export class VoiceFlowDatabase {
     const defaults: Record<string, string> = {
       hotkey: 'CommandOrControl+Shift+Space',
       language: 'auto',
-      model: 'ggml-base.bin',
+      model: 'ggml-large-v3-turbo-q5_0.bin',
       save_history: 'true',
       auto_paste: 'true',
       cleanup_enabled: 'false',

@@ -27,20 +27,24 @@ interface ElectronAPI {
   searchHistory: (query: string) => Promise<any[]>;
   exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
 
-  // Dictionary & Snippets
+  // Dictionary
   getDictionary: () => Promise<any[]>;
-  addDictionaryEntry: (phrase: string, replacement: string) => Promise<{ success: boolean }>;
-  deleteDictionaryEntry: (id: string) => Promise<{ success: boolean }>;
+  addDictionaryEntry: (phrase: string, replacement: string) => Promise<{ success: boolean; error?: string }>;
+  deleteDictionaryEntry: (id: string) => Promise<{ success: boolean; error?: string }>;
+  updateDictionaryEntry: (id: string, phrase: string, replacement: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Snippets
   getSnippets: () => Promise<any[]>;
-  addSnippet: (trigger: string, output: string) => Promise<{ success: boolean }>;
-  deleteSnippet: (id: string) => Promise<{ success: boolean }>;
+  addSnippet: (trigger: string, output: string) => Promise<{ success: boolean; error?: string }>;
+  deleteSnippet: (id: string) => Promise<{ success: boolean; error?: string }>;
+  updateSnippet: (id: string, trigger: string, output: string) => Promise<{ success: boolean; error?: string }>;
 
   // Hotkey
   updateHotkey: (hotkey: string) => Promise<{ success: boolean; error?: string }>;
 
   // Models
   getModelsPath: () => Promise<string>;
-  setModelsPath: (p: string) => Promise<{ success: boolean }>;
+  getCustomModelsPath: () => Promise<string | null>;
   chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
   getAvailableModels: () => Promise<any[]>;
@@ -49,13 +53,22 @@ interface ElectronAPI {
   forceDownloadModel: (model: string) => Promise<{ success: boolean; error?: string }>;
   pauseDownload: () => Promise<{ success: boolean; error?: string }>;
   resumeDownload: () => Promise<{ success: boolean; error?: string }>;
-  cancelDownload: () => Promise<{ success: boolean }>;
-  getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes: number; totalBytes: number }>;
+  cancelDownload: () => Promise<void>;
+  getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes?: number; totalBytes?: number }>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   hasInterruptedDownload: () => Promise<boolean>;
   getInterruptedDownloadInfo: () => Promise<{ modelName: string; progress: number } | null>;
-  deleteModel: (model: string) => Promise<{ success: boolean }>;
+  deleteModel: (model: string) => Promise<boolean>;
   hasAnyModel: () => Promise<boolean>;
+  setSpeedLimit: (bytesPerSecond: number) => Promise<{ success: boolean }>;
+  getSpeedLimit: () => Promise<{ bytesPerSecond: number }>;
+
+  // Adaptive Learning
+  learnCorrection: (original: string, corrected: string) => Promise<{ success: boolean; error?: string }>;
+  getLearnedCorrections: () => Promise<any[]>;
+  deleteLearnedCorrection: (id: string) => Promise<{ success: boolean }>;
+  clearLearnedCorrections: () => Promise<{ success: boolean }>;
+  getAdaptiveStats: () => Promise<{ total: number; totalFrequency: number; avgConfidence: number }>;
 
   // GPU / CUDA
   getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
@@ -67,9 +80,11 @@ interface ElectronAPI {
   deleteWhisperEngine: (type: 'cpu' | 'gpu') => Promise<{ success: boolean; deletedFiles?: number; error?: string }>;
 
   // App
+  getAppState: () => Promise<string>;
+  getTargetApp: () => Promise<string>;
   getVersion: () => Promise<string>;
-  getAutoStart: () => Promise<boolean>;
-  setAutoStart: (enable: boolean) => Promise<void>;
+  isAutoStart: () => Promise<boolean>;
+  setAutoStart: (enable: boolean) => Promise<{ success: boolean }>;
   quitApp: () => Promise<void>;
   minimizeToTray: () => Promise<void>;
   showMain: (page?: string) => Promise<void>;
@@ -77,13 +92,9 @@ interface ElectronAPI {
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
   clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
-  getTargetApp: () => Promise<string>;
 
-  // Learning
-  getLearnedCorrections: () => Promise<any[]>;
-  getAdaptiveStats: () => Promise<any>;
-  deleteLearnedCorrection: (id: string) => Promise<{ success: boolean }>;
-  clearLearnedCorrections: () => Promise<{ success: boolean }>;
+  // Learning (legacy aliases — kept for backward compat)
+  // see adaptive learning above
 
   // Benchmark
   runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;

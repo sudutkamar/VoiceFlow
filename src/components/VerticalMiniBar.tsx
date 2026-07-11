@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { WavRecorder } from '../utils/wavRecorder';
+import { playSound } from '../utils/audio';
 
 const LANGUAGES = [
   { c: 'auto', s: '🌐', l: 'Auto Detect' },
@@ -15,48 +16,7 @@ function fmt(ms: number) {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
-let _soundCtx: AudioContext | null = null;
-function getSoundCtx(): AudioContext {
-  if (!_soundCtx || _soundCtx.state === 'closed') _soundCtx = new AudioContext();
-  if (_soundCtx.state === 'suspended') _soundCtx.resume();
-  return _soundCtx;
-}
-
-function playSound(type: 'start' | 'stop' | 'done' | 'error') {
-  if (window.voiceflowSoundEnabled === false) return;
-  try {
-    const ctx = getSoundCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination); gain.gain.value = 0.12;
-    if (type === 'start') {
-      osc.frequency.value = 880; osc.type = 'sine';
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.12);
-    } else if (type === 'stop') {
-      osc.frequency.value = 440; osc.type = 'sine';
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
-    } else if (type === 'done') {
-      osc.frequency.value = 660; osc.type = 'sine';
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.08);
-      setTimeout(() => {
-        try {
-          const c2 = getSoundCtx(); const o2 = c2.createOscillator(); const g2 = c2.createGain();
-          o2.connect(g2); g2.connect(c2.destination); g2.gain.value = 0.12;
-          o2.frequency.value = 990; o2.type = 'sine';
-          g2.gain.exponentialRampToValueAtTime(0.001, c2.currentTime + 0.12);
-          o2.start(c2.currentTime); o2.stop(c2.currentTime + 0.12);
-        } catch {}
-      }, 80);
-    } else if (type === 'error') {
-      osc.frequency.value = 220; osc.type = 'sawtooth';
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.25);
-    }
-  } catch {}
-}
+// Sound feedback — imported from shared utils/audio.ts
 
 function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active: boolean, timeoutMs: number) {
   const [silenceDetected, setSilence] = useState(false);

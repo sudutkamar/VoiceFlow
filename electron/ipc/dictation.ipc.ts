@@ -118,7 +118,9 @@ export function setupDictationIPC(
           } else {
             logger.info('Audio needs preprocessing', { reason: needsProc.reason });
           }
-        } catch {}
+        } catch (err) {
+          logger.warn('Audio analysis failed, using default preprocessing', err);
+        }
       }
 
       // Single pass: transcription with selected model + GPU/CPU
@@ -326,14 +328,16 @@ export function setupDictationIPC(
     // Check preferred model first, then fallback to known models
     const accuracyOrder = [
       preferredModel,
-      'ggml-base-q5_1.bin',
-      'ggml-base.bin',
-      'ggml-tiny.bin',
-      'ggml-small.bin',
-      'ggml-medium.bin',
+      'ggml-large-v3-q5_0.bin',
+      'ggml-large-v3-turbo-q8_0.bin',
       'ggml-large-v3-turbo-q5_0.bin',
       'ggml-large-v3-turbo.bin',
       'ggml-large-v3.bin',
+      'ggml-medium.bin',
+      'ggml-small.bin',
+      'ggml-base.bin',
+      'ggml-base-q5_1.bin',
+      'ggml-tiny.bin',
     ];
     for (const model of [...new Set(accuracyOrder)]) {
       if (fs.existsSync(path.join(modelsDir, model))) return model;

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 
 import './styles/app.css';
 import { WavRecorder } from './utils/wavRecorder';
 import { NotificationProvider, useNotification } from './components/Notification';
-import { Iconify, getModelIcon, getModelSizeColor } from './utils/icons';
+import { Iconify, getModelIcon, getModelSizeColor, type IconName } from './utils/icons';
+import { playSound } from './utils/audio';
 import appLogo from './assets/logo.png';
 import VerticalMiniBar from './components/VerticalMiniBar';
 
@@ -15,78 +16,6 @@ const Benchmark = lazy(() => import('./pages/Benchmark'));
 declare global {
   interface Window {
     voiceflowSoundEnabled?: boolean;
-    electronAPI: {
-      runBenchmark: (audioBuffer: number[], models: string[]) => Promise<{ success: boolean; error?: string }>;
-      onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
-      startRecording: () => Promise<{ success: boolean; error?: string }>;
-      stopRecording: () => Promise<{ success: boolean; error?: string }>;
-      sendAudioData: (data: { buffer: number[]; mimeType: string; duration: number }) => void;
-      getSettings: () => Promise<Record<string, string>>;
-      updateSetting: (key: string, value: string) => Promise<{ success: boolean; error?: string }>;
-      updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
-      quitApp: () => Promise<void>;
-      showMain: (page?: Page) => Promise<void>;
-      minimizeToBar: () => Promise<void>;
-      showMiniWindow: () => Promise<void>;
-      hideMiniWindow: () => Promise<void>;
-      minimizeWindow: () => Promise<void>;
-      maximizeWindow: () => Promise<void>;
-      miniWindowReady: () => void;
-      resizeMiniWindow: (height: number, width?: number) => Promise<void>;
-      setMiniWindowFocusable: (focusable: boolean) => Promise<void>;
-      getTargetApp: () => Promise<string>;
-      onStateChange: (callback: (state: string) => void) => () => void;
-      onTranscriptReady: (callback: (data: any) => void) => () => void;
-      onError: (callback: (error: string) => void) => () => void;
-      onStartRecording: (callback: () => void) => () => void;
-      onStopRecording: (callback: (duration: number) => void) => () => void;
-      onCancelRecording: (callback: () => void) => () => void;
-      onPartialTranscript: (callback: (text: string) => void) => () => void;
-      onTargetAppChanged: (callback: (appName: string) => void) => () => void;
-      onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
-      onNavigate: (callback: (page: string) => void) => () => void;
-      onReloadSettings: (callback: () => void) => () => void;
-      onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
-      copyText: (text: string) => Promise<{ success: boolean; error?: string }>; 
-      pasteText: (text: string) => Promise<{ success: boolean; error?: string }>;
-      getAvailableModels: () => Promise<any[]>;
-      scanModelsFolder: () => Promise<any[]>;
-      downloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
-      forceDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
-      pauseDownload: () => Promise<{ success: boolean; error?: string }>;
-      resumeDownload: () => Promise<{ success: boolean; error?: string }>;
-      cancelDownload: () => Promise<void>;
-      deleteModel: (modelName: string) => Promise<boolean>;
-      getDownloadProgress: () => Promise<{ progress: number; state: string; modelName?: string | null; downloadedBytes?: number; totalBytes?: number }>;
-      hasInterruptedDownload: () => Promise<boolean>;
-      getInterruptedDownloadInfo: () => Promise<{ modelName: string; progress: number } | null>;
-      getModelsPath: () => Promise<string>;
-      getCustomModelsPath: () => Promise<string | null>;
-      chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
-      resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
-      hasAnyModel: () => Promise<boolean>;
-      getDictionary: () => Promise<any[]>;
-      addDictionaryEntry: (phrase: string, replacement: string) => Promise<{ success: boolean }>;
-      deleteDictionaryEntry: (id: string) => Promise<void>;
-      getSnippets: () => Promise<any[]>;
-      addSnippet: (trigger: string, output: string) => Promise<{ success: boolean }>;
-      deleteSnippet: (id: string) => Promise<void>;
-      setAutoStart: (enable: boolean) => Promise<void>;
-      getHistory: (limit?: number) => Promise<any[]>;
-      deleteHistoryItem: (id: string) => Promise<void>;
-      clearHistory: () => Promise<void>;
-      exportHistory: () => Promise<{ success: boolean; path?: string; error?: string }>;
-      searchHistory: (query: string) => Promise<any[]>;
-      clearCache: () => Promise<{ success: boolean; filesCleared?: number; error?: string }>;
-      getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
-      isAutoStart: () => Promise<boolean>;
-      getVersion: () => Promise<string>;
-      onDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number; modelName?: string | null }) => void) => () => void;
-      onMiniWindowUpdate: (callback: (data: any) => void) => () => void;
-      onWpmUpdate: (callback: (wpm: number) => void) => () => void;
-      getDownloadedModels: () => Promise<string[]>;
-      isModelDownloaded: (model: string) => Promise<boolean>;
-    };
   }
 }
 
@@ -101,74 +30,7 @@ function getConfidenceColor(confidence: number): string {
   return '#f87171';
 }
 
-// Sound feedback — singleton AudioContext to avoid memory leak
-let _soundCtx: AudioContext | null = null;
-function getSoundCtx(): AudioContext {
-  if (!_soundCtx || _soundCtx.state === 'closed') {
-    _soundCtx = new AudioContext();
-  }
-  if (_soundCtx.state === 'suspended') {
-    _soundCtx.resume();
-  }
-  return _soundCtx;
-}
-
-function playSound(type: 'start' | 'stop' | 'done' | 'error') {
-  if (window.voiceflowSoundEnabled === false) return;
-  try {
-    const ctx = getSoundCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    gain.gain.value = 0.15;
-    switch (type) {
-      case 'start':
-        osc.frequency.value = 800;
-        osc.type = 'sine';
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.15);
-        break;
-      case 'stop':
-        osc.frequency.value = 400;
-        osc.type = 'sine';
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.2);
-        break;
-      case 'done':
-        osc.frequency.value = 600;
-        osc.type = 'sine';
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.1);
-        setTimeout(() => {
-          try {
-            const ctx2 = getSoundCtx();
-            const osc2 = ctx2.createOscillator();
-            const gain2 = ctx2.createGain();
-            osc2.connect(gain2);
-            gain2.connect(ctx2.destination);
-            gain2.gain.value = 0.15;
-            osc2.frequency.value = 900;
-            osc2.type = 'sine';
-            gain2.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.15);
-            osc2.start(ctx2.currentTime);
-            osc2.stop(ctx2.currentTime + 0.15);
-          } catch {}
-        }, 100);
-        break;
-      case 'error':
-        osc.frequency.value = 200;
-        osc.type = 'sawtooth';
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.3);
-        break;
-    }
-  } catch {}
-}
+// Sound feedback — imported from shared utils/audio.ts
 
 function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active: boolean, timeoutMs: number) {
   const [silenceDetected, setSilence] = useState(false);
@@ -1165,7 +1027,9 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
     
     // Get model display name
     let displayName = 'No Model';
-    if (model.includes('large-v3-turbo-q5_0')) displayName = 'Large v3 Turbo Q5';
+    if (model.includes('large-v3-q5_0')) displayName = 'Large v3 Q5';
+    else if (model.includes('large-v3-turbo-q8_0')) displayName = 'Large v3 Turbo Q8';
+    else if (model.includes('large-v3-turbo-q5_0')) displayName = 'Large v3 Turbo Q5';
     else if (model.includes('large-v3-turbo')) displayName = 'Large v3 Turbo';
     else if (model.includes('large-v3')) displayName = 'Large v3';
     else if (model.includes('large')) displayName = 'Large';
@@ -1183,7 +1047,9 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
     else if (model.includes('base')) speed = '~2-3s';
     else if (model.includes('small')) speed = '~5-7s';
     else if (model.includes('medium')) speed = '~10-15s';
-    else if (model.includes('large-v3-turbo-q5_0')) speed = '~5-8s';
+    else if (model.includes('large-v3-q5_0')) speed = '~6-10s';
+    else if (model.includes('large-v3-turbo-q8_0')) speed = '~5-8s';
+    else if (model.includes('large-v3-turbo-q5_0')) speed = '~4-7s';
     else if (model.includes('large-v3-turbo')) speed = '~8-12s';
     else if (model.includes('large-v3')) speed = '~15-25s';
     else if (model.includes('large')) speed = '~15-25s';

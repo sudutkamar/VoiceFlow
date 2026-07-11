@@ -27,6 +27,10 @@ export class WavRecorder {
   private vadOptions: VadOptions = { enabled: false, silenceThreshold: 0.01, silenceDurationMs: 3000 };
   private onSilenceCallback: (() => void) | null = null;
 
+  constructor(options?: { sampleRate?: number; channels?: number }) {
+    // Options are accepted for compatibility, sampleRate/channels are set in start()
+  }
+
   async start(deviceId?: string, vadOptions?: Partial<VadOptions>): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {

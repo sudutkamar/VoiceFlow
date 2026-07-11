@@ -34,7 +34,9 @@ export function setupSettingsIPC(
         try {
           const transcriber = getTranscriberInstance();
           if (transcriber) transcriber.warmup(value);
-        } catch {}
+        } catch (err) {
+          logger.warn('Model warmup failed after setting change', err);
+        }
       }
       // Broadcast theme change to all windows
       if (key === 'theme') {

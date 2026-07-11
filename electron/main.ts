@@ -208,11 +208,16 @@ function createMiniWindow(): void {
     }
   });
 
-  // Prevent any attempt to hide the mini window (except during paste or quit)
+  // Minimalkan race: hanya re-show jika hide bukan dari paste/quit/resize
   miniWindow.on('hide', () => {
     const floatingEnabled = database?.getSetting('show_mini_window') !== 'false';
     if (!isQuitting && !isPasting && floatingEnabled && miniWindow && !miniWindow.isDestroyed()) {
-      setTimeout(() => miniWindow?.showInactive(), 50);
+      const mw = miniWindow;
+      setTimeout(() => {
+        if (mw && !mw.isDestroyed() && !mw.isVisible() && !isQuitting && !isPasting) {
+          mw.showInactive();
+        }
+      }, 100);
     }
   });
 
@@ -236,10 +241,16 @@ function createMiniWindow(): void {
   });
 
   miniWindow.on('ready-to-show', () => {
-    // Prevent flash — window stays hidden until showInactive() is called
     if (miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.hide();
+      // Jangan hide — langsung set flag ready
       miniWindowReady = true;
+      // Jika ada deferred show, tampilkan sekarang
+      if (deferredShowMiniWindow) {
+        deferredShowMiniWindow = false;
+        miniWindow.showInactive();
+        miniWindow.setAlwaysOnTop(true, 'screen-saver');
+        miniWindow.webContents.send('reload-settings');
+      }
     }
   });
 

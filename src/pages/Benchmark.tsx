@@ -13,28 +13,27 @@ interface BenchResult {
 const ALL_MODELS = [
   'ggml-tiny.bin',
   'ggml-base.bin',
+  'ggml-base-q5_1.bin',
   'ggml-small.bin',
   'ggml-medium.bin',
+  'ggml-large-v3-turbo-q5_0.bin',
+  'ggml-large-v3-turbo-q8_0.bin',
   'ggml-large-v3-turbo.bin',
+  'ggml-large-v3-q5_0.bin',
   'ggml-large-v3.bin',
 ];
 
 const MODEL_LABELS: Record<string, string> = {
   'ggml-tiny.bin': 'Tiny',
   'ggml-base.bin': 'Base',
+  'ggml-base-q5_1.bin': 'Base Q5',
   'ggml-small.bin': 'Small',
   'ggml-medium.bin': 'Medium',
+  'ggml-large-v3-turbo-q5_0.bin': 'Large v3 Turbo Q5',
+  'ggml-large-v3-turbo-q8_0.bin': 'Large v3 Turbo Q8',
   'ggml-large-v3-turbo.bin': 'Large v3 Turbo',
+  'ggml-large-v3-q5_0.bin': 'Large v3 Q5',
   'ggml-large-v3.bin': 'Large v3',
-};
-
-const MODEL_ICONS: Record<string, string> = {
-  'ggml-tiny.bin': 'T',
-  'ggml-base.bin': 'B',
-  'ggml-small.bin': 'S',
-  'ggml-medium.bin': 'M',
-  'ggml-large-v3-turbo.bin': 'V3',
-  'ggml-large-v3.bin': 'XL',
 };
 
 export default function Benchmark() {

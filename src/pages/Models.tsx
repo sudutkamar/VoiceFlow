@@ -363,13 +363,18 @@ function Models({ onSuccess, onError }: ModelsProps) {
     if (name.includes('base')) return 'B';
     if (name.includes('small')) return 'S';
     if (name.includes('medium')) return 'M';
+    if (name.includes('large-v3-turbo-q8_0')) return 'V3T8';
+    if (name.includes('large-v3-turbo-q5_0')) return 'V3T5';
     if (name.includes('large-v3-turbo')) return 'V3T';
+    if (name.includes('large-v3-q5_0')) return 'XL5';
     if (name.includes('large-v3')) return 'XL';
     if (name.includes('large')) return 'L';
     return '?';
   };
 
   const getLabel = (name: string) => {
+    if (name.includes('large-v3-q5_0')) return 'Large v3 Q5';
+    if (name.includes('large-v3-turbo-q8_0')) return 'Large v3 Turbo Q8';
     if (name.includes('large-v3-turbo-q5_0')) return 'Large v3 Turbo Q5';
     if (name.includes('large-v3-turbo')) return 'Large v3 Turbo';
     if (name.includes('large-v3')) return 'Large v3';
@@ -383,7 +388,9 @@ function Models({ onSuccess, onError }: ModelsProps) {
   };
 
   const getSpeed = (name: string) => {
-    if (name.includes('large-v3-turbo-q5_0')) return '~5-8s';
+    if (name.includes('large-v3-q5_0')) return '~6-10s';
+    if (name.includes('large-v3-turbo-q8_0')) return '~5-8s';
+    if (name.includes('large-v3-turbo-q5_0')) return '~4-7s';
     if (name.includes('large-v3-turbo')) return '~8-12s';
     if (name.includes('large-v3')) return '~15-25s';
     if (name.includes('large')) return '~15-25s';
@@ -396,6 +403,8 @@ function Models({ onSuccess, onError }: ModelsProps) {
   };
 
   const getAccuracy = (name: string) => {
+    if (name.includes('large-v3-q5_0')) return '🏆 Best';
+    if (name.includes('large-v3-turbo-q8_0')) return 'Excellent';
     if (name.includes('large-v3-turbo-q5_0')) return 'Excellent';
     if (name.includes('large-v3-turbo')) return 'Excellent';
     if (name.includes('large-v3')) return 'Best';

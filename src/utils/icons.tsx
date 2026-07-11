@@ -88,7 +88,7 @@ export const ICONS = {
   note: 'mdi:note-text-outline',
 };
 
-type IconName = keyof typeof ICONS;
+export type IconName = keyof typeof ICONS;
 
 export function Iconify({ icon, size = 18, className = '' }: { icon: IconName; size?: number; className?: string }) {
   const iconId = ICONS[icon];
@@ -105,6 +105,8 @@ export function getModelIcon(name: string): IconName {
   if (name.includes('base')) return 'modelBase';
   if (name.includes('small')) return 'modelSmall';
   if (name.includes('medium')) return 'modelMedium';
+  if (name.includes('large-v3-q5_0')) return 'modelLargeV3';
+  if (name.includes('large-v3-turbo-q8_0')) return 'modelLargeV3Turbo';
   if (name.includes('large-v3-turbo-q5_0')) return 'modelLargeV3Turbo';
   if (name.includes('large-v3-turbo')) return 'modelLargeV3Turbo';
   if (name.includes('large-v3')) return 'modelLargeV3';
@@ -117,6 +119,9 @@ export function getModelSizeColor(name: string): string {
   if (name.includes('base')) return '#60a5fa';
   if (name.includes('small')) return '#34d399';
   if (name.includes('medium')) return '#fbbf24';
+  if (name.includes('large-v3-q5_0')) return '#8b5cf6';
+  if (name.includes('large-v3-turbo-q8_0')) return '#f97316';
+  if (name.includes('large-v3-turbo-q5_0')) return '#f97316';
   if (name.includes('large-v3-turbo')) return '#f97316';
   if (name.includes('large-v3')) return '#ec4899';
   if (name.includes('large')) return '#a78bfa';
