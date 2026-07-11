@@ -4,6 +4,7 @@ import { WavRecorder } from './utils/wavRecorder';
 import { NotificationProvider, useNotification } from './components/Notification';
 import { Iconify, getModelIcon, getModelSizeColor } from './utils/icons';
 import appLogo from './assets/logo.png';
+import VerticalMiniBar from './components/VerticalMiniBar';
 
 // Lazy load page components for better performance
 const Settings = lazy(() => import('./pages/Settings'));
@@ -44,6 +45,8 @@ declare global {
       onTargetAppChanged: (callback: (appName: string) => void) => () => void;
       onHotkeyRegistered: (callback: (hotkey: string) => void) => () => void;
       onNavigate: (callback: (page: string) => void) => () => void;
+      onReloadSettings: (callback: () => void) => () => void;
+      onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
       copyText: (text: string) => Promise<{ success: boolean; error?: string }>; 
       pasteText: (text: string) => Promise<{ success: boolean; error?: string }>;
       getAvailableModels: () => Promise<any[]>;
@@ -285,6 +288,8 @@ function MiniBar() {
         const w = window.innerWidth;
         setWindowHeight(h);
         setWindowWidth(w);
+        // Skip horizontal resize logic if window is in vertical orientation
+        if (window.innerHeight > window.innerWidth * 2) return;
         // Ensure window width fits the zoomed content
         // Bar natural width at base: ~244px (40+6+90+6+40+6+40+16 padding)
         const BAR_BASE_WIDTH = 244;
@@ -348,6 +353,9 @@ function MiniBar() {
           document.documentElement.classList.remove('light-theme');
         }
       }),
+      window.electronAPI.onReloadSettings?.(() => {
+        loadSettings();
+      }),
     ];
     window.electronAPI.getTargetApp().then(setTargetApp).catch(() => {});
 
@@ -393,6 +401,8 @@ function MiniBar() {
       } else {
         document.documentElement.classList.remove('light-theme');
       }
+
+
 
       // After settings loaded: proactively request mic permission
       // so it's ready when user clicks record.
@@ -657,6 +667,24 @@ function MiniBar() {
     }
   };
 
+  const isVertical = settings.mini_bar_orientation === 'vertical';
+
+  // Manage mini-vertical body class for CSS rules
+  useEffect(() => {
+    if (isVertical) {
+      document.body.classList.add('mini-vertical');
+    } else {
+      document.body.classList.remove('mini-vertical');
+    }
+    return () => { document.body.classList.remove('mini-vertical'); };
+  }, [isVertical]);
+
+  // If vertical mode, render the dedicated VerticalMiniBar component
+  if (isVertical) {
+    return <VerticalMiniBar settings={settings} />;
+  }
+
+  // Horizontal mode (original code - untouched)
   return (
     <div className="mini-app">
       <div

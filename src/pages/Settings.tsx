@@ -415,6 +415,69 @@ function Settings({ onSuccess, onError }: SettingsProps) {
                 onSuccess(next === 'false' ? 'Floating UI disabled' : 'Floating UI enabled');
               }} />
             </div>
+            {settings.show_mini_window !== 'false' && (
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-name">Floating UI Layout</span>
+                  <span className="setting-hint">Horizontal (default) or Vertical orientation</span>
+                </div>
+                <div className="orientation-switcher">
+                  <button
+                    className={`orientation-btn ${settings.mini_bar_orientation !== 'vertical' ? 'active' : ''}`}
+                    onClick={async () => {
+                      // 1. Save orientation first
+                      await save('mini_bar_orientation', 'horizontal');
+                      await save('mini_window_width', '460');
+                      await save('mini_window_height', '52');
+                      
+                      // 2. Hide mini window completely
+                      await window.electronAPI.hideMiniWindow?.();
+                      
+                      // 3. Wait for hide to complete, then resize
+                      await new Promise(r => setTimeout(r, 200));
+                      await window.electronAPI.resizeMiniWindow?.(52, 460);
+                      
+                      // 4. Wait for resize to complete, then show
+                      await new Promise(r => setTimeout(r, 100));
+                      await window.electronAPI.showMiniWindow?.();
+                      
+                      onSuccess('Layout: Horizontal');
+                    }}
+                    title="Horizontal Layout"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="1" y="5" width="16" height="8" rx="2" />
+                      <line x1="5" y1="9" x2="13" y2="9" />
+                    </svg>
+                    <span>Horizontal</span>
+                  </button>
+                  <button
+                    className={`orientation-btn ${settings.mini_bar_orientation === 'vertical' ? 'active' : ''}`}
+                    onClick={async () => {
+                      // 1. Save orientation first
+                      await save('mini_bar_orientation', 'vertical');
+                      await save('mini_window_width', '64');
+                      await save('mini_window_height', '220');
+                      
+                      await window.electronAPI.hideMiniWindow?.();
+                      await new Promise(r => setTimeout(r, 200));
+                      await window.electronAPI.resizeMiniWindow?.(220, 64);
+                      await new Promise(r => setTimeout(r, 100));
+                      await window.electronAPI.showMiniWindow?.();
+                      
+                      onSuccess('Layout: Vertical');
+                    }}
+                    title="Vertical Layout"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="5" y="1" width="8" height="16" rx="2" />
+                      <line x1="9" y1="5" x2="9" y2="13" />
+                    </svg>
+                    <span>Vertical</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="section">

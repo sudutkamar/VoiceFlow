@@ -127,9 +127,30 @@ function createMiniWindow(): void {
   // Load saved size or use defaults
   const savedWidth = parseInt(database?.getSetting('mini_window_width') || '0', 10);
   const savedHeight = parseInt(database?.getSetting('mini_window_height') || '0', 10);
+  const orientation = database?.getSetting('mini_bar_orientation') || 'horizontal';
   
-  const miniWidth = savedWidth > 0 ? Math.min(savedWidth, sw - 40) : Math.min(380, sw - 40);
-  const miniHeight = savedHeight > 0 ? Math.max(28, Math.min(savedHeight, 200)) : 52;
+  // Set dimensions based on orientation
+  let miniWidth: number, miniHeight: number;
+  let minWidth: number, minHeight: number, maxWidth: number, maxHeight: number;
+  
+  if (orientation === 'vertical') {
+    // Vertical mode: compact pill shape
+    miniWidth = savedWidth > 0 ? Math.max(64, Math.min(savedWidth, 72)) : 64;
+    miniHeight = savedHeight > 0 ? Math.max(190, Math.min(savedHeight, 300)) : 220;
+    minWidth = 64;
+    minHeight = 190;
+    maxWidth = 72;
+    maxHeight = 300;
+  } else {
+    // Horizontal mode: wide and short
+    miniWidth = savedWidth > 0 ? Math.min(savedWidth, sw - 40) : Math.min(380, sw - 40);
+    miniHeight = savedHeight > 0 ? Math.max(28, Math.min(savedHeight, 100)) : 52;
+    minWidth = 200;
+    minHeight = 28;
+    maxWidth = Math.min(800, sw - 40);
+    maxHeight = 100;
+  }
+  
   const taskbarHeight = sh; // workArea already excludes taskbar
 
   miniWindow = new BrowserWindow({
@@ -137,10 +158,10 @@ function createMiniWindow(): void {
     height: miniHeight,
     x: Math.round((sw - miniWidth) / 2),
     y: taskbarHeight - miniHeight - 10,
-    minWidth: 100,
-    minHeight: 28,
-    maxWidth: Math.min(800, sw - 40),
-    maxHeight: 200,
+    minWidth,
+    minHeight,
+    maxWidth,
+    maxHeight,
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -181,7 +202,9 @@ function createMiniWindow(): void {
     if (miniWindow && !miniWindow.isDestroyed() && database) {
       const bounds = miniWindow.getBounds();
       database.updateSetting('mini_window_width', String(bounds.width));
-      database.updateSetting('mini_window_height', String(Math.max(28, Math.min(200, bounds.height))));
+      database.updateSetting('mini_window_height', String(Math.max(28, Math.min(350, bounds.height))));
+      // Notify renderer of new size
+      miniWindow.webContents.send('mini-window-resize', { width: bounds.width, height: bounds.height });
     }
   });
 
@@ -206,6 +229,7 @@ function createMiniWindow(): void {
       if (floatingEnabled) {
         miniWindow.showInactive();
         miniWindow.setAlwaysOnTop(true, 'screen-saver');
+        miniWindow.webContents.send('reload-settings');
         logger?.info('Deferred mini window shown');
       }
     }
@@ -248,6 +272,8 @@ function showMiniWindow(): void {
   miniWindow?.showInactive();
   // Ensure always on top after showing
   miniWindow?.setAlwaysOnTop(true, 'screen-saver');
+  // Notify mini window to reload settings (handles orientation changes)
+  miniWindow?.webContents.send('reload-settings');
   logger?.info('Mini window shown inactive');
 }
 

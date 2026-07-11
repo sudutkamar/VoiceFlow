@@ -112,6 +112,7 @@ export interface ElectronAPI {
   onTargetAppChanged: (callback: (appName: string) => void) => () => void;
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
   onThemeChange: (callback: (theme: string) => void) => () => void;
+  onReloadSettings: (callback: () => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -284,6 +285,16 @@ const api: ElectronAPI = {
     const handler = (_: any, theme: string) => callback(theme);
     ipcRenderer.on('theme-changed', handler);
     return () => ipcRenderer.removeListener('theme-changed', handler);
+  },
+  onReloadSettings: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('reload-settings', handler);
+    return () => ipcRenderer.removeListener('reload-settings', handler);
+  },
+  onMiniWindowResize: (callback) => {
+    const handler = (_: any, data: { width: number; height: number }) => callback(data);
+    ipcRenderer.on('mini-window-resize', handler);
+    return () => ipcRenderer.removeListener('mini-window-resize', handler);
   },
 };
 

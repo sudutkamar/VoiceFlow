@@ -4547,6 +4547,26 @@ body.mini-mode, html.mini-mode { background: transparent; }
   color: #2563eb;
 }
 
+/* Orientation switcher — light theme */
+:root.light-theme .orientation-switcher {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:root.light-theme .orientation-btn {
+  color: rgba(0, 0, 0, 0.5);
+}
+
+:root.light-theme .orientation-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.8);
+}
+
+:root.light-theme .orientation-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.1);
+}
+
 /* Spinner — light */
 :root.light-theme .m-spinner {
   border-color: rgba(59, 130, 246, 0.2);
@@ -4944,3 +4964,65 @@ body.mini-mode, html.mini-mode { background: transparent; }
   color: #f87171;
   border: 1px solid rgba(248, 113, 113, 0.3);
 }
+
+/* ============ ORIENTATION SWITCHER (Settings) ============ */
+.orientation-switcher {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.orientation-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.orientation-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.orientation-btn.active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
+}
+
+.orientation-btn svg {
+  flex-shrink: 0;
+}
+
+/* ============ VERTICAL MINI-BAR ============ */
+/* Vertical mode uses dedicated VerticalMiniBar component with inline styles */
+/* No CSS needed - all styles are inline in the component */
+
+/* Vertical tooltips */
+body.mini-mode.mini-vertical .m-tooltip {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+body.mini-mode.mini-vertical .m-result-text {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 300px;
+}
+
+
