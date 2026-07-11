@@ -180,7 +180,7 @@ export class VoiceFlowDatabase {
       processing_mode: 'natural',
       initial_prompt: '',
       vad_enabled: 'true',
-      vad_silence_ms: '1500',
+      vad_silence_ms: '3000',
       audio_preprocess: 'false',
       fuzzy_match: 'false',
       auto_start: 'false',

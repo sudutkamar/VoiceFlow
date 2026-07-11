@@ -188,11 +188,12 @@ function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active
         const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
 
         // Mark audio as detected when there's meaningful input
-        if (rms >= 6) hasDetectedAudio.current = true;
+        // Threshold 15 (out of 255) — higher than ambient noise, triggers only on actual speech.
+        if (rms >= 15) hasDetectedAudio.current = true;
 
         // Only trigger silence if audio was ever detected (avoids premature auto-stop
         // when no mic is connected or mic is not working)
-        if (rms < 6) {
+        if (rms < 15) {
           if (!hasDetectedAudio.current) return;
           if (!silenceStart.current) silenceStart.current = Date.now();
           else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
@@ -311,11 +312,12 @@ function MiniBar() {
   }, []);
 
   const vadEnabled = settings.vad_enabled !== 'false';
-  const vadSilenceMs = parseInt(settings.vad_silence_ms || '1500', 10);
+  const vadSilenceMs = parseInt(settings.vad_silence_ms || '3000', 10);
   const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
+  const MIN_RECORDING_MS = 2000; // Minimum recording duration before VAD can auto-stop
 
   useEffect(() => {
-    if (silenceDetected && stateRef.current === 'recording') stopRec();
+    if (silenceDetected && stateRef.current === 'recording' && (Date.now() - startRef.current) >= MIN_RECORDING_MS) stopRec();
   }, [silenceDetected]);
 
   useEffect(() => {
@@ -988,11 +990,12 @@ function HomePage({ settings, onSuccess, onError }: { settings: Record<string, s
   useEffect(() => { stateRef.current = state; }, [state]);
 
   const vadEnabled = settings.vad_enabled !== 'false';
-  const vadSilenceMs = parseInt(settings.vad_silence_ms || '1500', 10);
+  const vadSilenceMs = parseInt(settings.vad_silence_ms || '3000', 10);
   const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
+  const MIN_RECORDING_MS = 2000; // Minimum recording duration before VAD can auto-stop
 
   useEffect(() => {
-    if (silenceDetected && stateRef.current === 'recording') stopRec();
+    if (silenceDetected && stateRef.current === 'recording' && (Date.now() - startRef.current) >= MIN_RECORDING_MS) stopRec();
   }, [silenceDetected]);
 
   useEffect(() => {

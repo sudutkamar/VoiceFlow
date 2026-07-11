@@ -113,6 +113,7 @@ export interface ElectronAPI {
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
   onThemeChange: (callback: (theme: string) => void) => () => void;
   onReloadSettings: (callback: () => void) => () => void;
+  onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
 }
 
 const api: ElectronAPI = {

@@ -54,12 +54,23 @@ export class WavRecorder {
       adaptiveThreshold: true,
     });
 
-    // Set VAD callbacks
-    this.adaptiveVAD.setOnSilence(() => {
-      if (this.onSilenceCallback) {
-        this.onSilenceCallback();
-      }
-    });
+    // Save vadOptions (fix: parameter sebelumnya tidak pernah di-assign)
+    if (vadOptions) {
+      this.vadOptions = {
+        enabled: vadOptions.enabled ?? this.vadOptions.enabled,
+        silenceThreshold: vadOptions.silenceThreshold ?? this.vadOptions.silenceThreshold,
+        silenceDurationMs: vadOptions.silenceDurationMs ?? this.vadOptions.silenceDurationMs,
+      };
+    }
+
+    // Resume AudioContext if suspended (e.g., triggered via hotkey without user gesture)
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
+
+    // Note: onSilence callback is NOT bridged from AdaptiveVAD to avoid double-VAD conflicts.
+    // Auto-stop is handled by the React-level useVad hook which has proper hasDetectedAudio guard.
+    // AdaptiveVAD is used for speech detection only.
 
     // Use ScriptProcessorNode for reliable audio capture
     this.chunks = [];
