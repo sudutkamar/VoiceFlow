@@ -11,12 +11,14 @@ import { TextCleaner } from '../modules/textCleaner';
 import { PasteEngine } from '../modules/pasteEngine';
 import { HotkeyManager } from '../modules/hotkeyManager';
 import { AdaptiveLearning } from '../modules/adaptiveLearning';
+import { LlmPostProcessor } from '../modules/llmPostProcessor';
 
 let audioConverter: AudioConverter;
 let transcriber: Transcriber;
 let textCleaner: TextCleaner;
 let pasteEngine: PasteEngine;
 let adaptiveLearning: AdaptiveLearning;
+let llmPostProcessor: LlmPostProcessor;
 let isProcessing = false;
 let processingQueue: Array<{ buffer: number[]; mimeType: string; duration: number }> = [];
 let lastTranscript = '';
@@ -53,6 +55,10 @@ export function setupDictationIPC(
   textCleaner = new TextCleaner(logger);
   pasteEngine = new PasteEngine(mainWindow, logger, hideAllForPaste, showAfterPaste);
   adaptiveLearning = new AdaptiveLearning(logger, database);
+  llmPostProcessor = new LlmPostProcessor(logger);
+  
+  // Log LLM availability
+  logger.info(`LLM post-processor: llama-cli=${llmPostProcessor.isLlmCliAvailable()}, models=${llmPostProcessor.getAvailableModels().length}`);
 
   ipcMain.handle('start-recording', async () => {
     mainWindow.webContents.send('state-change', 'recording');
@@ -166,11 +172,15 @@ export function setupDictationIPC(
       const snippets = database.getSnippetsMap();
       const voiceCommands = database.getSetting('voice_commands') !== 'false';
       const mode = verbatimMode ? 'raw' : processingMode;
+      const llmEnabled = database.getSetting('llm_postprocess') === 'true';
+      const llmModel = database.getSetting('llm_model') || 'qwen2.5-0.5b-q4_k_m.gguf';
 
       let finalText = transcribeResult.text || '';
       if (finalText) {
+        // Phase 1: TextCleaner (rule-based cleanup)
         finalText = textCleaner.cleanForMode(finalText, mode, { dictionary, snippets, voiceCommands });
         
+        // Phase 2: Adaptive Learning (learned corrections)
         try {
           const learned = adaptiveLearning.apply(finalText);
           if (learned.changes > 0) {
@@ -180,9 +190,33 @@ export function setupDictationIPC(
         } catch (err) {
           logger.warn('Adaptive learning failed, using original', err);
         }
+
+        // Phase 3: LLM Post-Processing (local llama inference)
+        if (llmEnabled && !verbatimMode) {
+          try {
+            // Update state to show LLM processing
+            hotkeyManager?.setState('cleaning');
+            
+            const llmResult = await llmPostProcessor.process(finalText, llmModel);
+            
+            if (llmResult.success && llmResult.text !== finalText) {
+              logger.info('LLM post-processing applied', {
+                model: llmResult.model,
+                processingMs: llmResult.processingMs,
+                before: finalText.length,
+                after: llmResult.text.length,
+              });
+              finalText = llmResult.text;
+            } else if (llmResult.error) {
+              logger.warn('LLM post-processing skipped', { error: llmResult.error });
+            }
+          } catch (err) {
+            logger.warn('LLM post-processing error, using cleaner result', err);
+          }
+        }
       }
 
-      logger.info('Final text', { text: finalText });
+      logger.info('Final text', { text: finalText, llmUsed: llmEnabled && !verbatimMode });
       lastTranscript = transcribeResult.text || '';
       lastCleanedText = finalText;
 
@@ -302,6 +336,63 @@ export function setupDictationIPC(
   // Get adaptive learning stats
   ipcMain.handle('get-adaptive-stats', async () => {
     return adaptiveLearning.getStats();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  LLM Post-Processing IPC
+  // ═══════════════════════════════════════════════════════════════
+
+  ipcMain.handle('llm-check-availability', async () => {
+    try {
+      const available = llmPostProcessor.isLlmCliAvailable() && llmPostProcessor.isModelAvailable();
+      const models = llmPostProcessor.getDownloadedModelsInfo();
+      return { success: true, available, hasCli: llmPostProcessor.isLlmCliAvailable(), models };
+    } catch (err: any) {
+      return { success: false, available: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('llm-get-models', async () => {
+    try {
+      const models = llmPostProcessor.getDownloadedModelsInfo();
+      return { success: true, models };
+    } catch (err: any) {
+      return { success: false, models: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('llm-download-model', async (_event, modelName: string) => {
+    try {
+      const result = await llmPostProcessor.downloadModel(modelName, (progress, state) => {
+        // Broadcast progress
+        const send = hotkeyManager
+          ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+          : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+        send('download-progress', { progress, state, modelName, type: 'llm' });
+      });
+      return { success: result };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('llm-delete-model', async (_event, modelName: string) => {
+    try {
+      const result = llmPostProcessor.deleteModel(modelName);
+      return { success: result };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Test: run LLM post-processing on arbitrary text (for UI preview)
+  ipcMain.handle('llm-test-process', async (_event, text: string, modelName?: string) => {
+    try {
+      const result = await llmPostProcessor.process(text, modelName);
+      return { success: result.success, text: result.text, processingMs: result.processingMs, model: result.model, error: result.error };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('run-benchmark', async (_event, audioBuffer: number[], models: string[]) => {

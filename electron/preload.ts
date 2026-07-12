@@ -70,6 +70,13 @@ export interface ElectronAPI {
   clearLearnedCorrections: () => Promise<{ success: boolean }>;
   getAdaptiveStats: () => Promise<{ total: number; totalFrequency: number; avgConfidence: number }>;
 
+  // LLM Post-Processing
+  llmCheckAvailability: () => Promise<{ success: boolean; available: boolean; hasCli: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmGetModels: () => Promise<{ success: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  llmTestProcess: (text: string, modelName?: string) => Promise<{ success: boolean; text?: string; processingMs?: number; model?: string; error?: string }>;
+
   // Hotkey
   updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
   
@@ -179,6 +186,13 @@ const api: ElectronAPI = {
   deleteLearnedCorrection: (id) => ipcRenderer.invoke('delete-learned-correction', id),
   clearLearnedCorrections: () => ipcRenderer.invoke('clear-learned-corrections'),
   getAdaptiveStats: () => ipcRenderer.invoke('get-adaptive-stats'),
+
+  // LLM Post-Processing
+  llmCheckAvailability: () => ipcRenderer.invoke('llm-check-availability'),
+  llmGetModels: () => ipcRenderer.invoke('llm-get-models'),
+  llmDownloadModel: (modelName) => ipcRenderer.invoke('llm-download-model', modelName),
+  llmDeleteModel: (modelName) => ipcRenderer.invoke('llm-delete-model', modelName),
+  llmTestProcess: (text, modelName) => ipcRenderer.invoke('llm-test-process', text, modelName),
 
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
   

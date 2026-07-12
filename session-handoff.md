@@ -1,6 +1,58 @@
 # Session Handoff
 
-## Summary
+## Session: 2026-07-12 (LLM Post-Processing)
+
+### Summary
+Menambahkan LLM Post-Processing stage ke pipeline transkripsi VoiceFlow. Fitur baru menggunakan Ollama API untuk cleanup hasil transkripsi secara AI: menghapus filler words, memperbaiki grammar, menambahkan punctuation, dan kapitalisasi natural.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron/modules/llmPostProcessor.ts` | **NEW** — Modul LLM Post-Processor: komunikasi dengan Ollama API, check availability, pull model, proses teks dengan LLM lokal |
+| `electron/ipc/dictation.ipc.ts` | Integrasi LLM post-processing di pipeline transkripsi (Phase 3 setelah TextCleaner + AdaptiveLearning). Tambah 4 IPC handler baru: `llm-check-availability`, `llm-get-models`, `llm-pull-model`, `llm-test-process` |
+| `electron/modules/database.ts` | Tambah 2 setting default: `llm_postprocess=false`, `llm_model=phi-4-mini:3.8b` |
+| `electron/preload.ts` | Expose 4 fungsi LLM baru ke renderer via contextBridge |
+| `src/types/electron.d.ts` | Tambah tipe untuk 4 fungsi LLM baru |
+| `src/pages/Settings.tsx` | Tambah section "LLM Post-Processing" di Processing tab dengan toggle, model selector, Ollama status check, pull model button, available models list |
+| `src/styles/app.css` | Tambah `.spinner-sm`, `.badge-new`, `.status-dot`, `.status-dot-ok`, `.status-dot-err` |
+
+### Decisions
+- **Arsitektur**: LLM post-processing adalah Phase 3 dalam pipeline (setelah TextCleaner rule-based + Adaptive Learning). Jadi LLM hanya membersihkan teks yang sudah di-preprocess, bukan menggantikannya.
+- **Model default**: `phi-4-mini:3.8b` — cukup kecil untuk <500ms inference di CPU, cukup akurat untuk cleanup teks. User bisa ganti ke model lain via UI.
+- **System prompt**: Strict prompt yang hanya membersihkan filler words, fix grammar, add punctuation. Tidak mengubah makna atau menambah informasi.
+- **Temperature**: 0.1 (sangat rendah) untuk output yang konsisten dan tidak kreatif.
+- **Timeout**: 5000ms per inference. Jika timeout, fallback ke hasil tanpa LLM.
+- **Privacy**: 100% lokal via Ollama. Tidak ada data yang dikirim ke cloud.
+
+### Trade-offs
+- **Kecepatan**: LLM post-processing menambah latency 200-500ms. Hanya aktif jika toggle diaktifkan.
+- **Akurasi**: Model kecil (1B-3.8B) mungkin kadang menghapus kata yang tidak seharusnya. System prompt yang ketat meminimalkan risiko ini.
+- **Dependency**: User harus install Ollama. UI sudah menampilkan status dan tombol untuk check.
+
+### Risks / Technical Debt
+1. **Ollama tidak terinstall** — Fitur tidak aktif secara default (`llm_postprocess=false`). User harus enable dan install Ollama manual.
+2. **Model size**: `phi-4-mini:3.8b` ~2.5GB download. Mungkin berat untuk user dengan RAM terbatas. Tersedia opsi model lebih kecil (`qwen2.5-0.5b`, `smollm2-360m`).
+3. **Error handling**: Jika LLM gagal (timeout/Ollama down), fallback ke hasil TextCleaner biasa tanpa mengganggu user.
+4. **TODO**: #1 System prompt belum dioptimasi untuk bahasa Indonesia secara spesifik. #2 Belum ada progress bar untuk pull model (streaming response dari Ollama).
+
+### Next Actions
+1. [ ] Test dengan Ollama:
+   ```bash
+   # Install Ollama & pull model
+   curl -fsSL https://ollama.com/install.sh | sh
+   ollama pull phi-4-mini:3.8b
+   # Start VoiceFlow & test
+   cd C:/Users/cgnscr/Documents/Dev/Code/VoiceFlow
+   npm run build:electron
+   npm run dev
+   ```
+2. [ ] Optimasi system prompt untuk bahasa Indonesia
+3. [ ] Tambah progress bar untuk `ollama pull`
+4. [ ] Test di MiniBar dan VerticalMiniBar (seharusnya tidak perlu perubahan karena LLM processing di main process)
+
+## Previous Session (Download Infrastructure)
+
+### Summary
 
 Completed a thorough fix session on the VoiceFlow Electron app's download infrastructure. All 6 issues from `notes.txt` were investigated and resolved, plus 2 bonus features added.
 

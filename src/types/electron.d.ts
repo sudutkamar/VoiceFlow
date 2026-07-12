@@ -70,6 +70,13 @@ interface ElectronAPI {
   clearLearnedCorrections: () => Promise<{ success: boolean }>;
   getAdaptiveStats: () => Promise<{ total: number; totalFrequency: number; avgConfidence: number }>;
 
+  // LLM Post-Processing
+  llmCheckAvailability: () => Promise<{ success: boolean; available: boolean; hasCli: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmGetModels: () => Promise<{ success: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  llmTestProcess: (text: string, modelName?: string) => Promise<{ success: boolean; text?: string; processingMs?: number; model?: string; error?: string }>;
+
   // GPU / CUDA
   getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
   downloadCuda: () => Promise<{ success: boolean; error?: string }>;

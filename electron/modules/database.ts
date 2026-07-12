@@ -196,6 +196,8 @@ export class VoiceFlowDatabase {
       mini_window_width: '460',
       mini_window_height: '64',
       mini_bar_orientation: 'horizontal',
+      llm_postprocess: 'false',
+      llm_model: 'qwen2.5-0.5b-q4_k_m.gguf',
     };
 
     const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
