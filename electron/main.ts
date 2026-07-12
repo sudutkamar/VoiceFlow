@@ -95,6 +95,8 @@ function createMainWindow(showInitially: boolean = true): void {
     }
   });
 
+  console.log('[MainWindow] created, loading URL...');
+  
   // When minimized -> minimize to taskbar (stay in taskbar)
   // Don't hide window, just minimize normally
 
@@ -114,7 +116,11 @@ function createMainWindow(showInitially: boolean = true): void {
   });
 
   if (isDev()) {
-    mainWindow.loadURL('http://localhost:5173#main');
+    console.log('[MainWindow] Loading dev URL: http://localhost:5173#main');
+    mainWindow.loadURL('http://localhost:5173#main').catch((err) => {
+      console.error('[MainWindow] Dev load failed, falling back to dist:', err.message);
+      mainWindow?.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'main' });
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'main' });
   }
@@ -255,7 +261,11 @@ function createMiniWindow(): void {
   });
 
   if (isDev()) {
-    miniWindow.loadURL('http://localhost:5173#mini');
+    console.log('[MiniWindow] Loading dev URL: http://localhost:5173#mini');
+    miniWindow.loadURL('http://localhost:5173#mini').catch((err) => {
+      console.error('[MiniWindow] Dev load failed, falling back to dist:', err.message);
+      miniWindow?.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mini' });
+    });
   } else {
     miniWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mini' });
   }

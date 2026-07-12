@@ -7,8 +7,8 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "dev:first-run": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development VOICEFLOW_FIRST_RUN=1 electron .\"",
+    "dev": "node -e \"const{execSync}=require('child_process');try{execSync('netstat -ano | findstr :5173',{stdio:'pipe'}).toString().split('\\n').forEach(l=>{const m=l.match(/LISTENING\\s+(\\d+)/);if(m)try{process.kill(parseInt(m[1]));console.log('Killed port 5173 process:',m[1])}catch(e){}})}catch(e){}console.log('Starting...')\" && concurrently \"vite\" \"wait-on http://localhost:5173?timeout=15000 && cross-env NODE_ENV=development electron .\"",
+    "dev:first-run": "node -e \"const{execSync}=require('child_process');try{execSync('netstat -ano | findstr :5173',{stdio:'pipe'}).toString().split('\\n').forEach(l=>{const m=l.match(/LISTENING\\s+(\\d+)/);if(m)try{process.kill(parseInt(m[1]));console.log('Killed port 5173 process:',m[1])}catch(e){}})}catch(e){}console.log('Starting...')\" && concurrently \"vite\" \"wait-on http://localhost:5173?timeout=15000 && cross-env NODE_ENV=development VOICEFLOW_FIRST_RUN=1 electron .\"",
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
