@@ -12,6 +12,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Models = lazy(() => import('./pages/Models'));
 const History = lazy(() => import('./pages/History'));
 const Benchmark = lazy(() => import('./pages/Benchmark'));
+const LlmModels = lazy(() => import('./pages/LlmModels'));
 
 declare global {
   interface Window {
@@ -20,7 +21,7 @@ declare global {
 }
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
-type Page = 'home' | 'settings' | 'models' | 'history' | 'benchmark';
+type Page = 'home' | 'settings' | 'models' | 'history' | 'benchmark' | 'llm-models';
 
 // Helper functions
 function getConfidenceColor(confidence: number): string {
@@ -563,6 +564,7 @@ function MainApp() {
   const navItems: { id: Page; icon: IconName; label: string }[] = [
     { id: 'home', icon: 'record', label: 'Record' },
     { id: 'models', icon: 'models', label: 'Models' },
+    { id: 'llm-models', icon: 'spark', label: 'LLM' },
     { id: 'history', icon: 'history', label: 'History' },
     { id: 'benchmark', icon: 'benchmark', label: 'Benchmark' },
     { id: 'settings', icon: 'settings', label: 'Settings' },
@@ -629,6 +631,7 @@ function MainApp() {
             {currentPage === 'models' && <Models onSuccess={showSuccess} onError={showError} />}
             {currentPage === 'history' && <History onSuccess={showSuccess} />}
             {currentPage === 'benchmark' && <Benchmark />}
+            {currentPage === 'llm-models' && <LlmModels onSuccess={showSuccess} onError={showError} />}
             {currentPage === 'settings' && <Settings onSuccess={showSuccess} onError={showError} />}
           </Suspense>
         </main>

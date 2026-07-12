@@ -304,129 +304,6 @@ function Settings({ onSuccess, onError }: SettingsProps) {
     { code: 'zh', name: '中文', flag: 'CN' },
   ];
 
-  // ═══════════════════════════════════════════════════════
-  //  LLM Post-Processing Settings Row
-  // ═══════════════════════════════════════════════════════
-
-  const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
-  const [llmHasCli, setLlmHasCli] = useState(false);
-  const [llmModels, setLlmModels] = useState<Array<{ name: string; sizeBytes: number }>>([]);
-  const [llmChecking, setLlmChecking] = useState(false);
-  const [llmDownloading, setLlmDownloading] = useState(false);
-  const [llmDownloadStatus, setLlmDownloadStatus] = useState('');
-
-  const LLM_MODEL_OPTIONS = [
-    { value: 'qwen2.5-0.5b-q4_k_m.gguf', label: 'Qwen 2.5 0.5B Q4 (352 MB) ⭐ Rekomendasi' },
-    { value: 'qwen2.5-1.5b-q4_k_m.gguf', label: 'Qwen 2.5 1.5B Q4 (985 MB) — Lebih Akurat' },
-    { value: 'smollm2-360m-q4_k_m.gguf', label: 'SmolLM2 360M Q4 (240 MB) — Paling Ringan' },
-    { value: 'gemma-3-1b-it-q4_k_m.gguf', label: 'Gemma 3 1B Q4 (780 MB) — Akurasi Bagus' },
-  ];
-
-  const checkLlm = useCallback(async () => {
-    setLlmChecking(true);
-    try {
-      const result = await window.electronAPI.llmCheckAvailability();
-      setLlmAvailable(result.available);
-      setLlmHasCli(result.hasCli);
-      if (result.models) {
-        setLlmModels(result.models);
-      }
-    } catch { setLlmAvailable(false); }
-    setLlmChecking(false);
-  }, []);
-
-  // Check LLM availability when component mounts or llm_postprocess setting changes
-  useEffect(() => {
-    if (settings.llm_postprocess === 'true') checkLlm();
-  }, [settings.llm_postprocess, checkLlm]);
-
-  function LlmSettingsRow({ settings, save, onSuccess, onError }: { settings: Record<string, string>; save: (k: string, v: string) => Promise<void>; onSuccess: (m: string) => void; onError: (m: string) => void }) {
-    return (
-      <>
-        {/* Model selector */}
-        <div className="setting-row">
-          <div className="setting-info">
-            <span className="setting-name">LLM Model</span>
-            <span className="setting-hint">Model GGUF kecil untuk cleanup teks. Otomatis di-download dari HuggingFace.</span>
-          </div>
-          <select value={settings.llm_model || 'qwen2.5-0.5b-q4_k_m.gguf'} onChange={(e) => save('llm_model', e.target.value)}>
-            {LLM_MODEL_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Status */}
-        <div className="setting-row">
-          <div className="setting-info">
-            <span className="setting-name">Status</span>
-            <span className="setting-hint">
-              {llmChecking ? 'Checking...' :
-               llmAvailable === null ? 'Click check to verify' :
-               llmAvailable ? `${llmModels.length} model(s) tersedia` :
-               !llmHasCli ? 'llama-cli.exe belum ada — butuh setup tambahan' :
-               'Model belum di-download'}
-            </span>
-          </div>
-          <div className="setting-action">
-            {llmChecking ? (
-              <span className="spinner-sm" />
-            ) : (
-              <button className="btn btn-sm btn-secondary" onClick={checkLlm}>
-                {llmAvailable === null ? 'Check' : 'Refresh'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Download model button */}
-        <div className="setting-row">
-          <div className="setting-info">
-            <span className="setting-name">Download Model</span>
-            <span className="setting-hint">
-              {llmDownloading ? llmDownloadStatus || 'Downloading...' :
-               'Download dari HuggingFace (sekali saja, ~350MB)'}
-            </span>
-          </div>
-          <button
-            className="btn btn-sm btn-primary"
-            disabled={llmDownloading}
-            onClick={async () => {
-              setLlmDownloading(true);
-              setLlmDownloadStatus('Starting...');
-              try {
-                const model = settings.llm_model || 'qwen2.5-0.5b-q4_k_m.gguf';
-                const result = await window.electronAPI.llmDownloadModel(model);
-                if (result.success) {
-                  onSuccess(`Model ${model} berhasil di-download!`);
-                  checkLlm();
-                } else {
-                  onError(result.error || 'Download gagal');
-                }
-              } catch (err: any) {
-                onError(err.message || 'Download gagal');
-              }
-              setLlmDownloading(false);
-              setLlmDownloadStatus('');
-            }}
-          >
-            {llmDownloading ? 'Downloading...' : 'Download Model'}
-          </button>
-        </div>
-
-        {/* Downloaded models list */}
-        {llmModels.length > 0 && (
-          <div className="setting-row">
-            <div className="setting-info">
-              <span className="setting-name">Downloaded Models</span>
-              <span className="setting-hint">{llmModels.map(m => `${m.name} (${formatBytes(m.sizeBytes)})`).join(', ')}</span>
-            </div>
-          </div>
-        )}
-      </>
-    );
-  }
-
   if (loading) {
     return (
       <div className="page">
@@ -945,11 +822,22 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Enable LLM Cleanup</span>
-                <span className="setting-hint">Use local AI to remove filler words, fix grammar &amp; punctuation. Download a small model (~350MB) to get started.</span>
+                <span className="setting-hint">Use local AI to remove filler words, fix grammar &amp; punctuation</span>
               </div>
               <div className={`toggle ${settings.llm_postprocess === 'true' ? 'on' : ''}`} onClick={() => toggle('llm_postprocess')} />
             </div>
-            {settings.llm_postprocess === 'true' && <LlmSettingsRow settings={settings} save={save} onSuccess={onSuccess} onError={onError} />}
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-name">Active Model</span>
+                <span className="setting-hint">{settings.llm_model ? settings.llm_model : 'No model selected'}</span>
+              </div>
+              <button className="btn btn-sm btn-secondary" onClick={() => {
+                const event = new CustomEvent('navigate-page', { detail: 'llm-models' });
+                window.dispatchEvent(event);
+              }}>
+                <Iconify icon="download" size={14} /> Manage Models
+              </button>
+            </div>
           </div>
         </div>
       )}
