@@ -126,6 +126,7 @@ interface ElectronAPI {
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
   onThemeChange: (callback: (theme: string) => void) => () => void;
   onReloadSettings: (callback: () => void) => () => void;
+  onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
 }
 

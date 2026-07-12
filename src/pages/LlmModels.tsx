@@ -53,9 +53,12 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadState, setDownloadState] = useState<string>('idle');
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
+  const [totalBytes, setTotalBytes] = useState(0);
   const [hasCli, setHasCli] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const notif = useNotification();
+  const downloadingRef = useRef<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -73,28 +76,93 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Subscribe to LLM download progress events
+  useEffect(() => {
+    const unsub = window.electronAPI.onLlmDownloadProgress((data) => {
+      const { progress, state, modelName, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
+
+      // Only process if this matches our current download
+      if (modelName !== downloadingRef.current && state !== 'completed' && state !== 'error') {
+        return;
+      }
+
+      setDownloadProgress(progress);
+      if (dlBytes !== undefined) setDownloadedBytes(dlBytes);
+      if (tBytes !== undefined && tBytes > 0) setTotalBytes(tBytes);
+
+      if (state === 'downloading') {
+        setDownloadState('downloading');
+      }
+
+      if (state === 'error') {
+        setDownloadState('error');
+        setDownloading(null);
+        downloadingRef.current = null;
+        notif.error(`Download gagal: ${modelName}`);
+        // Reset after error display
+        setTimeout(() => {
+          setDownloadState('idle');
+          setDownloadProgress(0);
+          setDownloadedBytes(0);
+          setTotalBytes(0);
+        }, 3000);
+      }
+
+      if (state === 'completed') {
+        const completedModel = modelName || downloadingRef.current;
+        setDownloading(null);
+        downloadingRef.current = null;
+        setDownloadState('completed');
+        setDownloadProgress(100);
+
+        if (completedModel) {
+          notif.success(`${completedModel} berhasil di-download!`);
+          loadData();
+          // Auto-select
+          window.electronAPI.updateSetting('llm_model', completedModel).then(() => {
+            window.electronAPI.updateSetting('llm_postprocess', 'true').then(() => {
+              setSettings(prev => ({ ...prev, llm_model: completedModel, llm_postprocess: 'true' }));
+              notif.success('LLM Post-Processing diaktifkan!');
+            });
+          });
+        }
+
+        // Reset state after a delay
+        setTimeout(() => {
+          setDownloadState('idle');
+          setDownloadProgress(0);
+          setDownloadedBytes(0);
+          setTotalBytes(0);
+        }, 2000);
+      }
+    });
+
+    return () => { unsub(); };
+  }, []);
+
   const handleDownload = async (modelName: string) => {
     setDownloading(modelName);
+    downloadingRef.current = modelName;
     setDownloadProgress(0);
-    setDownloadState('downloading');
+    setDownloadedBytes(0);
+    // Find model size for progress bar
+    const modelInfo = AVAILABLE_LLM_MODELS.find(m => m.name === modelName);
+    setTotalBytes(modelInfo?.sizeBytes || 0);
+    setDownloadState('starting');
     
     try {
       const result = await window.electronAPI.llmDownloadModel(modelName);
-      if (result.success) {
-        notif.success(`${modelName} berhasil di-download!`);
-        loadData();
-        // Auto-select: set as active LLM model
-        await window.electronAPI.updateSetting('llm_model', modelName);
-        await window.electronAPI.updateSetting('llm_postprocess', 'true');
-        setSettings(prev => ({ ...prev, llm_model: modelName, llm_postprocess: 'true' }));
-        notif.success('LLM Post-Processing diaktifkan!');
-      } else {
+      if (!result.success) {
         notif.error(result.error || 'Download gagal');
+        setDownloading(null);
+        downloadingRef.current = null;
+        setDownloadState('idle');
       }
+      // If success, the progress listener will handle UI updates
     } catch (err: any) {
       notif.error(err.message || 'Download gagal');
-    } finally {
       setDownloading(null);
+      downloadingRef.current = null;
       setDownloadState('idle');
       setDownloadProgress(0);
     }
@@ -136,6 +204,11 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const formatSpeed = (downloaded: number, total: number): string => {
+    if (total <= 0) return `${formatBytes(downloaded)}`;
+    return `${formatBytes(downloaded)} / ${formatBytes(total)}`;
   };
 
   const getIcon = (name: string) => {
@@ -206,7 +279,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
 
       {/* Download Progress */}
       {downloading && (
-        <div className="download-progress-card">
+        <div className={`download-progress-card ${downloadState === 'error' ? 'paused' : ''} ${downloadState === 'completed' ? 'finalizing' : ''}`}>
           <div className="download-progress-header">
             <div className="download-progress-info">
               <span className="download-model-name">
@@ -217,11 +290,19 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
           </div>
           <div className="download-progress-bar-wrap">
             <div className="download-progress-track">
-              <div className="download-progress-bar" style={{ width: `${downloadProgress}%` }} />
+              <div
+                className={`download-progress-bar ${downloadState === 'error' ? 'paused' : ''} ${downloadState === 'completed' ? 'finalizing' : ''}`}
+                style={{ width: `${Math.max(2, downloadProgress)}%` }}
+              />
             </div>
           </div>
           <div className="download-progress-stats">
-            <span>Downloading {downloading}...</span>
+            {downloadState === 'starting' && <span>Starting download...</span>}
+            {downloadState === 'downloading' && (
+              <span>Downloading: {formatSpeed(downloadedBytes, totalBytes)}</span>
+            )}
+            {downloadState === 'error' && <span style={{ color: '#f87171' }}>Download gagal</span>}
+            {downloadState === 'completed' && <span style={{ color: '#4ade80' }}>Selesai!</span>}
           </div>
         </div>
       )}

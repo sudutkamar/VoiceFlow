@@ -11,7 +11,7 @@ import { TextCleaner } from '../modules/textCleaner';
 import { PasteEngine } from '../modules/pasteEngine';
 import { HotkeyManager } from '../modules/hotkeyManager';
 import { AdaptiveLearning } from '../modules/adaptiveLearning';
-import { LlmPostProcessor } from '../modules/llmPostProcessor';
+import { LlmPostProcessor, AVAILABLE_LLM_MODELS } from '../modules/llmPostProcessor';
 
 let audioConverter: AudioConverter;
 let transcriber: Transcriber;
@@ -361,17 +361,69 @@ export function setupDictationIPC(
     }
   });
 
+  // Track active LLM download state for progress
+  let activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
+
   ipcMain.handle('llm-download-model', async (_event, modelName: string) => {
     try {
-      const result = await llmPostProcessor.downloadModel(modelName, (progress, state) => {
-        // Broadcast progress
+      const modelInfo = AVAILABLE_LLM_MODELS.find((m: any) => m.name === modelName);
+      activeLlmDownload = { modelName, downloadedBytes: 0, totalBytes: modelInfo?.sizeBytes || 0 };
+
+      const result = await llmPostProcessor.downloadModel(modelName, (progress, state, downloadedBytes, totalBytes) => {
+        // Track bytes
+        if (downloadedBytes !== undefined) activeLlmDownload.downloadedBytes = downloadedBytes;
+        if (totalBytes !== undefined) activeLlmDownload.totalBytes = totalBytes;
+
+        // Broadcast progress on dedicated channel for LLM
         const send = hotkeyManager
           ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
           : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-        send('download-progress', { progress, state, modelName, type: 'llm' });
+        
+        send('llm-download-progress', {
+          progress,
+          state,
+          modelName,
+          downloadedBytes: activeLlmDownload.downloadedBytes,
+          totalBytes: activeLlmDownload.totalBytes,
+        });
+
+        // Also broadcast on general download-progress channel (for Models page compatibility)
+        send('download-progress', {
+          progress,
+          state,
+          modelName,
+          downloadedBytes: activeLlmDownload.downloadedBytes,
+          totalBytes: activeLlmDownload.totalBytes,
+          type: 'llm',
+        });
       });
+
+      // Send final 100% completion
+      const send = hotkeyManager
+        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+      send('llm-download-progress', {
+        progress: 100,
+        state: result ? 'completed' : 'error',
+        modelName,
+        downloadedBytes: activeLlmDownload.totalBytes,
+        totalBytes: activeLlmDownload.totalBytes,
+      });
+
+      activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
       return { success: result };
     } catch (err: any) {
+      activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
+      const send = hotkeyManager
+        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+      send('llm-download-progress', {
+        progress: 0,
+        state: 'error',
+        modelName,
+        downloadedBytes: 0,
+        totalBytes: 0,
+      });
       return { success: false, error: err.message };
     }
   });

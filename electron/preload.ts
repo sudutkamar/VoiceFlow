@@ -121,6 +121,7 @@ export interface ElectronAPI {
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
   onThemeChange: (callback: (theme: string) => void) => () => void;
   onReloadSettings: (callback: () => void) => () => void;
+  onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
 }
 
@@ -307,6 +308,11 @@ const api: ElectronAPI = {
     const handler = () => callback();
     ipcRenderer.on('reload-settings', handler);
     return () => ipcRenderer.removeListener('reload-settings', handler);
+  },
+  onLlmDownloadProgress: (callback) => {
+    const handler = (_: any, data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => callback(data);
+    ipcRenderer.on('llm-download-progress', handler);
+    return () => ipcRenderer.removeListener('llm-download-progress', handler);
   },
   onMiniWindowResize: (callback) => {
     const handler = (_: any, data: { width: number; height: number }) => callback(data);
