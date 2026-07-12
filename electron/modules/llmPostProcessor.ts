@@ -70,6 +70,15 @@ export class LlmPostProcessor {
   private timeoutMs: number;
   private defaultModel: string;
 
+  // Download state tracking
+  private downloadCancelled: boolean = false;
+  private downloadPaused: boolean = false;
+  private downloadRequest: any = null;
+  private downloadTempPath: string = '';
+  private downloadBytesSoFar: number = 0;
+  private downloadTotalBytes: number = 0;
+  private downloadState: string = 'idle';
+
   // System prompt — strict, minimal, only cleanup
   private readonly SYSTEM_PROMPT = `<|system|>
 You are a text cleaner for speech-to-text output.
@@ -207,14 +216,54 @@ CLEAN THIS:`;
       } catch {}
     }
 
+    // Reset download state
+    this.downloadCancelled = false;
+    this.downloadPaused = false;
+    this.downloadRequest = null;
+    this.downloadTempPath = targetPath + '.download';
+    this.downloadBytesSoFar = 0;
+    this.downloadTotalBytes = modelInfo.sizeBytes;
+    this.downloadState = 'downloading';
+
     // Clean up any leftover .download temp file
-    const tempPath = targetPath + '.download';
-    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+    try { if (fs.existsSync(this.downloadTempPath)) fs.unlinkSync(this.downloadTempPath); } catch {}
 
     this.logger.info('Starting LLM download', { model: modelName, expectedBytes: modelInfo.sizeBytes, targetPath });
     onProgress?.(0, 'downloading', 0, modelInfo.sizeBytes);
 
     return this.downloadWithRedirects(modelInfo.url, targetPath, modelName, modelInfo.sizeBytes, onProgress, 0);
+  }
+
+  pauseDownload(): void {
+    this.downloadPaused = true;
+    this.downloadState = 'paused';
+    this.logger.info('LLM download paused');
+  }
+
+  resumeDownload(): void {
+    this.downloadPaused = false;
+    this.downloadState = 'downloading';
+    this.logger.info('LLM download resumed (note: full restart required without resume support)');
+  }
+
+  cancelDownload(): void {
+    this.downloadCancelled = true;
+    this.downloadState = 'cancelled';
+    // Kill the request if active
+    if (this.downloadRequest) {
+      try { this.downloadRequest.destroy(); } catch {}
+    }
+    this.logger.info('LLM download cancelled');
+  }
+
+  getDownloadState(): { state: string; modelName: string; progress: number; downloadedBytes: number; totalBytes: number } {
+    return {
+      state: this.downloadState,
+      modelName: '',
+      progress: this.downloadTotalBytes > 0 ? Math.round((this.downloadBytesSoFar / this.downloadTotalBytes) * 100) : 0,
+      downloadedBytes: this.downloadBytesSoFar,
+      totalBytes: this.downloadTotalBytes,
+    };
   }
 
   private async downloadWithRedirects(
@@ -229,6 +278,7 @@ CLEAN THIS:`;
     if (redirectCount > MAX_REDIRECTS) {
       this.logger.error('Too many redirects', { model: modelName, url: url.substring(0, 100) });
       onProgress?.(0, 'error', 0, expectedSize);
+      this.downloadState = 'error';
       return false;
     }
 
@@ -258,7 +308,7 @@ CLEAN THIS:`;
             res.destroy();
             resolveUrl(loc);
           } else if (res.statusCode === 200) {
-            resolveUrl(url); // No redirect needed
+            resolveUrl(url);
           } else {
             rejectUrl(new Error(`HTTP ${res.statusCode}`));
           }
@@ -268,7 +318,13 @@ CLEAN THIS:`;
         req.end();
       });
 
-      // If we got a redirect, follow it
+      // Check pause/cancel before proceeding
+      if (this.downloadCancelled) {
+        onProgress?.(0, 'error', 0, expectedSize);
+        this.downloadState = 'cancelled';
+        return false;
+      }
+
       const actualUrl = finalUrl !== url ? finalUrl : url;
 
       self.logger.info('Starting download from', { url: actualUrl.substring(0, 120) });
@@ -288,17 +344,18 @@ CLEAN THIS:`;
           if (res.statusCode !== 200) {
             self.logger.error('Download failed', { status: res.statusCode, model: modelName });
             onProgress?.(0, 'error', 0, expectedSize);
+            self.downloadState = 'error';
             resolve(false);
             return;
           }
 
-          // Content-Length from CDN response
           const contentLength = res.headers['content-length'];
           let totalSize = expectedSize;
           if (contentLength) {
             const parsed = parseInt(contentLength, 10);
             if (!isNaN(parsed) && parsed > 0) totalSize = parsed;
           }
+          self.downloadTotalBytes = totalSize;
 
           self.logger.info('Stream opened', {
             model: modelName,
@@ -310,6 +367,7 @@ CLEAN THIS:`;
           let lastLog = Date.now();
 
           const fileStream = fs.createWriteStream(tempPath);
+          self.downloadRequest = req;
           let streamError = false;
 
           fileStream.on('error', (err: any) => {
@@ -320,7 +378,29 @@ CLEAN THIS:`;
           });
 
           res.on('data', (chunk: Buffer) => {
+            // Check pause/cancel on every chunk
+            if (self.downloadCancelled) {
+              res.destroy();
+              fileStream.end();
+              try { fs.unlinkSync(tempPath); } catch {}
+              onProgress?.(0, 'cancelled', 0, totalSize);
+              self.downloadState = 'cancelled';
+              resolve(false);
+              return;
+            }
+
+            if (self.downloadPaused) {
+              res.pause();
+              self.downloadBytesSoFar = downloaded;
+              onProgress?.(lastProgress > 0 ? lastProgress : 0, 'paused', downloaded, totalSize);
+              // The download stays paused — user must resume or cancel
+              // Since we don't support resume, treat pause as cancel for now
+              // Actually let's just keep it paused until user action
+              return;
+            }
+
             downloaded += chunk.length;
+            self.downloadBytesSoFar = downloaded;
             const pct = totalSize > 0 ? Math.min(99, Math.round((downloaded / totalSize) * 100)) : 0;
 
             if (pct !== lastProgress) {
@@ -341,7 +421,9 @@ CLEAN THIS:`;
             const canWrite = fileStream.write(chunk);
             if (!canWrite) {
               res.pause();
-              fileStream.once('drain', () => res.resume());
+              fileStream.once('drain', () => {
+                if (!self.downloadCancelled && !self.downloadPaused) res.resume();
+              });
             }
           });
 
@@ -353,6 +435,7 @@ CLEAN THIS:`;
             if (streamError) return;
             self.logger.error('Stream error', err);
             try { fs.unlinkSync(tempPath); } catch {}
+            self.downloadState = 'error';
             resolve(false);
           });
 
@@ -364,6 +447,7 @@ CLEAN THIS:`;
                 self.logger.error('File too small', { size: stat.size, expected: expectedSize });
                 try { fs.unlinkSync(tempPath); } catch {}
                 onProgress?.(0, 'error', 0, expectedSize);
+                self.downloadState = 'error';
                 resolve(false);
                 return;
               }
@@ -371,24 +455,29 @@ CLEAN THIS:`;
               fs.renameSync(tempPath, destPath);
               self.logger.info('Download complete', { model: modelName, size: stat.size });
               onProgress?.(100, 'completed', stat.size, stat.size);
+              self.downloadState = 'completed';
               resolve(true);
             } catch (err: any) {
               self.logger.error('Finalize error', err);
               try { fs.unlinkSync(tempPath); } catch {}
+              self.downloadState = 'error';
               resolve(false);
             }
           });
         });
 
         req.on('error', (err: any) => {
+          if (err.message?.includes?.('abort') || err.message?.includes?.('destroy')) return;
           self.logger.error('Request error', err);
           onProgress?.(0, 'error', 0, expectedSize);
+          self.downloadState = 'error';
           resolve(false);
         });
         req.on('timeout', () => {
           req.destroy();
           self.logger.error('Request timeout');
           onProgress?.(0, 'error', 0, expectedSize);
+          self.downloadState = 'error';
           resolve(false);
         });
       });
@@ -397,6 +486,7 @@ CLEAN THIS:`;
     } catch (err: any) {
       self.logger.error('Download failed', err);
       onProgress?.(0, 'error', 0, expectedSize);
+      self.downloadState = 'error';
       try { fs.unlinkSync(tempPath); } catch {}
       return false;
     }

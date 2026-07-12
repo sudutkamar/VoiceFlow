@@ -75,6 +75,10 @@ interface ElectronAPI {
   llmGetModels: () => Promise<{ success: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  llmPauseDownload: () => Promise<{ success: boolean }>;
+  llmResumeDownload: () => Promise<{ success: boolean }>;
+  llmCancelDownload: () => Promise<{ success: boolean }>;
+  llmGetDownloadState: () => Promise<{ state: string; modelName: string; progress: number; downloadedBytes: number; totalBytes: number }>;
   llmTestProcess: (text: string, modelName?: string) => Promise<{ success: boolean; text?: string; processingMs?: number; model?: string; error?: string }>;
   llmGetModelsPath: () => Promise<string>;
   llmChooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;

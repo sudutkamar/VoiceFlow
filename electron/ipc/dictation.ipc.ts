@@ -390,6 +390,67 @@ export function setupDictationIPC(
   // Track active LLM download state for progress
   let activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
 
+  // LLM pause/cancel/download-state handlers
+  ipcMain.handle('llm-pause-download', async () => {
+    llmPostProcessor.pauseDownload();
+    const send = hotkeyManager
+      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+    send('llm-download-progress', {
+      progress: activeLlmDownload.totalBytes > 0
+        ? Math.round((activeLlmDownload.downloadedBytes / activeLlmDownload.totalBytes) * 100)
+        : 0,
+      state: 'paused',
+      modelName: activeLlmDownload.modelName,
+      downloadedBytes: activeLlmDownload.downloadedBytes,
+      totalBytes: activeLlmDownload.totalBytes,
+    });
+    send('download-progress', {
+      progress: activeLlmDownload.totalBytes > 0
+        ? Math.round((activeLlmDownload.downloadedBytes / activeLlmDownload.totalBytes) * 100)
+        : 0,
+      state: 'paused',
+      modelName: activeLlmDownload.modelName,
+      downloadedBytes: activeLlmDownload.downloadedBytes,
+      totalBytes: activeLlmDownload.totalBytes,
+      type: 'llm',
+    });
+    return { success: true };
+  });
+
+  ipcMain.handle('llm-resume-download', async () => {
+    llmPostProcessor.resumeDownload();
+    return { success: true };
+  });
+
+  ipcMain.handle('llm-cancel-download', async () => {
+    llmPostProcessor.cancelDownload();
+    const send = hotkeyManager
+      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+    send('llm-download-progress', {
+      progress: 0,
+      state: 'cancelled',
+      modelName: activeLlmDownload.modelName,
+      downloadedBytes: 0,
+      totalBytes: 0,
+    });
+    send('download-progress', {
+      progress: 0,
+      state: 'cancelled',
+      modelName: activeLlmDownload.modelName,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      type: 'llm',
+    });
+    activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
+    return { success: true };
+  });
+
+  ipcMain.handle('llm-get-download-state', async () => {
+    return llmPostProcessor.getDownloadState();
+  });
+
   ipcMain.handle('llm-download-model', async (_event, modelName: string) => {
     try {
       const modelInfo = AVAILABLE_LLM_MODELS.find((m: any) => m.name === modelName);

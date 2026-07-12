@@ -50,7 +50,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [downloadedModels, setDownloadedModels] = useState<Array<{ name: string; sizeBytes: number }>>([]);
-  const [modelsPath, setModelsPath] = useState<string>('Memuat...');
+  const [modelsPath, setModelsPath] = useState<string>('');
   const [scanning, setScanning] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -61,57 +61,87 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const notif = useNotification();
   const downloadingRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const loadData = useCallback(async () => {
+  // ─── Load all data (called on mount & after changes) ───
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const result = await window.electronAPI.llmCheckAvailability();
+      const [result, s, p, dstate] = await Promise.all([
+        window.electronAPI.llmCheckAvailability(),
+        window.electronAPI.getSettings(),
+        window.electronAPI.llmGetModelsPath(),
+        window.electronAPI.llmGetDownloadState(),
+      ]);
       setHasCli(result.hasCli);
-      if (result.models) {
-        setDownloadedModels(result.models);
-      }
-      const s = await window.electronAPI.getSettings();
+      if (result.models) setDownloadedModels(result.models);
       setSettings(s);
-      const p = await window.electronAPI.llmGetModelsPath();
-      console.log('[LlmModels] path loaded:', p);
-      setModelsPath(p || '(path kosong)');
+      setModelsPath(p || '(belum tersedia)');
+
+      // Restore download state if there's an active download
+      if (dstate && (dstate.state === 'downloading' || dstate.state === 'paused')) {
+        setDownloading(dstate.modelName || '');
+        downloadingRef.current = dstate.modelName || '';
+        setDownloadProgress(dstate.progress || 0);
+        setDownloadedBytes(dstate.downloadedBytes || 0);
+        setTotalBytes(dstate.totalBytes || 0);
+        setDownloadState(dstate.state);
+      }
     } catch (err: any) {
-      console.error('[LlmModels] gagal load path:', err?.message || err);
-      setModelsPath('Gagal memuat path: ' + (err?.message || 'unknown error'));
+      console.error('[LlmModels] loadData error:', err?.message || err);
+      if (!silent) setModelsPath('Gagal memuat');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
-  // Subscribe to LLM download progress events
+  // ─── Subscribe to progress from BOTH channels ───
+  // llm-download-progress (LLM-specific) + download-progress (general, survives tab switch)
   useEffect(() => {
-    const unsub = window.electronAPI.onLlmDownloadProgress((data) => {
-      const { progress, state, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
+    const handler = (data: any) => {
+      if (!mountedRef.current) return;
+      const { progress, state, downloadedBytes: dlBytes, totalBytes: tBytes, modelName } = data;
 
+      // Update progress regardless of tab switch
       setDownloadProgress(progress);
       if (dlBytes !== undefined) setDownloadedBytes(dlBytes);
       if (tBytes !== undefined && tBytes > 0) setTotalBytes(tBytes);
 
       if (state === 'downloading') {
         setDownloadState('downloading');
+        if (modelName) {
+          setDownloading(modelName);
+          downloadingRef.current = modelName;
+        }
       }
 
-      if (state === 'error') {
-        setDownloadState('error');
+      if (state === 'paused') {
+        setDownloadState('paused');
+      }
+
+      if (state === 'error' || state === 'cancelled') {
+        const wasDownloading = downloadingRef.current;
+        setDownloadState(state === 'cancelled' ? 'idle' : 'error');
         setDownloading(null);
         downloadingRef.current = null;
-        notif.error(`Download gagal`);
+        if (state === 'error') {
+          notif.error(`Download gagal`);
+        }
         setTimeout(() => {
-          setDownloadState('idle');
-          setDownloadProgress(0);
-          setDownloadedBytes(0);
-          setTotalBytes(0);
+          if (mountedRef.current) {
+            setDownloadState('idle');
+            setDownloadProgress(0);
+            setDownloadedBytes(0);
+            setTotalBytes(0);
+          }
         }, 3000);
       }
 
       if (state === 'completed') {
-        const completedModel = downloadingRef.current;
+        const completedModel = modelName || downloadingRef.current;
         setDownloading(null);
         downloadingRef.current = null;
         setDownloadState('completed');
@@ -119,7 +149,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
 
         if (completedModel) {
           notif.success(`${completedModel} berhasil di-download!`);
-          loadData();
+          loadData(true);
           window.electronAPI.updateSetting('llm_model', completedModel).then(() => {
             window.electronAPI.updateSetting('llm_postprocess', 'true').then(() => {
               setSettings(prev => ({ ...prev, llm_model: completedModel, llm_postprocess: 'true' }));
@@ -129,17 +159,27 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         }
 
         setTimeout(() => {
-          setDownloadState('idle');
-          setDownloadProgress(0);
-          setDownloadedBytes(0);
-          setTotalBytes(0);
-        }, 2000);
+          if (mountedRef.current) {
+            setDownloadState('idle');
+            setDownloadProgress(0);
+            setDownloadedBytes(0);
+            setTotalBytes(0);
+          }
+        }, 3000);
       }
+    };
+
+    // Subscribe to BOTH channels for redundancy
+    const unsub1 = window.electronAPI.onLlmDownloadProgress(handler);
+    const unsub2 = window.electronAPI.onDownloadProgress((data: any) => {
+      // Only handle LLM-type events from the general channel
+      if (data.type === 'llm') handler(data);
     });
 
-    return () => { unsub(); };
+    return () => { unsub1(); unsub2(); };
   }, []);
 
+  // ─── Download ───
   const handleDownload = async (modelName: string) => {
     setDownloading(modelName);
     downloadingRef.current = modelName;
@@ -148,6 +188,43 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     const modelInfo = AVAILABLE_LLM_MODELS.find(m => m.name === modelName);
     setTotalBytes(modelInfo?.sizeBytes || 0);
     setDownloadState('starting');
+
+    try {
+      const result = await window.electronAPI.llmDownloadModel(modelName);
+      if (!result.success) {
+        if (downloadingRef.current === modelName) {
+          notif.error(result.error || 'Download gagal');
+          setDownloading(null);
+          downloadingRef.current = null;
+          setDownloadState('idle');
+        }
+      }
+    } catch (err: any) {
+      if (downloadingRef.current === modelName) {
+        notif.error(err.message || 'Download gagal');
+        setDownloading(null);
+        downloadingRef.current = null;
+        setDownloadState('idle');
+        setDownloadProgress(0);
+      }
+    }
+  };
+
+  // ─── Pause / Resume / Cancel ───
+  const handlePause = async () => {
+    await window.electronAPI.llmPauseDownload();
+    setDownloadState('paused');
+  };
+
+  const handleResume = async () => {
+    // Without resume support, we restart the download
+    const modelName = downloadingRef.current;
+    if (!modelName) return;
+    setDownloadState('starting');
+    setDownloadProgress(0);
+    setDownloadedBytes(0);
+    const modelInfo = AVAILABLE_LLM_MODELS.find(m => m.name === modelName);
+    setTotalBytes(modelInfo?.sizeBytes || 0);
 
     try {
       const result = await window.electronAPI.llmDownloadModel(modelName);
@@ -162,10 +239,24 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
       setDownloading(null);
       downloadingRef.current = null;
       setDownloadState('idle');
-      setDownloadProgress(0);
     }
   };
 
+  const handleCancel = async () => {
+    const modelName = downloadingRef.current;
+    await window.electronAPI.llmCancelDownload();
+    setDownloading(null);
+    downloadingRef.current = null;
+    setDownloadState('idle');
+    setDownloadProgress(0);
+    setDownloadedBytes(0);
+    setTotalBytes(0);
+    if (modelName) {
+      notif.info(`Download ${modelName} dibatalkan`);
+    }
+  };
+
+  // ─── Delete ───
   const handleDelete = async (modelName: string) => {
     try {
       const result = await window.electronAPI.llmDeleteModel(modelName);
@@ -179,7 +270,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         } else {
           notif.success(`${modelName} dihapus`);
         }
-        loadData();
+        loadData(true);
       } else {
         notif.error(result.error || 'Gagal menghapus');
       }
@@ -189,6 +280,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     setConfirmDelete(null);
   };
 
+  // ─── Select model ───
   const handleSelect = async (modelName: string) => {
     await window.electronAPI.updateSetting('llm_model', modelName);
     await window.electronAPI.updateSetting('llm_postprocess', 'true');
@@ -196,6 +288,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     notif.success(`LLM Model: ${modelName}`);
   };
 
+  // ─── Folder operations ───
   const handleChooseFolder = async () => {
     try {
       const result = await window.electronAPI.llmChooseModelsFolder();
@@ -214,14 +307,11 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
       const result = await window.electronAPI.llmScanModelsFolder();
       if (result.success && result.models) {
         setDownloadedModels(result.models);
-        const modelNames = result.models.map(m => m.name).join(', ');
         if (result.models.length > 0) {
-          notif.info(`Folder OK — ${result.models.length} model tersedia: ${modelNames}`);
+          notif.info(`Folder OK — ${result.models.length} model tersedia`);
         } else {
-          notif.warning('Tidak ada model LLM (*.gguf) ditemukan di folder ini');
+          notif.warning('Tidak ada model LLM (*.gguf) ditemukan');
         }
-      } else {
-        notif.error('Gagal scan folder');
       }
     } catch {
       notif.error('Gagal scan folder');
@@ -230,24 +320,13 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     }
   };
 
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
+  // ─── Helpers ───
+  const formatBytes = (b: number): string => {
+    if (b === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
-
-  const formatSpeed = (downloaded: number, total: number): string => {
-    if (total <= 0) return `${formatBytes(downloaded)}`;
-    return `${formatBytes(downloaded)} / ${formatBytes(total)}`;
-  };
-
-  const getIcon = (name: string) => {
-    if (name.includes('qwen2.5-0.5b')) return 'Q';
-    if (name.includes('tinyllama')) return 'T';
-    if (name.includes('phi-2')) return 'P';
-    return '?';
+    const i = Math.floor(Math.log(b) / Math.log(k));
+    return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const getLabel = (name: string) => {
@@ -256,6 +335,13 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     if (name.includes('tinyllama-1.1b-chat-q4')) return 'TinyLlama 1.1B Q4';
     if (name.includes('phi-2-q4')) return 'Phi-2 2.7B Q4';
     return name.replace('.gguf', '');
+  };
+
+  const getIcon = (name: string) => {
+    if (name.includes('qwen')) return 'Q';
+    if (name.includes('tinyllama')) return 'T';
+    if (name.includes('phi-2')) return 'P';
+    return '?';
   };
 
   if (loading) {
@@ -275,7 +361,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     <div className="page">
       <div className="page-header">
         <h1>LLM Models</h1>
-        <p className="page-subtitle">AI models for post-processing transcription (cleanup filler words, grammar, punctuation)</p>
+        <p className="page-subtitle">AI models untuk post-processing transkripsi (bersihkan filler, grammar, punctuation)</p>
       </div>
 
       {/* Status Card */}
@@ -289,7 +375,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
               {hasCli ? '✅ llama-cli ready' : '⚠️ llama-cli.exe not found'}
             </span>
             <span className="active-model-file">
-              {hasCli 
+              {hasCli
                 ? `${downloadedModels.length} model(s) tersedia${llmEnabled ? ' · LLM aktif' : ' · LLM nonaktif'}`
                 : 'Download llama-cli.zip dari GitHub release llama.cpp, extract ke resources/llm/'}
             </span>
@@ -297,19 +383,19 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
           <div className="active-model-speed" style={{ gap: '8px' }}>
             {!hasCli ? (
               <span style={{ color: '#f87171', fontSize: '13px', maxWidth: '200px', textAlign: 'right' }}>
-                Klik Settings &gt; LLM &gt; Download Binary
+                Settings &gt; LLM &gt; Download Binary
               </span>
-            ) : activeModel && (
+            ) : activeModel ? (
               <>
                 <Iconify icon="spark" size={14} />
                 <span>{getLabel(activeModel)}</span>
               </>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
 
-      {/* LLM Models Save Location */}
+      {/* Folder Path */}
       <div className="info-card">
         <div className="info-card-row">
           <div>
@@ -320,11 +406,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
             <button className="btn btn-secondary btn-sm" onClick={handleChooseFolder}>
               <Iconify icon="folder" size={14} /> Pilih Folder
             </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={handleScanFolder}
-              disabled={scanning}
-            >
+            <button className="btn btn-secondary btn-sm" onClick={handleScanFolder} disabled={scanning}>
               {scanning ? (
                 <><span className="btn-spinner" /> Scanning...</>
               ) : (
@@ -337,19 +419,49 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
 
       {/* Download Progress */}
       {downloading && (
-        <div className={`download-progress-card ${downloadState === 'error' ? 'paused' : ''} ${downloadState === 'completed' ? 'finalizing' : ''}`}>
+        <div className={`download-progress-card ${downloadState === 'paused' ? 'paused' : ''} ${downloadState === 'completed' ? 'finalizing' : ''} ${downloadState === 'error' ? 'paused' : ''}`}>
           <div className="download-progress-header">
             <div className="download-progress-info">
               <span className="download-model-name">
-                <Iconify icon="download" size={16} /> {getLabel(downloading)}
+                {downloadState === 'paused' ? (
+                  <Iconify icon="pause" size={14} />
+                ) : downloadState === 'completed' ? (
+                  <Iconify icon="check" size={14} />
+                ) : downloadState === 'error' ? (
+                  <Iconify icon="error" size={14} />
+                ) : (
+                  <Iconify icon="download" size={14} />
+                )}
+                {' '}{getLabel(downloading)}
               </span>
               <span className="download-progress-percent">{Math.round(downloadProgress)}%</span>
+            </div>
+            <div className="download-progress-actions">
+              {downloadState === 'downloading' || downloadState === 'starting' ? (
+                <>
+                  <button className="btn btn-sm btn-icon" onClick={handlePause} title="Pause">
+                    <Iconify icon="pause" size={14} />
+                  </button>
+                  <button className="btn btn-sm btn-danger btn-icon" onClick={handleCancel} title="Cancel">
+                    <Iconify icon="cancel" size={14} />
+                  </button>
+                </>
+              ) : downloadState === 'paused' ? (
+                <>
+                  <button className="btn btn-sm btn-primary" onClick={handleResume} title="Resume">
+                    <Iconify icon="play" size={14} />
+                  </button>
+                  <button className="btn btn-sm btn-danger btn-icon" onClick={handleCancel} title="Cancel">
+                    <Iconify icon="cancel" size={14} />
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="download-progress-bar-wrap">
             <div className="download-progress-track">
               <div
-                className={`download-progress-bar ${downloadState === 'error' ? 'paused' : ''} ${downloadState === 'completed' ? 'finalizing' : ''}`}
+                className={`download-progress-bar ${downloadState === 'paused' ? 'paused' : ''} ${downloadState === 'completed' ? 'finalizing' : ''}`}
                 style={{ width: `${Math.max(2, downloadProgress)}%` }}
               />
             </div>
@@ -357,8 +469,9 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
           <div className="download-progress-stats">
             {downloadState === 'starting' && <span>Starting download...</span>}
             {downloadState === 'downloading' && (
-              <span>Downloading: {formatSpeed(downloadedBytes, totalBytes)}</span>
+              <span>Downloading: {formatBytes(downloadedBytes)} / {formatBytes(totalBytes)}</span>
             )}
+            {downloadState === 'paused' && <span style={{ color: '#fbbf24' }}>Download dijeda</span>}
             {downloadState === 'error' && <span style={{ color: '#f87171' }}>Download gagal</span>}
             {downloadState === 'completed' && <span style={{ color: '#4ade80' }}>Selesai!</span>}
           </div>
@@ -402,11 +515,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
                         <Iconify icon="check" size={14} /> Use
                       </button>
                     )}
-                    <button
-                      className="btn btn-danger btn-icon"
-                      onClick={() => setConfirmDelete(model.name)}
-                      title="Hapus model"
-                    >
+                    <button className="btn btn-danger btn-icon" onClick={() => setConfirmDelete(model.name)} title="Hapus model">
                       <Iconify icon="delete" />
                     </button>
                   </div>
@@ -416,11 +525,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
                     <span>{Math.round(downloadProgress)}%</span>
                   </div>
                 ) : (
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => handleDownload(model.name)}
-                    disabled={!!downloading}
-                  >
+                  <button className="btn btn-primary" onClick={() => handleDownload(model.name)} disabled={!!downloading}>
                     <Iconify icon="download" size={14} /> Download
                   </button>
                 )}
