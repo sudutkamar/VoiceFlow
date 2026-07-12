@@ -1,4 +1,5 @@
 import { Logger } from './logger';
+import { levenshteinDistanceOptimized } from '../utils/levenshtein';
 
 export interface FuzzyMatchResult {
   original: string;
@@ -319,7 +320,7 @@ export class FuzzyMatcher {
       if (!candidates) continue;
 
       for (const candidate of candidates) {
-        const distance = this.levenshteinDistanceOptimized(word, candidate, bestDistance);
+        const distance = levenshteinDistanceOptimized(word, candidate, bestDistance);
 
         if (distance < bestDistance && distance <= this.maxDistance) {
           bestDistance = distance;
@@ -329,52 +330,6 @@ export class FuzzyMatcher {
     }
 
     return bestMatch;
-  }
-
-  /**
-   * Optimized Levenshtein distance with:
-   * 1. Single-array (space efficient)
-   * 2. Early termination (stop if exceeds threshold)
-   * 3. Bounds check (if length difference > threshold, skip)
-   */
-  private levenshteinDistanceOptimized(a: string, b: string, threshold: number): number {
-    const m = a.length;
-    const n = b.length;
-
-    // Quick reject: length difference exceeds threshold
-    if (Math.abs(m - n) > threshold) return threshold + 1;
-
-    if (m === 0) return n;
-    if (n === 0) return m;
-    if (m === 1 && n === 1) return a[0] === b[0] ? 0 : 1;
-
-    // Single array for space efficiency
-    let prev = new Array(n + 1);
-    let curr = new Array(n + 1);
-
-    for (let j = 0; j <= n; j++) prev[j] = j;
-
-    for (let i = 1; i <= m; i++) {
-      curr[0] = i;
-      let rowMin = curr[0];
-
-      for (let j = 1; j <= n; j++) {
-        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-        curr[j] = Math.min(
-          prev[j] + 1,
-          curr[j - 1] + 1,
-          prev[j - 1] + cost
-        );
-        if (curr[j] < rowMin) rowMin = curr[j];
-      }
-
-      // Early termination: if entire row exceeds threshold, no need to continue
-      if (rowMin > threshold) return threshold + 1;
-
-      [prev, curr] = [curr, prev];
-    }
-
-    return prev[n];
   }
 
   // ═══════════════════════════════════════════════════════════════

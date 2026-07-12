@@ -1,0 +1,11 @@
+{
+  "enableSkillCommands": true,
+  "skills": [
+    "~/.pi/agent/skills/voiceflow-changelog",
+    "~/.pi/agent/skills/voiceflow-electron",
+    "~/.pi/agent/skills/voiceflow-audio"
+  ],
+  "extensions": [
+    ".pi/extensions/voiceflow-autoload.ts"
+  ]
+}

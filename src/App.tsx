@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import './styles/app.css';
-import { WavRecorder } from './utils/wavRecorder';
+import { useRecorder } from './hooks/useRecorder';
 import { NotificationProvider, useNotification } from './components/Notification';
 import { Iconify, getModelIcon, getModelSizeColor, type IconName } from './utils/icons';
 import { playSound } from './utils/audio';
@@ -30,50 +30,6 @@ function getConfidenceColor(confidence: number): string {
   return '#f87171';
 }
 
-// Sound feedback — imported from shared utils/audio.ts
-
-function useVad(analyserRef: React.MutableRefObject<AnalyserNode | null>, active: boolean, timeoutMs: number) {
-  const [silenceDetected, setSilence] = useState(false);
-  const silenceStart = useRef(0);
-  const animRef = useRef(0);
-  const hasDetectedAudio = useRef(false);
-
-  useEffect(() => {
-    if (!active) { setSilence(false); hasDetectedAudio.current = false; silenceStart.current = 0; return; }
-    const checkAndLoop = () => {
-      const analyser = analyserRef.current;
-      if (!analyser) { animRef.current = requestAnimationFrame(checkAndLoop); return; }
-      const loop = () => {
-        if (!analyserRef.current) { setSilence(false); return; }
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
-
-        // Mark audio as detected when there's meaningful input
-        // Threshold 15 (out of 255) — higher than ambient noise, triggers only on actual speech.
-        if (rms >= 15) hasDetectedAudio.current = true;
-
-        // Only trigger silence if audio was ever detected (avoids premature auto-stop
-        // when no mic is connected or mic is not working)
-        if (rms < 15) {
-          if (!hasDetectedAudio.current) return;
-          if (!silenceStart.current) silenceStart.current = Date.now();
-          else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
-        } else {
-          silenceStart.current = 0;
-          setSilence(false);
-        }
-        animRef.current = requestAnimationFrame(loop);
-      };
-      animRef.current = requestAnimationFrame(loop);
-    };
-    animRef.current = requestAnimationFrame(checkAndLoop);
-    return () => { cancelAnimationFrame(animRef.current); silenceStart.current = 0; hasDetectedAudio.current = false; setSilence(false); };
-  }, [active, timeoutMs]);
-
-  return silenceDetected;
-}
-
 export default function App() {
   return (
     <NotificationProvider>
@@ -100,17 +56,9 @@ function AppContent() {
 
 // ============ MINI BAR ============
 function MiniBar() {
-  const [state, setState] = useState<State>('idle');
-  const [text, setText] = useState('');
-  const [partial, setPartial] = useState('');
-  const [error, setError] = useState('');
-  const [levels, setLevels] = useState<number[]>(Array(15).fill(0));
-  const [time, setTime] = useState(0);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [targetApp, setTargetApp] = useState('');
-  const [micLevel, setMicLevel] = useState(0);
   const [langOpen, setLangOpen] = useState(false);
-  const [clipPeak, setClipPeak] = useState(0);
   const [barHover, setBarHover] = useState(false);
   const [hasModel, setHasModel] = useState<boolean | null>(null);
   const [gpuStatus, setGpuStatus] = useState<string | null>(null);
@@ -118,16 +66,29 @@ function MiniBar() {
   const [windowWidth, setWindowWidth] = useState(460);
   const langRef = useRef<HTMLDivElement>(null);
 
-  const wavRecorderRef = useRef<WavRecorder | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
+  const recorder = useRecorder(settings, {
+    onTranscript: (d) => {
+      setText(d.cleaned || d.raw);
+      setState('done');
+      setTimeout(() => { if (stateRef.current === 'done') setState('idle'); }, 4000);
+    },
+    onError: (e) => {
+      if (e === '__NO_SPEECH__') { setState('idle'); return; }
+      setError(e); setState('idle'); setTimeout(() => setError(''), 3000);
+    },
+  });
+
+  const {
+    state, setState, text, setText, partial, setPartial, error, setError,
+    time, micLevel, setMicLevel, clipPeak, setClipPeak,
+    analyserRef, animRef, wavRecorderRef, startRef, stateRef, timerRef, processingTimeoutRef,
+    startRec, stopRec, cancelRec, toggle,
+  } = recorder;
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const smoothLevels = useRef<number[]>(Array(24).fill(0));
-  const animRef = useRef<number>(0);
-  const timerRef = useRef<any>(null);
-  const processingTimeoutRef = useRef<any>(null);
+  const prevStateRef = useRef<State>('idle');
   const resizeTimerRef = useRef<any>(null);
-  const startRef = useRef(0);
-  const stateRef = useRef<State>(state);
   const debounceRef = useRef<any>(null);
   const skipResizeRef = useRef(false);
 
@@ -137,8 +98,6 @@ function MiniBar() {
 
   // Calculate zoom based on window height (base bar height = 52px, width is auto)
   const miniZoom = windowHeight / BASE_HEIGHT;
-
-  useEffect(() => { stateRef.current = state; }, [state]);
 
   // Listen for window resize to update zoom scale
   useEffect(() => {
@@ -174,60 +133,32 @@ function MiniBar() {
   }, []);
 
   const vadEnabled = settings.vad_enabled !== 'false';
-  const vadSilenceMs = parseInt(settings.vad_silence_ms || '3000', 10);
-  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
-  const MIN_RECORDING_MS = 2000; // Minimum recording duration before VAD can auto-stop
 
+  // Sound effects for recording state transitions
   useEffect(() => {
-    if (silenceDetected && stateRef.current === 'recording' && (Date.now() - startRef.current) >= MIN_RECORDING_MS) stopRec();
-  }, [silenceDetected]);
+    const prev = prevStateRef.current;
+    prevStateRef.current = state;
+    if (state === 'recording' && prev !== 'recording') playSound('start');
+    else if (state === 'processing' && prev === 'recording') playSound('stop');
+  }, [state]);
 
   useEffect(() => {
     loadSettings();
     window.electronAPI.miniWindowReady?.();
     const unsubs = [
-      window.electronAPI.onStartRecording(() => {
-        if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
-        startRec();
-      }),
-      window.electronAPI.onStopRecording(() => { if (wavRecorderRef.current) stopRec(); }),
-      window.electronAPI.onTranscriptReady((d) => {
-        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-        setText(d.cleaned || d.raw);
-        setState('done');
-        setTimeout(() => { if (stateRef.current === 'done') setState('idle'); }, 4000);
-      }),
-      window.electronAPI.onPartialTranscript((p) => setPartial(p)),
-      window.electronAPI.onError((e) => { 
-        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-        // No-speech: silently return to idle, no message, no error, no sound
-        if (e === '__NO_SPEECH__') {
-          setState('idle');
-          return;
-        }
-        // Other errors: show briefly then clear (no sound to avoid annoyance)
-        setError(e); setState('idle'); setTimeout(() => setError(''), 3000); 
-      }),
       window.electronAPI.onTargetAppChanged((appName) => setTargetApp(appName)),
       window.electronAPI.onHotkeyRegistered?.((hotkey) => setSettings(prev => ({ ...prev, hotkey }))),
       window.electronAPI.onThemeChange?.((theme) => {
-        if (theme === 'light') {
-          document.documentElement.classList.add('light-theme');
-        } else {
-          document.documentElement.classList.remove('light-theme');
-        }
+        if (theme === 'light') document.documentElement.classList.add('light-theme');
+        else document.documentElement.classList.remove('light-theme');
       }),
-      window.electronAPI.onReloadSettings?.(() => {
-        loadSettings();
-      }),
+      window.electronAPI.onReloadSettings?.(() => { loadSettings(); }),
     ];
     window.electronAPI.getTargetApp().then(setTargetApp).catch(() => {});
 
     // Close lang dropdown on outside click
     const handleOutsideClick = (e: MouseEvent) => {
-      if (langRef.current && !langRef.current.contains(e.target as Node)) {
-        setLangOpen(false);
-      }
+      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
     };
     document.addEventListener('mousedown', handleOutsideClick);
 
@@ -245,9 +176,6 @@ function MiniBar() {
 
     return () => {
       unsubs.forEach((u) => u());
-      cancelAnimationFrame(animRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       document.removeEventListener('mousedown', handleOutsideClick);
       window.removeEventListener('blur', handleBlur);
@@ -298,215 +226,98 @@ function MiniBar() {
     }
   }, [miniZoom]);
 
-  // No window resize on hover — CSS handles all visual transitions smoothly.
-  // This prevents the glitch/flicker caused by Electron window bounds changing on hover.
-
-  const startRec = useCallback(async () => {
-    if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
-    try {
-      const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
-      wavRecorderRef.current = recorder;
-      await recorder.start(settings.selected_mic || undefined, {
-        enabled: true,
-        silenceThreshold: 0.01,
-        silenceDurationMs: 3000,
-      });
-      recorder.onSilence(() => {
-        if (stateRef.current === 'recording') {
-          stopRec();
-        }
-      });
-      const analyser = recorder.getAnalyserNode();
-      if (analyser) analyserRef.current = analyser;
-      startRef.current = Date.now();
-      setState('recording');
-      setPartial(''); setTime(0); setClipPeak(0); setMicLevel(0);
-      playSound('start');
-      timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 200);
-      const POINTS = 24;
-      const drawCanvas = () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
-          canvas.width = rect.width * dpr;
-          canvas.height = rect.height * dpr;
-          ctx.scale(dpr, dpr);
-        }
-        const w = rect.width, h = rect.height;
-        ctx.clearRect(0, 0, w, h);
-        const src = smoothLevels.current;
-        const mid = h / 2;
-        const step = w / (POINTS - 1);
-        // Main wave
-        ctx.beginPath();
-        ctx.moveTo(0, mid - (src[0] / 100) * (mid - 1));
-        for (let i = 1; i < POINTS; i++) {
-          const x0 = (i - 1) * step, x1 = i * step;
-          const y0 = mid - (src[i - 1] / 100) * (mid - 1);
-          const y1 = mid - (src[i] / 100) * (mid - 1);
-          ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
-        }
-        const avg = src.reduce((a, b) => a + b, 0) / POINTS;
-        const glow = Math.min(1, avg / 40);
-        
-        // Main wave — bright blue with strong glow
-        ctx.beginPath();
-        ctx.moveTo(0, mid - (src[0] / 100) * (mid - 2));
-        for (let i = 1; i < POINTS; i++) {
-          const x0 = (i - 1) * step, x1 = i * step;
-          const y0 = mid - (src[i - 1] / 100) * (mid - 2);
-          const y1 = mid - (src[i] / 100) * (mid - 2);
-          ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
-        }
-        ctx.strokeStyle = `rgba(99, 182, 255, ${0.85 + glow * 0.15})`;
-        ctx.lineWidth = 2.5;
-        ctx.shadowColor = `rgba(99, 182, 255, ${0.6 + glow * 0.4})`;
-        ctx.shadowBlur = 8 + glow * 12;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        
-        // Mirror wave — soft purple reflection
-        ctx.beginPath();
-        ctx.moveTo(0, mid + (src[0] / 100) * (mid - 2));
-        for (let i = 1; i < POINTS; i++) {
-          const x0 = (i - 1) * step, x1 = i * step;
-          const y0 = mid + (src[i - 1] / 100) * (mid - 2);
-          const y1 = mid + (src[i] / 100) * (mid - 2);
-          ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
-        }
-        ctx.strokeStyle = `rgba(168, 130, 255, ${0.5 + glow * 0.4})`;
-        ctx.lineWidth = 1.8;
-        ctx.shadowColor = `rgba(168, 130, 255, ${0.4 + glow * 0.3})`;
-        ctx.shadowBlur = 6 + glow * 10;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-        
-        // Center line — subtle guide
-        ctx.beginPath();
-        ctx.moveTo(0, mid);
-        ctx.lineTo(w, mid);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + glow * 0.1})`;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-      };
-      const viz = () => {
-        if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
-        const data = new Uint8Array(analyserRef.current.frequencyBinCount);
-        const wave = new Uint8Array(analyserRef.current.fftSize);
-        analyserRef.current.getByteFrequencyData(data);
-        analyserRef.current.getByteTimeDomainData(wave);
-        const freq = Array.from(data).slice(2, Math.max(3, Math.floor(data.length * 0.85)));
-        const amp = Array.from(wave).map((v) => Math.abs(v - 128) * 4.8);
-        const freqBucket = Math.max(1, Math.floor(freq.length / POINTS));
-        const ampBucket = Math.max(1, Math.floor(amp.length / POINTS));
-        const raw = Array.from({ length: POINTS }, (_, i) => {
-          const freqPeak = freq.slice(i * freqBucket, (i + 1) * freqBucket).reduce((m, v) => Math.max(m, v), 0) * 1.55;
-          const ampPeak = amp.slice(i * ampBucket, (i + 1) * ampBucket).reduce((m, v) => Math.max(m, v), 0);
-          return Math.min(100, Math.max(4, freqPeak, ampPeak));
-        });
-        // Smooth easing
-        const ease = 0.18;
-        for (let i = 0; i < POINTS; i++) {
-          smoothLevels.current[i] += (raw[i] - smoothLevels.current[i]) * ease;
-        }
-        setLevels(raw);
-        drawCanvas();
-        const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        setMicLevel(Math.min(100, avg * 2));
-        setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
-        animRef.current = requestAnimationFrame(viz);
-      };
-      viz();
-    } catch (err: any) {
-      console.error('[MiniBar] Recording error:', err);
-      let errorMsg = 'Mic error';
-      if (err.name === 'NotAllowedError') {
-        errorMsg = 'Mic access denied';
-      } else if (err.name === 'NotReadableError') {
-        errorMsg = 'Mic in use by other app';
-      } else if (err.name === 'OverconstrainedError' || err.name === 'NotFoundError') {
-        // Saved mic device no longer available — fall back to default
-        errorMsg = 'Mic tidak ditemukan, pakai default';
-        setSettings(prev => ({ ...prev, selected_mic: '' }));
-        window.electronAPI.updateSetting('selected_mic', '').catch(() => {});
-      } else if (err.message) {
-        errorMsg = err.message.substring(0, 60);
-      }
-      setError(errorMsg);
-      playSound('error'); setTimeout(() => setError(''), 5000);
-    }
-  }, [settings]);
-
-  const stopRec = useCallback(async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    cancelAnimationFrame(animRef.current);
-    analyserRef.current = null;
-    setMicLevel(0);
-    setState('processing');
-    playSound('stop');
-    if (wavRecorderRef.current) {
-      try {
-        const { buffer, duration } = await wavRecorderRef.current.stop();
-        wavRecorderRef.current = null;
-        // Use efficient buffer transfer
-        window.electronAPI.sendAudioData({ buffer: new Uint8Array(buffer) as any, mimeType: 'audio/wav', duration });
-        processingTimeoutRef.current = setTimeout(() => { if (stateRef.current === 'processing') { setError('Timeout'); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); } }, 25000);
-      } catch { setState('idle'); }
-    }
-  }, []);
-
-  const cancelRec = useCallback(async () => {
-    // Guard: if already processing or idle, just reset state
-    if (stateRef.current !== 'recording') {
-      if (stateRef.current === 'processing') {
-        // Audio already sent — can't cancel, just reset UI
-        setState('idle');
-        setPartial('');
-        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-      }
+  // Canvas visualization effect
+  useEffect(() => {
+    if (state !== 'recording') {
+      smoothLevels.current = Array(24).fill(0);
       return;
     }
-    if (timerRef.current) clearInterval(timerRef.current);
-    cancelAnimationFrame(animRef.current);
-    analyserRef.current = null;
-    setMicLevel(0);
-    setLevels(Array(15).fill(0));
-    if (wavRecorderRef.current) {
-      try { await wavRecorderRef.current.cancel(); } catch {}
-      wavRecorderRef.current = null;
-    }
-    setState('idle');
-    setPartial('');
-  }, []);
-
-  // Escape key to cancel recording (local fallback for focused window)
-  useEffect(() => {
-    if (state !== 'recording') return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelRec();
+    const POINTS = 24;
+    const drawCanvas = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
       }
+      const w = rect.width, h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+      const src = smoothLevels.current;
+      const mid = h / 2;
+      const step = w / (POINTS - 1);
+      const avg = src.reduce((a, b) => a + b, 0) / POINTS;
+      const glow = Math.min(1, avg / 40);
+      // Main wave — bright blue with strong glow
+      ctx.beginPath();
+      ctx.moveTo(0, mid - (src[0] / 100) * (mid - 2));
+      for (let i = 1; i < POINTS; i++) {
+        const x0 = (i - 1) * step, x1 = i * step;
+        const y0 = mid - (src[i - 1] / 100) * (mid - 2);
+        const y1 = mid - (src[i] / 100) * (mid - 2);
+        ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
+      }
+      ctx.strokeStyle = `rgba(99, 182, 255, ${0.85 + glow * 0.15})`;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = `rgba(99, 182, 255, ${0.6 + glow * 0.4})`;
+      ctx.shadowBlur = 8 + glow * 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Mirror wave — soft purple reflection
+      ctx.beginPath();
+      ctx.moveTo(0, mid + (src[0] / 100) * (mid - 2));
+      for (let i = 1; i < POINTS; i++) {
+        const x0 = (i - 1) * step, x1 = i * step;
+        const y0 = mid + (src[i - 1] / 100) * (mid - 2);
+        const y1 = mid + (src[i] / 100) * (mid - 2);
+        ctx.bezierCurveTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1);
+      }
+      ctx.strokeStyle = `rgba(168, 130, 255, ${0.5 + glow * 0.4})`;
+      ctx.lineWidth = 1.8;
+      ctx.shadowColor = `rgba(168, 130, 255, ${0.4 + glow * 0.3})`;
+      ctx.shadowBlur = 6 + glow * 10;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Center line — subtle guide
+      ctx.beginPath();
+      ctx.moveTo(0, mid);
+      ctx.lineTo(w, mid);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + glow * 0.1})`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, cancelRec]);
-
-  // Global cancel-recording from main process (works even when not focused)
-  useEffect(() => {
-    const unsub = window.electronAPI.onCancelRecording?.(() => {
-      if (stateRef.current === 'recording') {
-        cancelRec();
+    const viz = () => {
+      if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
+      const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+      const wave = new Uint8Array(analyserRef.current.fftSize);
+      analyserRef.current.getByteFrequencyData(data);
+      analyserRef.current.getByteTimeDomainData(wave);
+      const freq = Array.from(data).slice(2, Math.max(3, Math.floor(data.length * 0.85)));
+      const amp = Array.from(wave).map((v) => Math.abs(v - 128) * 4.8);
+      const freqBucket = Math.max(1, Math.floor(freq.length / POINTS));
+      const ampBucket = Math.max(1, Math.floor(amp.length / POINTS));
+      const raw = Array.from({ length: POINTS }, (_, i) => {
+        const freqPeak = freq.slice(i * freqBucket, (i + 1) * freqBucket).reduce((m, v) => Math.max(m, v), 0) * 1.55;
+        const ampPeak = amp.slice(i * ampBucket, (i + 1) * ampBucket).reduce((m, v) => Math.max(m, v), 0);
+        return Math.min(100, Math.max(4, freqPeak, ampPeak));
+      });
+      const ease = 0.18;
+      for (let i = 0; i < POINTS; i++) {
+        smoothLevels.current[i] += (raw[i] - smoothLevels.current[i]) * ease;
       }
-    });
-    return () => { unsub?.(); };
-  }, [cancelRec]);
-
-  const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'hover') && startRec(); }, [state, startRec, stopRec]);
+      drawCanvas();
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      setMicLevel(Math.min(100, avg * 2));
+      setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
+      animRef.current = requestAnimationFrame(viz);
+    };
+    viz();
+    return () => { cancelAnimationFrame(animRef.current); };
+  }, [state]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
   const langs = [
     { c: 'auto', f: '🌐', l: 'Auto Detect', s: 'AUTO' },
@@ -828,190 +639,76 @@ function MainApp() {
 
 // ============ HOME PAGE ============
 function HomePage({ settings, onSuccess, onError }: { settings: Record<string, string>; onSuccess: (msg: string) => void; onError: (msg: string) => void }) {
-  const [state, setState] = useState<State>('idle');
-  const [text, setText] = useState('');
-  const [partial, setPartial] = useState('');
-  const [error, setError] = useState('');
-  const [levels, setLevels] = useState<number[]>(Array(30).fill(0));
-  const [time, setTime] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
   const [confidence, setConfidence] = useState<any>(null);
   const [fuzzyChanges, setFuzzyChanges] = useState<number>(0);
   const [rawText, setRawText] = useState<string>('');
-  const [micLevel, setMicLevel] = useState(0);
-  const [clipPeak, setClipPeak] = useState(0);
+  const [levels, setLevels] = useState<number[]>(Array(30).fill(0));
+  const prevState = useRef<State>('idle');
 
-  const wavRecorderRef = useRef<WavRecorder | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animRef = useRef<number>(0);
-  const timerRef = useRef<any>(null);
-  const processingTimeoutRef = useRef<any>(null);
-  const startRef = useRef(0);
-  const stateRef = useRef<State>(state);
-
-  useEffect(() => { stateRef.current = state; }, [state]);
+  const {
+    state, setState,
+    text, setText,
+    partial, setPartial,
+    error, setError,
+    time, micLevel, setMicLevel, clipPeak, setClipPeak,
+    analyserRef, animRef, wavRecorderRef, stateRef, processingTimeoutRef,
+    cancelRec, toggle,
+  } = useRecorder(settings, {
+    onTranscript: (d) => {
+      const result = d.cleaned || d.raw;
+      setText(result);
+      setConfidence(d.confidence || null);
+      setFuzzyChanges(d.fuzzyChanges || 0);
+      setRawText(d.rawText || '');
+      setHistory(prev => [result, ...prev].slice(0, 10));
+      setState('done');
+      playSound('done');
+      setTimeout(() => setState('idle'), 2000);
+    },
+    onPartial: (p) => setPartial(p),
+    onError: (e) => {
+      if (e === '__NO_SPEECH__') {
+        setError('Tidak terdeteksi suara');
+        setState('idle');
+        setTimeout(() => setError(''), 2000);
+        return;
+      }
+      setError(e);
+      setState('idle');
+      playSound('error');
+      setTimeout(() => setError(''), 3000);
+    },
+    minRecordingMs: 2000,
+  });
 
   const vadEnabled = settings.vad_enabled !== 'false';
-  const vadSilenceMs = parseInt(settings.vad_silence_ms || '3000', 10);
-  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
-  const MIN_RECORDING_MS = 2000; // Minimum recording duration before VAD can auto-stop
 
+  // Sound effects for recording state transitions
   useEffect(() => {
-    if (silenceDetected && stateRef.current === 'recording' && (Date.now() - startRef.current) >= MIN_RECORDING_MS) stopRec();
-  }, [silenceDetected]);
+    const prev = prevState.current;
+    prevState.current = state;
+    if (state === 'recording' && prev !== 'recording') playSound('start');
+    else if (state === 'processing' && prev === 'recording') playSound('stop');
+  }, [state]);
 
+  // Visualization effect
   useEffect(() => {
-    const unsubs = [
-      window.electronAPI.onStartRecording(() => {
-        if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
-        startRec();
-      }),
-      window.electronAPI.onStopRecording(() => { if (wavRecorderRef.current) stopRec(); }),
-      window.electronAPI.onTranscriptReady((d) => {
-        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-        const result = d.cleaned || d.raw;
-        setText(result);
-        setConfidence(d.confidence || null);
-        setFuzzyChanges(d.fuzzyChanges || 0);
-        setRawText(d.rawText || '');
-        setHistory(prev => [result, ...prev].slice(0, 10));
-        setState('done');
-        playSound('done');
-        setTimeout(() => setState('idle'), 2000);
-      }),
-      window.electronAPI.onPartialTranscript((p) => setPartial(p)),
-      window.electronAPI.onError((e) => { 
-        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-        // Handle no-speech: show message briefly then return to idle
-        if (e === '__NO_SPEECH__') {
-          setError('Tidak terdeteksi suara');
-          setState('idle');
-          setTimeout(() => setError(''), 2000);
-          return;
-        }
-        setError(e); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); 
-      }),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, []);
-
-  const startRec = useCallback(async () => {
-    if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
-    try {
-      const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
-      wavRecorderRef.current = recorder;
-      await recorder.start(settings.selected_mic || undefined, {
-        enabled: true,
-        silenceThreshold: 0.01,
-        silenceDurationMs: 3000,
-      });
-      recorder.onSilence(() => {
-        if (stateRef.current === 'recording') {
-          stopRec();
-        }
-      });
-      const analyser = recorder.getAnalyserNode();
-      if (analyser) analyserRef.current = analyser;
-      startRef.current = Date.now();
-      setState('recording');
-      setPartial(''); setTime(0); setClipPeak(0); setMicLevel(0);
-      playSound('start');
-      timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 100);
-      const viz = () => {
-        if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
-        const data = new Uint8Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getByteFrequencyData(data);
-        setLevels(Array.from(data).slice(0, 30).map((v) => Math.min(100, v * 1.8)));
-        const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        setMicLevel(Math.min(100, avg * 2));
-        setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
-        animRef.current = requestAnimationFrame(viz);
-      };
-      viz();
-    } catch (err: any) {
-      console.error('[HomePage] Recording error:', err);
-      let errorMsg = 'Microphone error';
-      if (err.name === 'NotAllowedError') {
-        errorMsg = 'Microphone access denied';
-      } else if (err.name === 'NotReadableError') {
-        errorMsg = 'Microphone in use by another app';
-      } else if (err.name === 'OverconstrainedError' || err.name === 'NotFoundError') {
-        errorMsg = 'Mic tidak ditemukan — cek koneksi mic';
-        window.electronAPI.updateSetting('selected_mic', '').catch(() => {});
-      } else if (err.message) {
-        errorMsg = err.message.substring(0, 80);
-      }
-      setError(errorMsg);
-      playSound('error'); setTimeout(() => setError(''), 5000);
-    }
-  }, [settings]);
-
-  const stopRec = useCallback(async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    cancelAnimationFrame(animRef.current);
-    analyserRef.current = null;
-    setState('processing');
-    playSound('stop');
-    if (wavRecorderRef.current) {
-      try {
-        const { buffer, duration } = await wavRecorderRef.current.stop();
-        wavRecorderRef.current = null;
-        // Use efficient buffer transfer
-        window.electronAPI.sendAudioData({ buffer: new Uint8Array(buffer) as any, mimeType: 'audio/wav', duration });
-        processingTimeoutRef.current = setTimeout(() => { if (stateRef.current === 'processing') { setError('Processing timeout'); setState('idle'); playSound('error'); setTimeout(() => setError(''), 3000); } }, 30000);
-      } catch { setState('idle'); }
-    }
-  }, []);
-
-  const cancelRec = useCallback(async () => {
-    // Guard: if already processing or idle, just reset state
-    if (stateRef.current !== 'recording') {
-      if (stateRef.current === 'processing') {
-        setState('idle');
-        setPartial('');
-        setError('');
-        if (processingTimeoutRef.current) { clearTimeout(processingTimeoutRef.current); processingTimeoutRef.current = null; }
-      }
-      return;
-    }
-    if (timerRef.current) clearInterval(timerRef.current);
-    cancelAnimationFrame(animRef.current);
-    analyserRef.current = null;
-    setMicLevel(0);
-    setLevels(Array(30).fill(0));
-    if (wavRecorderRef.current) {
-      try { await wavRecorderRef.current.cancel(); } catch {}
-      wavRecorderRef.current = null;
-    }
-    setState('idle');
-    setPartial('');
-    setError('');
-  }, []);
-
-  // Escape key to cancel recording (local fallback for focused window)
-  useEffect(() => {
-    if (state !== 'recording') return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelRec();
-      }
+    if (state !== 'recording') { setLevels(Array(30).fill(0)); return; }
+    const viz = () => {
+      if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
+      const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+      analyserRef.current.getByteFrequencyData(data);
+      setLevels(Array.from(data).slice(0, 30).map((v) => Math.min(100, v * 1.8)));
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      setMicLevel(Math.min(100, avg * 2));
+      setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));
+      animRef.current = requestAnimationFrame(viz);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, cancelRec]);
+    viz();
+    return () => { cancelAnimationFrame(animRef.current); };
+  }, [state]);
 
-  // Global cancel-recording from main process (works even when not focused)
-  useEffect(() => {
-    const unsub = window.electronAPI.onCancelRecording?.(() => {
-      if (stateRef.current === 'recording') {
-        cancelRec();
-      }
-    });
-    return () => { unsub?.(); };
-  }, [cancelRec]);
-
-  const toggle = useCallback(() => { state === 'recording' ? stopRec() : (state === 'idle' || state === 'done') && startRec(); }, [state, startRec, stopRec]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
 
   const [hasModel, setHasModel] = useState<boolean | null>(null);

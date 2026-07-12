@@ -18,6 +18,7 @@ let textCleaner: TextCleaner;
 let pasteEngine: PasteEngine;
 let adaptiveLearning: AdaptiveLearning;
 let isProcessing = false;
+let processingQueue: Array<{ buffer: number[]; mimeType: string; duration: number }> = [];
 let lastTranscript = '';
 let lastCleanedText = '';
 
@@ -71,12 +72,18 @@ export function setupDictationIPC(
     mainWindow.webContents.send('toggle-dictation');
   });
 
-  ipcMain.on('audio-recorded', async (event, audioData: { buffer: number[]; mimeType: string; duration: number }) => {
-    if (isProcessing) {
-      logger.warn('Already processing, ignoring');
-      return;
-    }
+  function processNextAudio(): void {
+    if (isProcessing || processingQueue.length === 0) return;
+    const item = processingQueue.shift()!;
+    processAudio(item);
+  }
 
+  ipcMain.on('audio-recorded', (event, audioData: { buffer: number[]; mimeType: string; duration: number }) => {
+    processingQueue.push(audioData);
+    if (!isProcessing) processNextAudio();
+  });
+
+  async function processAudio(audioData: { buffer: number[]; mimeType: string; duration: number }): Promise<void> {
     isProcessing = true;
     const startTime = Date.now();
 
@@ -91,7 +98,7 @@ export function setupDictationIPC(
       fs.writeFileSync(wavPath, buffer);
       logger.info('Audio saved', { path: wavPath });
 
-      // 2. Transcribe (two-pass: fast preview + accurate final)
+      // 2. Transcribe
       const model = getBestAvailableModel(database.getSetting('model') || 'ggml-base.bin');
       const language = database.getSetting('language') || 'auto';
       const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
@@ -136,17 +143,16 @@ export function setupDictationIPC(
       });
 
       // Cleanup temp file
-      try { fs.unlinkSync(wavPath); } catch {}
+      try { fs.unlinkSync(wavPath); } catch (err) { /* temp file may already be gone */ }
 
       if (!transcribeResult.success) {
-        // Handle no-speech case specially
         if (transcribeResult.error === '__NO_SPEECH__') {
           logger.info('No speech detected - empty or garbage audio');
           hotkeyManager?.setState('idle');
           const sendMsg = hotkeyManager
             ? (msg: string) => hotkeyManager.sendToAll('error', msg)
             : (msg: string) => mainWindow.webContents.send('error', msg);
-          sendMsg('__NO_SPEECH__');  // Special code for UI to handle silently
+          sendMsg('__NO_SPEECH__');
           return;
         }
         throw new Error(transcribeResult.error || 'Transcription failed');
@@ -163,10 +169,8 @@ export function setupDictationIPC(
 
       let finalText = transcribeResult.text || '';
       if (finalText) {
-        // Apply text cleaning
         finalText = textCleaner.cleanForMode(finalText, mode, { dictionary, snippets, voiceCommands });
         
-        // Apply learned corrections from adaptive learning
         try {
           const learned = adaptiveLearning.apply(finalText);
           if (learned.changes > 0) {
@@ -238,8 +242,10 @@ export function setupDictationIPC(
       setTimeout(() => hotkeyManager?.setState('idle'), 1000);
     } finally {
       isProcessing = false;
+      // Process next queued item
+      processNextAudio();
     }
-  });
+  }
 
   ipcMain.handle('paste-text', async (event, text: string) => {
     // Auto-learn: if user pastes text different from last transcription, learn it
