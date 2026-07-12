@@ -174,7 +174,7 @@ CLEAN THIS:`;
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  Download model (uses same pattern as whisper model downloader)
+  //  Download model — uses Electron net.request for robust HTTP/HTTPS
   // ═══════════════════════════════════════════════════════════
 
   async downloadModel(
@@ -199,7 +199,6 @@ CLEAN THIS:`;
     if (fs.existsSync(targetPath)) {
       try {
         const stat = fs.statSync(targetPath);
-        // Allow slightly smaller (chunked quantized may differ)
         if (stat.size >= 1024) {
           this.logger.info('Model already downloaded', { model: modelName, size: stat.size });
           onProgress?.(100, 'completed', stat.size, stat.size);
@@ -208,191 +207,199 @@ CLEAN THIS:`;
       } catch {}
     }
 
-    return this.downloadFileStreaming(modelInfo.url, targetPath, modelName, modelInfo.sizeBytes, onProgress);
+    // Clean up any leftover .download temp file
+    const tempPath = targetPath + '.download';
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+
+    this.logger.info('Starting LLM download', { model: modelName, expectedBytes: modelInfo.sizeBytes, targetPath });
+    onProgress?.(0, 'downloading', 0, modelInfo.sizeBytes);
+
+    return this.downloadWithRedirects(modelInfo.url, targetPath, modelName, modelInfo.sizeBytes, onProgress, 0);
   }
 
-  private downloadFileStreaming(
+  private async downloadWithRedirects(
     url: string,
     destPath: string,
     modelName: string,
     expectedSize: number,
-    onProgress?: (progress: number, state: string, downloadedBytes?: number, totalBytes?: number) => void
+    onProgress?: (progress: number, state: string, downloadedBytes?: number, totalBytes?: number) => void,
+    redirectCount: number = 0
   ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const self = this;
+    const MAX_REDIRECTS = 5;
+    if (redirectCount > MAX_REDIRECTS) {
+      this.logger.error('Too many redirects', { model: modelName, url: url.substring(0, 100) });
+      onProgress?.(0, 'error', 0, expectedSize);
+      return false;
+    }
+
+    const self = this;
+    const tempPath = destPath + '.download';
+
+    try {
+      self.logger.info('Download request', { model: modelName, url: url.substring(0, 120), redirectCount });
+
+      // Use Node.js https module (proven to work with HuggingFace CDN)
       const https = require('https');
-      const http = require('http');
+      const urlObj = new URL(url);
 
-      const tempPath = destPath + '.download';
-      try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
-
-      self.logger.info('Downloading model', { model: modelName, url: url.substring(0, 120) });
-      onProgress?.(0, 'downloading', 0, expectedSize);
-
-      let redirectCount = 0;
-      const MAX_REDIRECTS = 5;
-
-      function doRequest(currentUrl: string): void {
-        const curUrlObj = new URL(currentUrl);
-        const curIsHttps = curUrlObj.protocol === 'https:';
-        const curRequester = curIsHttps ? https : http;
-
-        const curOptions: any = {
-          hostname: curUrlObj.hostname,
-          path: curUrlObj.pathname + curUrlObj.search,
-          method: 'GET',
+      const finalUrl = await new Promise<string>((resolveUrl, rejectUrl) => {
+        const req = https.get(url, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VoiceFlow/1.0',
             'Accept': '*/*',
             'Accept-Encoding': 'identity',
           },
           timeout: 30000,
-        };
-
-        const req = curRequester.get(curOptions, (res: any) => {
-          // Handle redirect
+        }, (res: any) => {
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            redirectCount++;
-            if (redirectCount > MAX_REDIRECTS) {
-              self.logger.error('Too many redirects', { model: modelName });
-              onProgress?.(0, 'error', 0, expectedSize);
-              resolve(false);
-              return;
-            }
-
-            let redirectUrl = res.headers.location;
-            if (redirectUrl.startsWith('/')) {
-              redirectUrl = curUrlObj.origin + redirectUrl;
-            }
-            self.logger.info('Following redirect', { to: redirectUrl.substring(0, 100) });
+            let loc = res.headers.location;
+            if (loc.startsWith('/')) loc = urlObj.origin + loc;
+            self.logger.info('Got redirect to CDN', { url: loc.substring(0, 100) });
             res.destroy();
-            doRequest(redirectUrl);
-            return;
+            resolveUrl(loc);
+          } else if (res.statusCode === 200) {
+            resolveUrl(url); // No redirect needed
+          } else {
+            rejectUrl(new Error(`HTTP ${res.statusCode}`));
           }
+        });
+        req.on('error', rejectUrl);
+        req.on('timeout', () => { req.destroy(); rejectUrl(new Error('Timeout')); });
+        req.end();
+      });
 
+      // If we got a redirect, follow it
+      const actualUrl = finalUrl !== url ? finalUrl : url;
+
+      self.logger.info('Starting download from', { url: actualUrl.substring(0, 120) });
+
+      const result = await new Promise<boolean>((resolve) => {
+        const urlObj2 = new URL(actualUrl);
+        const isHttps = urlObj2.protocol === 'https:';
+        const mod = isHttps ? require('https') : require('http');
+
+        const req = mod.get(actualUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VoiceFlow/1.0',
+            'Accept': '*/*',
+          },
+          timeout: 60000,
+        }, (res: any) => {
           if (res.statusCode !== 200) {
-            self.logger.error('Download failed', { model: modelName, status: res.statusCode, statusText: res.statusMessage });
+            self.logger.error('Download failed', { status: res.statusCode, model: modelName });
             onProgress?.(0, 'error', 0, expectedSize);
             resolve(false);
             return;
           }
 
-          // Get total size: use content-length, fallback to expected size
-          let totalSize: number;
-          const cl = res.headers['content-length'];
-          if (cl) {
-            totalSize = parseInt(cl as string, 10);
-            if (isNaN(totalSize) || totalSize <= 0) totalSize = expectedSize;
-          } else {
-            totalSize = expectedSize;
+          // Content-Length from CDN response
+          const contentLength = res.headers['content-length'];
+          let totalSize = expectedSize;
+          if (contentLength) {
+            const parsed = parseInt(contentLength, 10);
+            if (!isNaN(parsed) && parsed > 0) totalSize = parsed;
           }
 
-          let downloaded = 0;
-          let lastLog = Date.now();
-          let lastProgress = -1;
+          self.logger.info('Stream opened', {
+            model: modelName,
+            contentLength: totalSize,
+          });
 
-          // Stream directly to file
+          let downloaded = 0;
+          let lastProgress = -1;
+          let lastLog = Date.now();
+
           const fileStream = fs.createWriteStream(tempPath);
           let streamError = false;
 
           fileStream.on('error', (err: any) => {
             streamError = true;
-            self.logger.error('File write error during download', err);
+            self.logger.error('File write error', err);
             try { fs.unlinkSync(tempPath); } catch {}
             resolve(false);
           });
 
-          // Use 'data' event instead of pipe for progress tracking
           res.on('data', (chunk: Buffer) => {
             downloaded += chunk.length;
             const pct = totalSize > 0 ? Math.min(99, Math.round((downloaded / totalSize) * 100)) : 0;
 
-            // Throttle progress updates to ~100ms to avoid flooding IPC
             if (pct !== lastProgress) {
               lastProgress = pct;
               onProgress?.(pct, 'downloading', downloaded, totalSize);
             }
 
-            // Log every 10%
             const now = Date.now();
-            if (now - lastLog > 5000) {
+            if (now - lastLog > 10000) {
               lastLog = now;
-              self.logger.info('Download progress', {
+              self.logger.info('Progress', {
                 model: modelName,
-                downloaded: Math.round(downloaded / 1024 / 1024) + 'MB',
-                total: Math.round(totalSize / 1024 / 1024) + 'MB',
+                mb: (downloaded / 1024 / 1024).toFixed(1) + '/' + (totalSize / 1024 / 1024).toFixed(1),
                 pct,
               });
             }
 
-            // Write to file
-            const canContinue = fileStream.write(chunk);
-            if (!canContinue) {
+            const canWrite = fileStream.write(chunk);
+            if (!canWrite) {
               res.pause();
               fileStream.once('drain', () => res.resume());
             }
           });
 
           res.on('end', () => {
+            if (!streamError) fileStream.end();
+          });
+
+          res.on('error', (err: any) => {
             if (streamError) return;
-            fileStream.end();
+            self.logger.error('Stream error', err);
+            try { fs.unlinkSync(tempPath); } catch {}
+            resolve(false);
           });
 
           fileStream.on('finish', () => {
             if (streamError) return;
-
-            // Finalize: check size and rename
             try {
               const stat = fs.statSync(tempPath);
-              // Accept any file with reasonable content
               if (stat.size < 1024) {
-                self.logger.error('Downloaded file too small', { size: stat.size, expected: expectedSize });
+                self.logger.error('File too small', { size: stat.size, expected: expectedSize });
                 try { fs.unlinkSync(tempPath); } catch {}
                 onProgress?.(0, 'error', 0, expectedSize);
                 resolve(false);
                 return;
               }
-
-              // Remove existing file if any
-              if (fs.existsSync(destPath)) {
-                try { fs.unlinkSync(destPath); } catch {}
-              }
-
+              if (fs.existsSync(destPath)) try { fs.unlinkSync(destPath); } catch {}
               fs.renameSync(tempPath, destPath);
-              self.logger.info('Model download complete', { model: modelName, size: stat.size });
+              self.logger.info('Download complete', { model: modelName, size: stat.size });
               onProgress?.(100, 'completed', stat.size, stat.size);
               resolve(true);
             } catch (err: any) {
-              self.logger.error('Failed to finalize download', err);
+              self.logger.error('Finalize error', err);
               try { fs.unlinkSync(tempPath); } catch {}
               resolve(false);
             }
           });
-
-          res.on('error', (err: any) => {
-            if (streamError) return;
-            self.logger.error('Download stream error', err);
-            try { fs.unlinkSync(tempPath); } catch {}
-            resolve(false);
-          });
         });
 
         req.on('error', (err: any) => {
-          self.logger.error('Download request failed', err);
+          self.logger.error('Request error', err);
           onProgress?.(0, 'error', 0, expectedSize);
           resolve(false);
         });
-
         req.on('timeout', () => {
           req.destroy();
-          self.logger.error('Download timeout', { model: modelName });
+          self.logger.error('Request timeout');
           onProgress?.(0, 'error', 0, expectedSize);
           resolve(false);
         });
-      }
+      });
 
-      doRequest(url);
-    });
+      return result;
+    } catch (err: any) {
+      self.logger.error('Download failed', err);
+      onProgress?.(0, 'error', 0, expectedSize);
+      try { fs.unlinkSync(tempPath); } catch {}
+      return false;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
