@@ -72,9 +72,11 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
       const s = await window.electronAPI.getSettings();
       setSettings(s);
       const p = await window.electronAPI.llmGetModelsPath();
-      setModelsPath(p || 'Folder tidak tersedia');
-    } catch {
-      setModelsPath('Gagal memuat path');
+      console.log('[LlmModels] path loaded:', p);
+      setModelsPath(p || '(path kosong)');
+    } catch (err: any) {
+      console.error('[LlmModels] gagal load path:', err?.message || err);
+      setModelsPath('Gagal memuat path: ' + (err?.message || 'unknown error'));
     } finally {
       setLoading(false);
     }
