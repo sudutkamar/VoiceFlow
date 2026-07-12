@@ -50,7 +50,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [downloadedModels, setDownloadedModels] = useState<Array<{ name: string; sizeBytes: number }>>([]);
-  const [modelsPath, setModelsPath] = useState<string>('');
+  const [modelsPath, setModelsPath] = useState<string>('Memuat...');
   const [scanning, setScanning] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -72,8 +72,10 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
       const s = await window.electronAPI.getSettings();
       setSettings(s);
       const p = await window.electronAPI.llmGetModelsPath();
-      setModelsPath(p);
-    } catch {} finally {
+      setModelsPath(p || 'Folder tidak tersedia');
+    } catch {
+      setModelsPath('Gagal memuat path');
+    } finally {
       setLoading(false);
     }
   }, []);
@@ -310,7 +312,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         <div className="info-card-row">
           <div>
             <span className="info-label">📂 Lokasi Simpan:</span>
-            <span className="info-value info-path" title={modelsPath}>{modelsPath || '(default)'}</span>
+            <span className="info-value info-path" title={modelsPath}>{modelsPath}</span>
           </div>
           <div className="info-card-actions">
             <button className="btn btn-secondary btn-sm" onClick={handleChooseFolder}>
