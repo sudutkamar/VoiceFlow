@@ -76,6 +76,9 @@ interface ElectronAPI {
   llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmTestProcess: (text: string, modelName?: string) => Promise<{ success: boolean; text?: string; processingMs?: number; model?: string; error?: string }>;
+  llmGetModelsPath: () => Promise<string>;
+  llmChooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  llmScanModelsFolder: () => Promise<{ success: boolean; models?: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   openExternal: (url: string) => Promise<void>;
 
   // GPU / CUDA

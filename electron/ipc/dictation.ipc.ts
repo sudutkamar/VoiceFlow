@@ -361,6 +361,32 @@ export function setupDictationIPC(
     }
   });
 
+  ipcMain.handle('llm-get-models-path', async () => {
+    return llmPostProcessor.getModelsPathValue();
+  });
+
+  ipcMain.handle('llm-choose-models-folder', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Pilih Folder LLM Models',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: llmPostProcessor.getModelsPathValue(),
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false };
+    }
+    return { success: true, path: result.filePaths[0] };
+  });
+
+  ipcMain.handle('llm-scan-models-folder', async () => {
+    try {
+      const models = llmPostProcessor.getDownloadedModelsInfo();
+      return { success: true, models };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // Track active LLM download state for progress
   let activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
 

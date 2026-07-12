@@ -76,6 +76,9 @@ export interface ElectronAPI {
   llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmTestProcess: (text: string, modelName?: string) => Promise<{ success: boolean; text?: string; processingMs?: number; model?: string; error?: string }>;
+  llmGetModelsPath: () => Promise<string>;
+  llmChooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  llmScanModelsFolder: () => Promise<{ success: boolean; models?: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   openExternal: (url: string) => Promise<void>;
 
   // Hotkey
@@ -195,6 +198,9 @@ const api: ElectronAPI = {
   llmDownloadModel: (modelName) => ipcRenderer.invoke('llm-download-model', modelName),
   llmDeleteModel: (modelName) => ipcRenderer.invoke('llm-delete-model', modelName),
   llmTestProcess: (text, modelName) => ipcRenderer.invoke('llm-test-process', text, modelName),
+  llmGetModelsPath: () => ipcRenderer.invoke('llm-get-models-path'),
+  llmChooseModelsFolder: () => ipcRenderer.invoke('llm-choose-models-folder'),
+  llmScanModelsFolder: () => ipcRenderer.invoke('llm-scan-models-folder'),
   openExternal: (url) => shell.openExternal(url),
 
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),

@@ -50,6 +50,8 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [downloadedModels, setDownloadedModels] = useState<Array<{ name: string; sizeBytes: number }>>([]);
+  const [modelsPath, setModelsPath] = useState<string>('');
+  const [scanning, setScanning] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadState, setDownloadState] = useState<string>('idle');
@@ -69,6 +71,8 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
       }
       const s = await window.electronAPI.getSettings();
       setSettings(s);
+      const p = await window.electronAPI.llmGetModelsPath();
+      setModelsPath(p);
     } catch {} finally {
       setLoading(false);
     }
@@ -79,12 +83,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   // Subscribe to LLM download progress events
   useEffect(() => {
     const unsub = window.electronAPI.onLlmDownloadProgress((data) => {
-      const { progress, state, modelName, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
-
-      // Only process if this matches our current download
-      if (modelName !== downloadingRef.current && state !== 'completed' && state !== 'error') {
-        return;
-      }
+      const { progress, state, downloadedBytes: dlBytes, totalBytes: tBytes } = data;
 
       setDownloadProgress(progress);
       if (dlBytes !== undefined) setDownloadedBytes(dlBytes);
@@ -98,8 +97,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         setDownloadState('error');
         setDownloading(null);
         downloadingRef.current = null;
-        notif.error(`Download gagal: ${modelName}`);
-        // Reset after error display
+        notif.error(`Download gagal`);
         setTimeout(() => {
           setDownloadState('idle');
           setDownloadProgress(0);
@@ -109,7 +107,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
       }
 
       if (state === 'completed') {
-        const completedModel = modelName || downloadingRef.current;
+        const completedModel = downloadingRef.current;
         setDownloading(null);
         downloadingRef.current = null;
         setDownloadState('completed');
@@ -118,7 +116,6 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         if (completedModel) {
           notif.success(`${completedModel} berhasil di-download!`);
           loadData();
-          // Auto-select
           window.electronAPI.updateSetting('llm_model', completedModel).then(() => {
             window.electronAPI.updateSetting('llm_postprocess', 'true').then(() => {
               setSettings(prev => ({ ...prev, llm_model: completedModel, llm_postprocess: 'true' }));
@@ -127,7 +124,6 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
           });
         }
 
-        // Reset state after a delay
         setTimeout(() => {
           setDownloadState('idle');
           setDownloadProgress(0);
@@ -145,11 +141,10 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     downloadingRef.current = modelName;
     setDownloadProgress(0);
     setDownloadedBytes(0);
-    // Find model size for progress bar
     const modelInfo = AVAILABLE_LLM_MODELS.find(m => m.name === modelName);
     setTotalBytes(modelInfo?.sizeBytes || 0);
     setDownloadState('starting');
-    
+
     try {
       const result = await window.electronAPI.llmDownloadModel(modelName);
       if (!result.success) {
@@ -158,7 +153,6 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         downloadingRef.current = null;
         setDownloadState('idle');
       }
-      // If success, the progress listener will handle UI updates
     } catch (err: any) {
       notif.error(err.message || 'Download gagal');
       setDownloading(null);
@@ -196,6 +190,40 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
     await window.electronAPI.updateSetting('llm_postprocess', 'true');
     setSettings(prev => ({ ...prev, llm_model: modelName, llm_postprocess: 'true' }));
     notif.success(`LLM Model: ${modelName}`);
+  };
+
+  const handleChooseFolder = async () => {
+    try {
+      const result = await window.electronAPI.llmChooseModelsFolder();
+      if (result.success && result.path) {
+        setModelsPath(result.path);
+        notif.success(`Folder LLM models: ${result.path}`);
+      }
+    } catch {
+      notif.error('Gagal memilih folder');
+    }
+  };
+
+  const handleScanFolder = async () => {
+    setScanning(true);
+    try {
+      const result = await window.electronAPI.llmScanModelsFolder();
+      if (result.success && result.models) {
+        setDownloadedModels(result.models);
+        const modelNames = result.models.map(m => m.name).join(', ');
+        if (result.models.length > 0) {
+          notif.info(`Folder OK — ${result.models.length} model tersedia: ${modelNames}`);
+        } else {
+          notif.warning('Tidak ada model LLM (*.gguf) ditemukan di folder ini');
+        }
+      } else {
+        notif.error('Gagal scan folder');
+      }
+    } catch {
+      notif.error('Gagal scan folder');
+    } finally {
+      setScanning(false);
+    }
   };
 
   const formatBytes = (bytes: number): string => {
@@ -273,6 +301,32 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
                 <span>{getLabel(activeModel)}</span>
               </>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* LLM Models Save Location */}
+      <div className="info-card">
+        <div className="info-card-row">
+          <div>
+            <span className="info-label">📂 Lokasi Simpan:</span>
+            <span className="info-value info-path" title={modelsPath}>{modelsPath || '(default)'}</span>
+          </div>
+          <div className="info-card-actions">
+            <button className="btn btn-secondary btn-sm" onClick={handleChooseFolder}>
+              <Iconify icon="folder" size={14} /> Pilih Folder
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleScanFolder}
+              disabled={scanning}
+            >
+              {scanning ? (
+                <><span className="btn-spinner" /> Scanning...</>
+              ) : (
+                <><Iconify icon="scan" size={14} /> Scan Folder</>
+              )}
+            </button>
           </div>
         </div>
       </div>
