@@ -78,6 +78,7 @@ export class LlmPostProcessor {
   private downloadBytesSoFar: number = 0;
   private downloadTotalBytes: number = 0;
   private downloadState: string = 'idle';
+  private downloadModelName: string = '';
 
   // System prompt — strict, minimal, only cleanup
   private readonly SYSTEM_PROMPT = `<|system|>
@@ -224,6 +225,7 @@ CLEAN THIS:`;
     this.downloadBytesSoFar = 0;
     this.downloadTotalBytes = modelInfo.sizeBytes;
     this.downloadState = 'downloading';
+    this.downloadModelName = modelName;
 
     // Clean up any leftover .download temp file
     try { if (fs.existsSync(this.downloadTempPath)) fs.unlinkSync(this.downloadTempPath); } catch {}
@@ -259,7 +261,7 @@ CLEAN THIS:`;
   getDownloadState(): { state: string; modelName: string; progress: number; downloadedBytes: number; totalBytes: number } {
     return {
       state: this.downloadState,
-      modelName: '',
+      modelName: this.downloadModelName || '',
       progress: this.downloadTotalBytes > 0 ? Math.round((this.downloadBytesSoFar / this.downloadTotalBytes) * 100) : 0,
       downloadedBytes: this.downloadBytesSoFar,
       totalBytes: this.downloadTotalBytes,
@@ -355,7 +357,12 @@ CLEAN THIS:`;
             const parsed = parseInt(contentLength, 10);
             if (!isNaN(parsed) && parsed > 0) totalSize = parsed;
           }
-          self.downloadTotalBytes = totalSize;
+          // Update total if CDN gives us a more accurate value
+          // But don't overwrite if CDN returns 0 or different
+          if (totalSize > 0 && totalSize !== self.downloadTotalBytes) {
+            self.logger.info('CDN content-length differs from expected', { cdn: totalSize, expected: self.downloadTotalBytes });
+            self.downloadTotalBytes = totalSize;
+          }
 
           self.logger.info('Stream opened', {
             model: modelName,
@@ -367,7 +374,6 @@ CLEAN THIS:`;
           let lastLog = Date.now();
 
           const fileStream = fs.createWriteStream(tempPath);
-          self.downloadRequest = req;
           let streamError = false;
 
           fileStream.on('error', (err: any) => {
@@ -382,6 +388,7 @@ CLEAN THIS:`;
             if (self.downloadCancelled) {
               res.destroy();
               fileStream.end();
+              self.downloadRequest = null;
               try { fs.unlinkSync(tempPath); } catch {}
               onProgress?.(0, 'cancelled', 0, totalSize);
               self.downloadState = 'cancelled';
@@ -392,10 +399,10 @@ CLEAN THIS:`;
             if (self.downloadPaused) {
               res.pause();
               self.downloadBytesSoFar = downloaded;
+              fileStream.end();
               onProgress?.(lastProgress > 0 ? lastProgress : 0, 'paused', downloaded, totalSize);
-              // The download stays paused — user must resume or cancel
-              // Since we don't support resume, treat pause as cancel for now
-              // Actually let's just keep it paused until user action
+              self.downloadState = 'paused';
+              // Promise stays unresolved — user must Cancel (then re-Download) to continue
               return;
             }
 
@@ -441,6 +448,7 @@ CLEAN THIS:`;
 
           fileStream.on('finish', () => {
             if (streamError) return;
+            self.downloadRequest = null;
             try {
               const stat = fs.statSync(tempPath);
               if (stat.size < 1024) {
@@ -464,10 +472,18 @@ CLEAN THIS:`;
               resolve(false);
             }
           });
+
+          // Also cleanup on error/cancel
+          res.on('close', () => {
+            self.downloadRequest = null;
+          });
         });
 
+        // Store immediately so cancel can destroy it
+        self.downloadRequest = req;
+
         req.on('error', (err: any) => {
-          if (err.message?.includes?.('abort') || err.message?.includes?.('destroy')) return;
+          if (err && err.message && (err.message.includes('abort') || err.message.includes('destroy') || err.message.includes('socket'))) return;
           self.logger.error('Request error', err);
           onProgress?.(0, 'error', 0, expectedSize);
           self.downloadState = 'error';
