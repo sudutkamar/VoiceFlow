@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, shell } from 'electron';
 
 export interface ElectronAPI {
   // Dictation
@@ -76,6 +76,7 @@ export interface ElectronAPI {
   llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmTestProcess: (text: string, modelName?: string) => Promise<{ success: boolean; text?: string; processingMs?: number; model?: string; error?: string }>;
+  openExternal: (url: string) => Promise<void>;
 
   // Hotkey
   updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
@@ -193,6 +194,7 @@ const api: ElectronAPI = {
   llmDownloadModel: (modelName) => ipcRenderer.invoke('llm-download-model', modelName),
   llmDeleteModel: (modelName) => ipcRenderer.invoke('llm-delete-model', modelName),
   llmTestProcess: (text, modelName) => ipcRenderer.invoke('llm-test-process', text, modelName),
+  openExternal: (url) => shell.openExternal(url),
 
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
   
