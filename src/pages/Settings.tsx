@@ -841,7 +841,7 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Download llama-cli</span>
-                <span className="setting-hint">Download llama.cpp release b9967 (Windows CPU, 18MB zip), extract semua file ke resources/llm/</span>
+                <span className="setting-hint">Download llama.cpp release b9967 (18MB zip), extract semua isi zip ke folder resources/llm/ (bersebelahan dengan folder models/)</span>
               </div>
               <button className="btn btn-sm btn-primary" onClick={() => {
                 window.electronAPI.openExternal('https://github.com/ggml-org/llama.cpp/releases/download/b9967/llama-b9967-bin-win-cpu-x64.zip');
