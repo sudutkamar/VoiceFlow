@@ -17,32 +17,32 @@ interface LlmModelInfo {
 
 const AVAILABLE_LLM_MODELS: LlmModelInfo[] = [
   {
-    name: 'qwen2.5-0.5b-q4_k_m.gguf',
-    size: '352 MB',
-    sizeBytes: 352000000,
-    url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF/resolve/main/qwen2.5-0.5b-q4_k_m.gguf',
+    name: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    size: '379 MB',
+    sizeBytes: 397808192,
+    url: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf',
     description: '⭐ Rekomendasi: Qwen 0.5B Q4 — cepat + akurat untuk cleanup teks',
   },
   {
-    name: 'qwen2.5-1.5b-q4_k_m.gguf',
-    size: '985 MB',
-    sizeBytes: 985000000,
-    url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-GGUF/resolve/main/qwen2.5-1.5b-q4_k_m.gguf',
-    description: 'Qwen 1.5B Q4 — lebih akurat, butuh ~2GB RAM',
+    name: 'qwen2.5-0.5b-instruct-q3_k_m.gguf',
+    size: '280 MB',
+    sizeBytes: 280000000,
+    url: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q3_K_M.gguf',
+    description: 'Qwen 0.5B Q3 — lebih kecil, hampir sama akurat',
   },
   {
-    name: 'smollm2-360m-q4_k_m.gguf',
-    size: '240 MB',
-    sizeBytes: 240000000,
-    url: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-GGUF/resolve/main/smollm2-360m-q4_k_m.gguf',
-    description: 'SmolLM2 360M — paling ringan, cocok untuk CPU lemah',
+    name: 'tinyllama-1.1b-chat-q4_k_m.gguf',
+    size: '637 MB',
+    sizeBytes: 637000000,
+    url: 'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+    description: 'TinyLlama 1.1B Q4 — akurasi lebih bagus, butuh ~1.5GB RAM',
   },
   {
-    name: 'gemma-3-1b-it-q4_k_m.gguf',
-    size: '780 MB',
-    sizeBytes: 780000000,
-    url: 'https://huggingface.co/bartowski/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-q4_k_m.gguf',
-    description: 'Gemma 3 1B Q4 — akurasi bagus, butuh ~1.5GB RAM',
+    name: 'phi-2-q4_k_m.gguf',
+    size: '622 MB',
+    sizeBytes: 622000000,
+    url: 'https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf',
+    description: 'Phi-2 2.7B Q4 — akurasi tinggi, butuh ~2GB RAM',
   },
 ];
 
@@ -140,17 +140,16 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
 
   const getIcon = (name: string) => {
     if (name.includes('qwen2.5-0.5b')) return 'Q';
-    if (name.includes('qwen2.5-1.5b')) return 'Q+';
-    if (name.includes('smollm2')) return 'S';
-    if (name.includes('gemma')) return 'G';
+    if (name.includes('tinyllama')) return 'T';
+    if (name.includes('phi-2')) return 'P';
     return '?';
   };
 
   const getLabel = (name: string) => {
-    if (name.includes('qwen2.5-0.5b-q4_k_m')) return 'Qwen 2.5 0.5B';
-    if (name.includes('qwen2.5-1.5b-q4_k_m')) return 'Qwen 2.5 1.5B';
-    if (name.includes('smollm2-360m-q4_k_m')) return 'SmolLM2 360M';
-    if (name.includes('gemma-3-1b-it-q4_k_m')) return 'Gemma 3 1B';
+    if (name.includes('qwen2.5-0.5b-instruct-q4')) return 'Qwen 2.5 0.5B Q4';
+    if (name.includes('qwen2.5-0.5b-instruct-q3')) return 'Qwen 2.5 0.5B Q3';
+    if (name.includes('tinyllama-1.1b-chat-q4')) return 'TinyLlama 1.1B Q4';
+    if (name.includes('phi-2-q4')) return 'Phi-2 2.7B Q4';
     return name.replace('.gguf', '');
   };
 
@@ -187,15 +186,21 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
             <span className="active-model-file">
               {hasCli 
                 ? `${downloadedModels.length} model(s) tersedia${llmEnabled ? ' · LLM aktif' : ' · LLM nonaktif'}`
-                : 'llama-cli.exe harus dibundle di resources/llm/'}
+                : 'Download llama-cli.zip dari GitHub release llama.cpp, extract ke resources/llm/'}
             </span>
           </div>
-          {activeModel && (
-            <div className="active-model-speed">
-              <Iconify icon="spark" size={14} />
-              <span>{getLabel(activeModel)}</span>
-            </div>
-          )}
+          <div className="active-model-speed" style={{ gap: '8px' }}>
+            {!hasCli ? (
+              <span style={{ color: '#f87171', fontSize: '13px', maxWidth: '200px', textAlign: 'right' }}>
+                Klik Settings &gt; LLM &gt; Download Binary
+              </span>
+            ) : activeModel && (
+              <>
+                <Iconify icon="spark" size={14} />
+                <span>{getLabel(activeModel)}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

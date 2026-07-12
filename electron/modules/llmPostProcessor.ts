@@ -12,8 +12,8 @@ import { spawn, execSync } from 'child_process';
  *
  * Pipeline: spawn llama-cli → feed prompt → capture output
  *
- * Model: Qwen2.5-0.5B-Q4_K_M (352MB) — tiny enough for CPU, good quality for cleanup.
- * Fallback: SmolLM2-360M-Q4 (240MB) — even smaller.
+ * Model: Qwen2.5-0.5B-Instruct-Q4_K_M (379MB) — tiny enough for CPU, good quality for cleanup.
+ * Fallback: Qwen2.5-0.5B-Instruct-Q3_K_M (280MB) — even smaller.
  */
 
 export interface LlmModelInfo {
@@ -26,32 +26,32 @@ export interface LlmModelInfo {
 
 export const AVAILABLE_LLM_MODELS: LlmModelInfo[] = [
   {
-    name: 'qwen2.5-0.5b-q4_k_m.gguf',
-    size: '352 MB',
-    sizeBytes: 352000000,
-    url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-GGUF/resolve/main/qwen2.5-0.5b-q4_k_m.gguf',
-    description: '⭐ Rekomendasi: Qwen 0.5B Q4 — cepat + akurat untuk cleanup',
+    name: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    size: '379 MB',
+    sizeBytes: 397808192,
+    url: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf',
+    description: '⭐ Rekomendasi: Qwen 0.5B Q4 — cepat + akurat untuk cleanup teks',
   },
   {
-    name: 'qwen2.5-1.5b-q4_k_m.gguf',
-    size: '985 MB',
-    sizeBytes: 985000000,
-    url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-GGUF/resolve/main/qwen2.5-1.5b-q4_k_m.gguf',
-    description: 'Qwen 1.5B Q4 — lebih akurat, butuh ~2GB RAM',
+    name: 'qwen2.5-0.5b-instruct-q3_k_m.gguf',
+    size: '280 MB',
+    sizeBytes: 280000000,
+    url: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q3_K_M.gguf',
+    description: 'Qwen 0.5B Q3 — lebih kecil, hampir sama akurat',
   },
   {
-    name: 'smollm2-360m-q4_k_m.gguf',
-    size: '240 MB',
-    sizeBytes: 240000000,
-    url: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-GGUF/resolve/main/smollm2-360m-q4_k_m.gguf',
-    description: 'SmolLM2 360M — paling ringan, cocok untuk CPU lemah',
+    name: 'tinyllama-1.1b-chat-q4_k_m.gguf',
+    size: '637 MB',
+    sizeBytes: 637000000,
+    url: 'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+    description: 'TinyLlama 1.1B Q4 — akurasi lebih bagus, butuh ~1.5GB RAM',
   },
   {
-    name: 'gemma-3-1b-it-q4_k_m.gguf',
-    size: '780 MB',
-    sizeBytes: 780000000,
-    url: 'https://huggingface.co/bartowski/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-q4_k_m.gguf',
-    description: 'Gemma 3 1B — akurasi bagus, butuh ~1.5GB RAM',
+    name: 'phi-2-q4_k_m.gguf',
+    size: '622 MB',
+    sizeBytes: 622000000,
+    url: 'https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf',
+    description: 'Phi-2 2.7B Q4 — akurasi tinggi, butuh ~2GB RAM (via TheBloke)',
   },
 ];
 
@@ -97,8 +97,8 @@ CLEAN THIS:`;
     this.logger = logger;
     this.llamaCliPath = this.getLlamaCliPath();
     this.modelsPath = this.getModelsPath();
-    this.timeoutMs = 10000;
-    this.defaultModel = 'qwen2.5-0.5b-q4_k_m.gguf';
+    this.timeoutMs = 30000;
+    this.defaultModel = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -431,7 +431,6 @@ CLEAN THIS:`;
         '--temp', '0.1',    // low temperature
         '--top-p', '0.9',
         '--repeat-penalty', '1.1',
-        '-ng',              // CPU mode (no GPU)
         '-t', '2',          // 2 threads — enough for tiny model
         '--no-display-prompt', // don't echo prompt
       ];

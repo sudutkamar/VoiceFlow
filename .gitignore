@@ -59,3 +59,9 @@ resources/whisper/models/
 .opencode.json
 .opencode.jsonc
 AGENTS.md
+
+# LLM llama-cli binaries (user downloads sendiri)
+resources/llm/*.dll
+resources/llm/*.exe
+resources/llm/*.pdb
+resources/llm/models/*.gguf
