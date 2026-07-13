@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
-import { playSound } from '../utils/audio';
+import { playSound } from '../utils/soundEffects';
 import { LANGUAGES, getLanguageByCode, getNextLanguage } from '../utils/languages';
 
 function fmt(ms: number) {

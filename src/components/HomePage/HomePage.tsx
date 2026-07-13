@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { useRecorder } from '../../hooks/useRecorder';
-import { playSound } from '../../utils/audio';
+import { playSound } from '../../utils/soundEffects';
 import { Iconify, getModelIcon, getModelSizeColor } from '../../utils/icons';
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';

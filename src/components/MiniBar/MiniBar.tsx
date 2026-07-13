@@ -6,7 +6,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { useRecorder } from '../../hooks/useRecorder';
-import { playSound } from '../../utils/audio';
+import { playSound } from '../../utils/soundEffects';
 import { getLanguageByCode, getNextLanguage } from '../../utils/languages';
 import { MINI_BAR_BASE_HEIGHT, MINI_BAR_BASE_WIDTH, MINI_BAR_MIN_HEIGHT, MINI_BAR_MAX_HEIGHT, WAVEFORM_POINTS } from '../../utils/constants';
 import VerticalMiniBar from '../VerticalMiniBar';
