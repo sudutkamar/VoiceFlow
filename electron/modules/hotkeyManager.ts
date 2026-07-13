@@ -146,7 +146,7 @@ export type AppState =
   | 'error';
 
 export class HotkeyManager {
-  private mainWindow: BrowserWindow;
+  private mainWindow: BrowserWindow | null;
   private miniWindow: BrowserWindow | null = null;
   private database: Database;
   private logger: Logger;
