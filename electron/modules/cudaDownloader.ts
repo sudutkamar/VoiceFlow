@@ -61,7 +61,9 @@ export class CudaDownloader {
 
   constructor(logger: Logger) {
     this.logger = logger;
-    const whisperDir = path.join(app.getPath('userData'), 'whisper');
+    const whisperDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'whisper')
+      : path.join(__dirname, '..', '..', 'resources', 'whisper');
     this.cudaPath = path.join(whisperDir, 'gpu');
     this.tempPath = path.join(app.getPath('userData'), 'cuda-temp.zip');
   }

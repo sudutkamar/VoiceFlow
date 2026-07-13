@@ -527,7 +527,9 @@ function setupIPC(): void {
   ipcMain.handle('get-gpu-status', async () => {
     try {
       const status = await cudaDownloader.checkStatus();
-      const whisperDir = path.join(app.getPath('userData'), 'whisper');
+      const whisperDir = app.isPackaged
+        ? path.join(app.getPath('userData'), 'whisper')
+        : path.join(__dirname, '..', 'resources', 'whisper');
       const cpuDir = path.join(whisperDir, 'cpu');
       const gpuDir = path.join(whisperDir, 'gpu');
       return {
