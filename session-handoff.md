@@ -1,8 +1,88 @@
 # Session Handoff
 
+## Session: 2026-07-14 (Session 9 — Smooth Transitions Audit & Implementation)
+
+### Summary
+
+**Glass Morph — Motion system redesign.** Implementasi 3 sistem motion premium di seluruh main window.
+
+### Motion System
+
+**1. Glass Reveal (Page Transition)** — `@keyframes glassReveal`
+- 0%: `scale(0.97)` + `translateY(12px)` + `filter: blur(6px)` + `opacity: 0`
+- 50%: Overshoot `scale(1.005)` + `translateY(-2px)` + blur berkurang
+- 100%: Settle ke `scale(1)` + `translateY(0)` + `blur(0)` + `opacity: 1`
+- Timing: `0.45s cubic-bezier(0.16, 1, 0.3, 1)` — ease-out yang dramatis
+
+**2. Sidebar Active — Accent Bar Settle** — `@keyframes accentBarIn`
+- 0%: `scaleY(0)` — bar belum keliatan
+- 40%: Overshoot `scaleY(1.3)` + `box-shadow: 20px glow`
+- 100%: Settle ke `scaleY(1)` + normal glow
+- Icon juga: `navIconSettle` — scale 1→1.25→0.95→1 dalam 0.5s
+
+**3. Notifikasi — Slide from Right + Center**
+- Posisi: `top: 50%` + `transform: translateY(-50%)` — tengah vertikal, kanan 24px
+- `@keyframes notifSlideIn`: masuk dari kanan (`translateX(40px)`) dengan scale 0.85 → overshoot → settle
+- Stack: sekarang staggered ke kanan (bukan ke bawah) — `translateX()` bukan `translateY()`
+- Hover: glow accent + translateX(0)
+
+### Perubahan Detail
+
+**1. Page switch — glassReveal**
+- Scale 0.97 + blur 6px → overshoot 1.005 → settle 1.0
+- Efek: "lensa kaca fokus" — blur mencair jadi sharp
+
+**2. Sidebar active — accentBarIn**
+- Overshoot scaleY 1.3 sebelum settle
+- Icon bounce 1→1.25→0.95→1 sebelum pulse breath
+
+**3. Notifikasi — center + slide from right**
+- `top: 50%` + `translateY(-50%)`
+- Slide dari kanan (translateX 40px) + scale 0.85 + blur 4px
+- Stack menyamping ke kanan (translateX), bukan ke bawah
+- Hover glow lebih kuat
+
+**4. Nav active breath — disempurnakan**
+- Background gradient breath antara 2 variasi opasitas
+- Tanpa glowPulse di accent bar (biar animasi settle dulu dari base.css)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `src/styles/base.css` | **EDIT** — pageIn → glassReveal, accentBarIn + navIconSettle keyframes baru |
+| `src/styles/utilities.css` | **EDIT** — Notifikasi center + notifSlideIn + stack horizontal |
+| `src/styles/interactions.css` | **EDIT** — navActiveBreath, hapus glowPulse dari accent bar (pindah ke base.css settle) |
+
+### Decisions
+- **Pure CSS** — No JS/HTML changes. Zero risk to recording.
+- **3-layer motion**: Page depth, sidebar settle, micro-interactions
+- **Semua timing seragam**: spring cubic-bezier(0.16, 1, 0.3, 1) untuk masuk, ease untuk hover
+- **CSS bundle**: 99.42 kB → **101.95 kB** (+2.5 kB dari keyframes baru)
+
+### Next Actions
+1. [ ] Test sidebar collapse/expand — verify nav-label fade
+2. [ ] Test page switching — Home → Settings → Models → verify pageIn animation
+3. [ ] Test mic button — record → stop → verify crossfade smooth
+4. [ ] Test modal — open → verify spring animation smooth
+5. [ ] Test inputs — click in/out → verify focus transitions
+6. [ ] Test confidence badge — record with different confidence → verify color transition
+
+---
+
 ## Session: 2026-07-14 (Session 8 — Interaction Effects: Glow Shift + Active Breath)
 
 ### Summary
+
+**CSS Split** — `app.css` (5989 lines) dipisah jadi 6 file modular:
+- `variables.css` (76 lines) — CSS variables dark/light
+- `base.css` (328 lines) — Reset, Layout, Title Bar, Sidebar, Content, Page
+- `components.css` (677 lines) — Buttons, Cards, Info/Progress/Download, Search Bar, Tabs
+- `pages.css` (1649 lines) — Home, Benchmark, Settings, all page-specific styles
+- `minibar-horizontal.css` (1119 lines) — Mini mode horizontal
+- `minibar-vertical.css` (577 lines) — Vertical Mini Bar + Cancel button (mini)
+- `utilities.css` (1130 lines) — Notification, Responsive, Theme Switcher, Profile, Modal, Adaptive Learning, CUDA, Orientation
+- `interactions.css` (433 lines) — Interaction effects (session 8)
+- `app.css` (~20 lines) — Entry point dengan `@import` 8 file
 
 **Added interaction effects** to all interactive elements in main window — sidebar nav, buttons, tabs, cards, list items, preset cards, benchmark items, etc. Pure CSS approach — zero HTML/JS changes.
 
@@ -21,7 +101,16 @@
 ### Files Changed
 | File | Change |
 |------|--------|
-| `src/styles/app.css` | **ADD** — ~320 lines interaction effects CSS di akhir file |
+| `src/styles/app.css` | **REWRITE** — Entry point dengan `@import` 6 file modular |
+| `src/styles/variables.css` | **REWRITE** — CSS variables dark/light themes (76 lines) |
+| `src/styles/base.css` | **NEW** — Reset, Layout, Title Bar, Sidebar, Content, Page (328 lines) |
+| `src/styles/components.css` | **NEW** — Buttons, Cards, Info/Progress/Download, Search Bar, Tabs (677 lines) |
+| `src/styles/pages.css` | **NEW** — Home, Benchmark, Settings, all page-specific styles (1649 lines) |
+| `src/styles/minibar.css` | **NEW** → **DELETED** (split into 3 files) |
+| `src/styles/minibar-horizontal.css` | **NEW** — Mini mode horizontal (1119 lines) |
+| `src/styles/minibar-vertical.css` | **NEW** — Vertical Mini Bar + Cancel mini (577 lines) |
+| `src/styles/utilities.css` | **NEW** — Notification, Theme, Profile, Modal, etc (1130 lines) |
+| `src/styles/interactions.css` | **NEW** — Interaction effects (433 lines) |
 
 ### Decisions
 - **Pure CSS approach**: No HTML/JS changes, no React state, no performance overhead. All effects via CSS transitions + animations + pseudo-classes.

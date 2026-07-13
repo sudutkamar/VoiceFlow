@@ -1,0 +1,443 @@
+/* =============================================
+   ✨ INTERACTION EFFECTS — Glow Shift + Active Breath
+   Applied to all interactive elements in main window.
+   ============================================= */
+
+/* ---- Shared Keyframes ---- */
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 8px var(--accent-glow), 0 0 16px rgba(74, 158, 255, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 16px var(--accent-glow), 0 0 32px rgba(74, 158, 255, 0.15);
+  }
+}
+
+@keyframes breathGlow {
+  0%, 100% {
+    box-shadow: 0 0 6px var(--accent-glow), inset 0 0 12px rgba(74, 158, 255, 0.04);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 14px var(--accent-glow), inset 0 0 20px rgba(74, 158, 255, 0.08);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes glowSlide {
+  0% { background-position: 0% 50%; opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { background-position: 200% 50%; opacity: 0.4; }
+}
+
+/* ---- Nav Item Overrides ---- */
+
+.nav-item {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-item:hover {
+  background: var(--bg-glass-hover);
+  color: var(--text);
+  transform: translateX(3px);
+  box-shadow: inset 2px 0 12px rgba(74, 158, 255, 0.06);
+}
+
+.nav-item:active {
+  transform: translateX(1px) scale(0.98);
+}
+
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(74, 158, 255, 0.12), var(--bg-glass-active));
+  color: var(--accent);
+  animation: navActiveBreath 3.5s ease-in-out infinite;
+}
+
+@keyframes navActiveBreath {
+  0%, 100% {
+    background: linear-gradient(90deg, rgba(74, 158, 255, 0.08), var(--bg-glass-active));
+    box-shadow: inset 0 0 12px rgba(74, 158, 255, 0.03);
+  }
+  50% {
+    background: linear-gradient(90deg, rgba(74, 158, 255, 0.14), rgba(74, 158, 255, 0.06));
+    box-shadow: inset 0 0 24px rgba(74, 158, 255, 0.06);
+  }
+}
+
+/* Active accent bar — enhanced glow dengan settle */
+.nav-item.active::before {
+  transform: translateY(-50%) scaleY(1);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* ---- Buttons ---- */
+
+.btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(74, 158, 255, 0.1) inset;
+}
+
+.btn:active {
+  transform: translateY(0px) scale(0.97);
+}
+
+.btn-primary {
+  background: var(--accent-gradient);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 4px 15px var(--accent-glow);
+  background-size: 200% 200%;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px var(--accent-glow), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  background-position: 100% 50%;
+}
+
+.btn-primary:active {
+  transform: translateY(0px) scale(0.97);
+}
+
+.btn-danger:hover {
+  box-shadow: 0 4px 16px rgba(248, 113, 113, 0.25), 0 0 0 1px rgba(248, 113, 113, 0.15) inset;
+}
+
+.btn-icon:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(74, 158, 255, 0.1) inset;
+  background: var(--bg-glass-hover);
+}
+
+/* ---- Hover Cards (Models, item cards) ---- */
+
+.card-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover:hover {
+  border-color: rgba(74, 158, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(74, 158, 255, 0.06) inset;
+  background: rgba(74, 158, 255, 0.02);
+}
+
+.card-active {
+  border-color: var(--accent);
+  animation: glowPulse 3s ease-in-out infinite;
+  background: rgba(74, 158, 255, 0.03);
+}
+
+/* Settings section cards */
+.section {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.section:hover {
+  border-color: rgba(74, 158, 255, 0.12);
+  box-shadow: var(--shadow-glass), 0 0 0 1px rgba(74, 158, 255, 0.04) inset;
+}
+
+/* ---- Tabs ---- */
+
+.tab {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: var(--bg-glass-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tab:active {
+  transform: translateY(0px) scale(0.96);
+}
+
+.tab-active {
+  background: var(--accent-gradient);
+  background-size: 200% 200%;
+  color: white;
+  box-shadow: 0 4px 16px var(--accent-glow), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  animation: glowSlide 4s ease-in-out infinite;
+}
+
+.tab-active:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px var(--accent-glow);
+}
+
+/* ---- Benchmarks ---- */
+
+.bench-model-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bench-model-btn:hover {
+  background: var(--bg-hover);
+  border-color: rgba(74, 158, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.bench-model-btn.selected {
+  background: rgba(74, 158, 255, 0.08);
+  border-color: rgba(74, 158, 255, 0.4);
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+.bench-model-btn:active {
+  transform: translateY(0px) scale(0.97);
+}
+
+.bench-run-btn {
+  background: linear-gradient(135deg, var(--accent), #3d8bfd);
+  background-size: 200% 200%;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.bench-run-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 36px var(--accent-glow), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  background-position: 100% 50%;
+}
+
+.bench-run-btn:active {
+  transform: translateY(0px) scale(0.97);
+}
+
+/* Benchmark result cards */
+.bench-result-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bench-result-card:hover {
+  border-color: rgba(74, 158, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.bench-result-card.fastest:hover {
+  border-color: rgba(74, 222, 128, 0.3);
+  box-shadow: 0 6px 20px rgba(74, 222, 128, 0.08);
+}
+
+/* ---- Preset Cards ---- */
+
+.preset-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.preset-card:hover {
+  background: var(--bg-glass-hover);
+  border-color: rgba(74, 158, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(74, 158, 255, 0.06) inset;
+}
+
+.preset-card:active {
+  transform: translateY(0px) scale(0.98);
+}
+
+/* ---- Hotkey Button ---- */
+
+.hotkey-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hotkey-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(74, 158, 255, 0.08) inset;
+}
+
+.hotkey-btn:active {
+  transform: translateY(0px) scale(0.97);
+}
+
+/* ---- Theme Buttons ---- */
+
+.theme-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.theme-btn.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+.theme-btn:active {
+  transform: translateY(0px) scale(0.95);
+}
+
+/* ---- Orientation Buttons ---- */
+
+.orientation-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.orientation-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.orientation-btn:active {
+  transform: translateY(0px) scale(0.95);
+}
+
+/* ---- History items (card-list > card) ---- */
+
+.card-list .card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-list .card:hover {
+  border-color: rgba(74, 158, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(74, 158, 255, 0.04) inset;
+  background: rgba(74, 158, 255, 0.02);
+}
+
+/* ---- Active model info card ---- */
+
+.active-model-info {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.active-model-info:hover {
+  border-color: rgba(74, 158, 255, 0.15);
+  box-shadow: var(--shadow-glass), 0 0 0 1px rgba(74, 158, 255, 0.04) inset;
+}
+
+/* ---- List items (dictionary, snippets) ---- */
+
+.list-item {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.list-item:hover {
+  background: rgba(74, 158, 255, 0.03);
+  transform: translateX(2px);
+}
+
+/* ---- Action buttons (btn-action) ---- */
+
+.btn-action {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-action:hover {
+  background: var(--bg-glass-hover);
+  border-color: rgba(74, 158, 255, 0.3);
+  color: var(--text);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(74, 158, 255, 0.06) inset;
+}
+
+.btn-action:active {
+  transform: translateY(0px) scale(0.97);
+}
+
+.btn-action.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px var(--accent-glow), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+/* ---- Recent items (home page) ---- */
+
+.recent-item {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.recent-item:hover {
+  background: var(--bg-glass-hover);
+  border-color: rgba(74, 158, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(74, 158, 255, 0.04) inset;
+}
+
+.recent-item:active {
+  transform: translateY(0px) scale(0.98);
+}
+
+/* ---- History link button ---- */
+
+.history-link-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.history-link-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(74, 158, 255, 0.06) inset;
+}
+
+.history-link-btn:active {
+  transform: translateY(0px) scale(0.98);
+}
+
+/* ---- Download progress card ---- */
+
+.download-progress-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.download-progress-card:hover {
+  border-color: rgba(74, 158, 255, 0.15);
+  box-shadow: var(--shadow-glass), 0 0 0 1px rgba(74, 158, 255, 0.04) inset;
+}
+
+/* ---- Benchmark step indicators ---- */
+
+.bench-step-dot {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.bench-step-item:hover .bench-step-dot {
+  transform: scale(1.15);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.bench-step-item.active:hover .bench-step-dot {
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+/* ---- History group labels ---- */
+
+.history-group-label {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.history-group-label:hover {
+  color: var(--text);
+  transform: translateX(2px);
+  opacity: 1;
+}
+
+/* ---- Info cards ---- */
+
+.info-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.info-card:hover {
+  border-color: rgba(74, 158, 255, 0.15);
+  box-shadow: var(--shadow-glass), 0 0 0 1px rgba(74, 158, 255, 0.04) inset;
+}
+
