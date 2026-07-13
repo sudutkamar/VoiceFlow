@@ -250,9 +250,29 @@ export function setupDictationIPC(
         return;
       }
 
-      // CRITICAL FIX: Send transcript to UI IMMEDIATELY, then paste in background
-      // This makes UI respond instantly — user sees result immediately
-      // Paste happens in parallel — user doesn't need to wait for paste
+      // CRITICAL: UI SYNC — Paste happens BEFORE UI shows done
+      // Floating UI loading = proses aktual (termasuk paste)
+      const autoPaste = database.getSetting('auto_paste') !== 'false';
+      let pasteResult: { success: boolean; ms: number } = { success: false, ms: 0 };
+      
+      if (autoPaste && finalText) {
+        // Keep UI in 'pasting' state while paste happens
+        hotkeyManager?.setState('pasting');
+        try {
+          const pasteRes = await pasteEngine.paste(
+            finalText, 
+            hotkeyManager?.getTargetWindowHandle(), 
+            hotkeyManager?.getTargetWindowThread()
+          );
+          pasteResult = { success: pasteRes.success, ms: pasteRes.ms || 0 };
+          logger.info('Paste completed', { success: pasteResult.success, ms: pasteResult.ms });
+        } catch (err) {
+          logger.warn('Paste failed', err);
+        }
+      }
+
+      // NOW send transcript to UI — paste is already done
+      // UI shows result IMMEDIATELY after paste
       send('transcript-ready', {
         raw: transcribeResult.rawText || transcribeResult.text,
         cleaned: finalText,
@@ -268,20 +288,6 @@ export function setupDictationIPC(
         fuzzyChanges: transcribeResult.fuzzyChanges,
         rawText: transcribeResult.rawText,
       });
-      hotkeyManager?.setState('done');
-
-      // Paste in background (non-blocking) — UI already shows result
-      const autoPaste = database.getSetting('auto_paste') !== 'false';
-      if (autoPaste && finalText) {
-        // Don't await — paste in background
-        pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread())
-          .then(result => {
-            logger.info('Background paste completed', { success: result.success, ms: result.ms });
-          })
-          .catch(err => {
-            logger.warn('Background paste failed', err);
-          });
-      }
 
       // Record transcription for auto-learning
       adaptiveLearning.recordTranscription(transcribeResult.text || '');
@@ -292,9 +298,10 @@ export function setupDictationIPC(
       database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
 
       hotkeyManager?.setState('done');
+      timingLog.push(`paste:${pasteResult.ms || 0}ms`);
       timingLog.push(`total:${Date.now() - startTime}ms`);
       logger.info('Dictation complete', { timing: timingLog.join(', '), text: finalText });
-      setTimeout(() => hotkeyManager?.setState('idle'), 500);
+      setTimeout(() => hotkeyManager?.setState('idle'), 300);
     } catch (error: any) {
       logger.error('Dictation error', error);
       hotkeyManager?.setState('error');
