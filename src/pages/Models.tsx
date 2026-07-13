@@ -410,10 +410,16 @@ function Models({ onSuccess, onError }: ModelsProps) {
     if (name.includes('large-v3')) return 'Best';
     if (name.includes('large')) return 'Best';
     if (name.includes('medium')) return 'Great';
-    if (name.includes('small')) return 'Better';
-    if (name.includes('base-q5_1')) return 'Good';
+    if (name.includes('small')) return '⭐ Better';
+    if (name.includes('base-q5_1')) return '⭐ Good';
     if (name.includes('base')) return 'Good';
     if (name.includes('tiny')) return 'Low';
+    return '';
+  };
+
+  const getRecommendation = (name: string): string => {
+    if (name.includes('small')) return '⭐ RECOMMENDED — Best akurasi & kecepatan';
+    if (name.includes('base-q5_1')) return '⚡ FAST — Cepat untuk daily use';
     return '';
   };
 
@@ -581,10 +587,16 @@ function Models({ onSuccess, onError }: ModelsProps) {
                   <div className="card-title">
                     {getLabel(model.name)}
                     {isActive && <span className="badge">Active</span>}
+                    {getRecommendation(model.name) && !isActive && <span className="badge" style={{ background: 'var(--accent)', color: 'white' }}>Recommended</span>}
                     {!model.isKnown && model.downloaded && <span className="badge badge-custom">Custom</span>}
                     {isCorrupt && <span className="badge badge-warning">Corrupt</span>}
                   </div>
                   <div className="card-desc">{model.description}</div>
+                  {getRecommendation(model.name) && (
+                    <div className="card-desc" style={{ color: 'var(--accent)', fontWeight: 500, marginTop: '2px' }}>
+                      {getRecommendation(model.name)}
+                    </div>
+                  )}
                   <div className="card-meta">
                     <span>{model.size}</span>
                     <span>{getSpeed(model.name)}</span>
@@ -658,16 +670,33 @@ function Models({ onSuccess, onError }: ModelsProps) {
         })}
       </div>
 
-      {/* Tips */}
+      {/* Tips & Recommendations */}
       <div className="info-box">
-        <h3><Iconify icon="tip" size={16} /> Tips</h3>
-        <ul>
-          <li><strong>Base</strong> is good enough for daily use</li>
-          <li><strong>Medium</strong> gives best accuracy but uses more RAM</li>
-          <li>Download requires internet connection</li>
-          <li>You can pause and resume downloads at any time</li>
-          <li>If a model shows as "Corrupt", click "Re-download" to fix it</li>
-        </ul>
+        <h3><Iconify icon="tip" size={16} /> Rekomendasi Model</h3>
+        <div style={{ marginTop: '8px' }}>
+          <div style={{ marginBottom: '12px' }}>
+            <strong style={{ color: 'var(--accent)' }}>⭐ Best Overall: ggml-small.bin</strong>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', opacity: 0.8 }}>
+              Akurasi 90-95%, cepat, cocok untuk semua bahasa termasuk Indonesian.
+              Balance terbaik antara kecepatan dan akurasi.
+            </p>
+          </div>
+          <div style={{ marginBottom: '12px' }}>
+            <strong style={{ color: 'var(--success)' }}>⚡ Fastest: ggml-base-q5_1.bin</strong>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', opacity: 0.8 }}>
+              57MB, sangat cepat (~3 detik), akurasi cukup untuk daily use.
+              Cocok untuk coding, chat, dan catatan singkat.
+            </p>
+          </div>
+          <div>
+            <strong>📊 Perbandingan:</strong>
+            <ul style={{ margin: '4px 0 0 0', fontSize: '13px', opacity: 0.8 }}>
+              <li><strong>Tiny/Base</strong> — Sangat cepat, akurasi rendah-sedang</li>
+              <li><strong>Small</strong> — Cepat, akurasi tinggi ⭐</li>
+              <li><strong>Medium/Large</strong> — Lambat, butuh RAM 8GB+</li>
+            </ul>
+          </div>
+        </div>
       </div>
       {/* Delete Confirmation Modal */}
       {confirmDelete && (
