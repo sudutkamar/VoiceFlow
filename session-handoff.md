@@ -1,10 +1,14 @@
 # Session Handoff
 
-## Session: 2026-07-14 (Session 7 — App.tsx Split + Component Extraction)
+## Session: 2026-07-14 (Session 7 — App.tsx Split + Component Extraction + Audit Fixes)
 
 ### Summary
 
-**App.tsx split** — Extracted MiniBar and HomePage into separate component files. App.tsx reduced from 976 lines to ~180 lines.
+**App.tsx split** — Extracted MiniBar and HomePage into separate component files. App.tsx reduced from 976 lines to 219 lines.
+
+**Additional fixes from audit:**
+1. **Fixed type mismatch** — `sendAudioData` now uses `Array.from()` instead of `as any` cast
+2. **Added error logging** — Empty catch blocks now log warnings instead of silently swallowing errors
 
 **Files Created:**
 - `src/components/MiniBar/MiniBar.tsx` — Horizontal floating bar (~450 lines)
@@ -20,10 +24,11 @@
 ### Files Changed
 | File | Change |
 |------|--------|
-| `src/App.tsx` | **REWRITE** — Reduced from 976 → ~180 lines. Extracted MiniBar and HomePage. |
-| `src/components/MiniBar/MiniBar.tsx` | **NEW** — Horizontal mini bar component |
-| `src/components/HomePage/HomePage.tsx` | **NEW** — Home page with recording UI |
+| `src/App.tsx` | **REWRITE** — Reduced from 976 → 219 lines. Extracted MiniBar and HomePage. Added error logging. |
+| `src/components/MiniBar/MiniBar.tsx` | **NEW** — Horizontal mini bar component (464 lines) |
+| `src/components/HomePage/HomePage.tsx` | **NEW** — Home page with recording UI (325 lines) |
 | `src/styles/variables.css` | **NEW** — CSS variables reference |
+| `src/hooks/useRecorder.ts` | **FIX** — Replaced `as any` cast with proper `Array.from()` conversion |
 
 ### Decisions
 - **Extract first, split CSS later**: Component extraction is safe and well-tested. CSS splitting can be done incrementally.

@@ -1,5 +1,23 @@
 # Changelog VoiceFlow
 
+## [1.0.2] - 2026-07-14
+
+### Added
+- `src/components/MiniBar/MiniBar.tsx` — Extracted horizontal mini bar component
+- `src/components/HomePage/HomePage.tsx` — Extracted home page component
+- `src/styles/variables.css` — CSS variables reference file
+
+### Changed
+- **App.tsx split** — Reduced from 976 → 219 lines. MiniBar and HomePage now in separate files.
+- **Fixed type mismatch** — `sendAudioData` in useRecorder now uses `Array.from()` instead of `as any` cast
+- **Added error logging** — Empty catch blocks in MiniBar and MainApp now log warnings
+
+### Technical Debt
+- `src/styles/app.css` still 5556 lines — CSS splitting deferred
+- `electron/ipc/dictation.ipc.ts` has LLM handlers mixed with dictation — needs splitting
+
+---
+
 ## [1.0.1] - 2026-07-14
 
 ### Added
@@ -17,7 +35,6 @@
 - `.gitignore` — Added `.build/` directory, removed stale `nul` entry
 
 ### Technical Debt
-- `src/App.tsx` still 976 lines — needs splitting into separate component files
 - `src/styles/app.css` still 5556 lines — needs splitting by component
 - `electron/ipc/dictation.ipc.ts` has LLM handlers mixed with dictation — needs splitting
 

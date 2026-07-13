@@ -293,7 +293,7 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
       try {
         const { buffer, duration } = await wavRecorderRef.current.stop();
         wavRecorderRef.current = null;
-        window.electronAPI.sendAudioData({ buffer: new Uint8Array(buffer) as any, mimeType: 'audio/wav', duration });
+        window.electronAPI.sendAudioData({ buffer: Array.from(new Uint8Array(buffer)), mimeType: 'audio/wav', duration });
         processingTimeoutRef.current = setTimeout(() => {
           if (stateRef.current === 'processing') {
             setError('Timeout');
