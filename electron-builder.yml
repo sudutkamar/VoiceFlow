@@ -34,12 +34,16 @@ files:
   - "!node_modules/rxjs/**"
   - "!node_modules/@babel/**"
 extraResources:
+  # CPU whisper engine — wajib, tanpa ini app gak bisa record
+  - from: resources/whisper/cpu
+    to: whisper/cpu
   # App icons — important for tray and window
   - from: resources/icons
     to: icons
-  # NOTE: Whisper binary + CUDA DLL + AI models are NOT bundled.
-  # User downloads them from within the app after installation.
-  # This keeps the installer small (~5 MB).
+  # NOTE: GPU/CUDA DLL dan AI models TIDAK dibundle.
+  # User download dari dalam app setelah install.
+  # GPU: extract ke whisper/gpu/
+  # Models: download langsung via halaman Models di app
 win:
   executableName: VoiceFlow
   icon: resources/icons/icon.ico

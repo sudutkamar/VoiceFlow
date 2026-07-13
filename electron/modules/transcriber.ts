@@ -167,8 +167,7 @@ export class Transcriber {
 
   private detectGpu(): void {
     try {
-      const whisperDir = this.getWhisperDir();
-      const cudaDllPath = path.join(whisperDir, 'gpu', 'ggml-cuda.dll');
+      const cudaDllPath = path.join(this.getUserDataDir(), 'gpu', 'ggml-cuda.dll');
       this.hasGpu = cachedPathExists(cudaDllPath);
       this.logger.info(`GPU: ${this.hasGpu ? 'CUDA ✓' : 'CPU only'}`);
     } catch {
@@ -177,21 +176,27 @@ export class Transcriber {
   }
 
   /**
-   * Whisper directory — points to userData in production (so downloaded
-   * binaries can be extracted there), and to resources/ in dev mode.
-   * Structure: {whisperDir}/{cpu,gpu,models}/
+   * CPU whisper binary — bundled in resources/ (packaged) or resources/ (dev).
+   * GPU DLL + Models — downloaded by user to userData/whisper/ after install.
+   * Structure:
+   *   bundled:  resources/whisper/cpu/whisper-cli.exe
+   *   download: userData/whisper/{gpu,models}/
    */
-  private getWhisperDir(): string {
-    if (app.isPackaged) return path.join(app.getPath('userData'), 'whisper');
-    return path.join(__dirname, '..', '..', 'resources', 'whisper');
+  private getWhisperCpuDir(): string {
+    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper', 'cpu');
+    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'cpu');
   }
 
   private getWhisperPath(): string {
-    return path.join(this.getWhisperDir(), 'cpu', 'whisper-cli.exe');
+    return path.join(this.getWhisperCpuDir(), 'whisper-cli.exe');
+  }
+
+  private getUserDataDir(): string {
+    return path.join(app.getPath('userData'), 'whisper');
   }
 
   private getModelsPath(): string {
-    return path.join(this.getWhisperDir(), 'models');
+    return path.join(this.getUserDataDir(), 'models');
   }
 
   setMainWindow(window: BrowserWindow): void { this.mainWindow = window; }
