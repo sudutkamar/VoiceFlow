@@ -204,8 +204,11 @@ export function setupDictationIPC(
         }
 
         // Phase 3: LLM Post-Processing (local llama inference)
-        // CRITICAL: Skip LLM for short text (less than 50 chars) for speed
-        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length > 50;
+        // CRITICAL: Skip LLM for short text for speed
+        // Short text (<100 chars): Skip LLM entirely (instant)
+        // Medium text (100-300 chars): Use LLM if enabled
+        // Long text (>300 chars): Always use LLM if enabled
+        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length >= 100;
         if (shouldUseLLM) {
           try {
             // Update state to show LLM processing
