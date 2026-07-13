@@ -401,3 +401,93 @@ Skill-skill akan otomatis terdaftar. Jika model tidak otomatis mengaktifkannya, 
 - `/skill:voiceflow-audio` — load audio patterns
 
 Tapi idealnya, model harus membaca ketiga skill ini secara otomatis di setiap session tanpa diminta.
+
+---
+
+## Aturan File & Folder Baru
+
+### Setiap fitur/komponen baru → file/folder baru
+
+Jangan pernah nempel kode baru ke file existing yang besar kalau bisa dipisah.
+Buat file atau folder baru biar proyek tetap terstruktur.
+
+**Contoh baik:**
+```
+# Fitur baru: auto-punctuation settings tab
+src/pages/Settings.tsx  — (jangan diedit)
+→ src/components/SettingsPunctuationTab.tsx  — (file baru)
+
+# Fitur baru: export to PDF
+src/App.tsx  — (jangan ditambahin)
+→ src/utils/exportPdf.ts  — (file baru)
+→ src/components/ExportButton.tsx  — (file baru)
+```
+
+**Contoh buruk:**
+```
+# ❌ Nambah 200 line ke App.tsx padahal bisa dipisah
+# ❌ Nambah fungsi utility ke file yang udah 500 line
+# ❌ Nambah CSS baru di tengah app.css yang 4900 line
+```
+
+### Struktur folder yang sudah ada
+
+Jangan membuat folder baru kalau sudah ada folder yang cocok:
+
+| Jenis | Folder | Contoh |
+|-------|--------|--------|
+| React component | `src/components/` | `src/components/SettingsPunctuationTab.tsx` |
+| React page | `src/pages/` | `src/pages/NewFeaturePage.tsx` |
+| Utility/logic | `src/utils/` | `src/utils/exportPdf.ts` |
+| CSS/styles | `src/styles/` | `src/styles/new-feature.css` |
+| React hook | `src/hooks/` | `src/hooks/useNewFeature.ts` |
+| Electron main process | `electron/modules/` | `electron/modules/newService.ts` |
+| Electron IPC handler | `electron/ipc/` | `electron/ipc/newFeature.ipc.ts` |
+| Types | `src/types/` | `src/types/newFeature.d.ts` |
+| Icons | `src/utils/icons.tsx` | Tambah icon name baru di file ini |
+
+### Exception — kapan BOLEH edit file existing
+
+- **Bug fix** — langsung edit file yang bersangkutan
+- **Refactor kecil** — rename, extract function, type fix
+- **Update pipeline** — kalo fitur baru perlu nyambung ke pipeline existing (contoh: tambah post-processor di dictation.ipc.ts)
+- **Tambah icon** — edit `src/utils/icons.tsx`
+- **Tambah IPC channel** — edit `electron/preload.ts` + `src/types/electron.d.ts`
+
+### Kalau ragu, tanya dulu
+
+Bingung file baru atau edit existing? Tanya user:
+> "Ini lebih cocok sebagai komponen terpisah di src/components/ atau nempel di file yang udah ada?"
+
+---
+
+## Prioritas Kode: Sederhana > Canggih
+
+### Kode sederhana lebih baik dari kode "pintar"
+
+**❌ Jangan:**
+- Over-engineering (patterns, abstraksi, generic berlapis)
+- Zustand/Redux kalau useState cukup
+- Custom hooks kalau useEffect biasa cukup
+- Builder pattern, factory pattern, observer pattern — kecuali benar-benar diperlukan
+
+**✅ Lakukan:**
+- Kode lurus, gampang dibaca, gampang di-debug
+- Copy-paste yang jelas lebih baik dari abstraksi prematur
+- Function 20 line > function 5 line dengan 3 level callback
+- `if/else` jelas > ternary bersarang
+- Comment > code golf
+
+### Prinsip:
+```
+// ❌ Pintar tapi susah dibaca
+const r = d.reduce((a,{k,v})=>({...a,[k]:v}),{});
+
+// ✅ Sederhana, jelas
+const result: Record<string, any> = {};
+for (const item of d) {
+  result[item.k] = item.v;
+}
+```
+
+Kalau ada solusi sederhana dan solusi canggih — **pilih yang sederhana**. Future-proofing yang sebenarnya adalah kode yang mudah diubah nanti.
