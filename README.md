@@ -1,6 +1,8 @@
-# VoiceFlow v1.0.0
-
-**Aplikasi Voice-to-Text lokal untuk Windows — 100% gratis, 100% privat, tanpa internet.**
+<div align="center">
+  <img src="src/assets/logo.png" alt="VoiceFlow Logo" width="120" />
+  <h1>VoiceFlow v1.0.0</h1>
+  <p><strong>Aplikasi Voice-to-Text lokal untuk Windows — 100% gratis, 100% privat, tanpa internet.</strong></p>
+</div>
 
 VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara real-time menggunakan AI (OpenAI Whisper) yang berjalan **sepenuhnya di komputer kamu**. Cocok untuk menulis dokumen, coding, content creation, dan kebutuhan mengetik lainnya tanpa harus menyentuh keyboard.
 
@@ -168,6 +170,22 @@ Floating window ini:
 - Waveform visualizer real-time
 - Timer recording
 - Tooltip informatif di setiap tombol
+
+---
+
+### 🖥️ Main Window
+
+Tampilan utama VoiceFlow dengan sidebar navigasi dan halaman recording:
+
+![Main Window UI](resources/icons/preview/window-ui.png)
+
+| Halaman | Fungsi |
+|---------|--------|
+| **Record** | Halaman utama — mic button, waveform visualizer, hasil transkripsi |
+| **Models** | Download & manage AI models |
+| **History** | Riwayat transkripsi dengan search & export |
+| **Benchmark** | Test kecepatan & akurasi model |
+| **Settings** | Konfigurasi aplikasi — recording, processing, hotkey, dll |
 
 ### 📝 Text Processing
 
