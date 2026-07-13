@@ -219,7 +219,7 @@ export class VoiceFlowDatabase {
     const defaults: Record<string, string> = {
       hotkey: 'CommandOrControl+Shift+Space',
       language: 'auto',
-      model: 'ggml-large-v3-turbo-q5_0.bin',
+      model: '', // empty = no model downloaded yet, user must download first
       save_history: 'true',
       auto_paste: 'true',
       cleanup_enabled: 'false',

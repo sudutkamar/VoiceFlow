@@ -108,8 +108,9 @@ export default function HomePage({ settings, onSuccess, onError }: HomePageProps
     const modelName = model.replace('ggml-', '').replace('.bin', '');
     
     // Get model display name
-    let displayName = 'No Model';
-    if (model.includes('large-v3-q5_0')) displayName = 'Large v3 Q5';
+    let displayName = '';
+    if (!model) displayName = 'Pilih Model';
+    else if (model.includes('large-v3-q5_0')) displayName = 'Large v3 Q5';
     else if (model.includes('large-v3-turbo-q8_0')) displayName = 'Large v3 Turbo Q8';
     else if (model.includes('large-v3-turbo-q5_0')) displayName = 'Large v3 Turbo Q5';
     else if (model.includes('large-v3-turbo')) displayName = 'Large v3 Turbo';

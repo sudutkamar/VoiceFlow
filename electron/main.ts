@@ -274,7 +274,18 @@ function createMiniWindow(): void {
 
   miniWindow.on('ready-to-show', () => {
     if (miniWindow && !miniWindow.isDestroyed()) {
-      // Jangan hide — langsung set flag ready
+      // Force position to bottom-center on first show (fixes multi-monitor / DPI issues)
+      const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+      const bounds = miniWindow.getBounds();
+      const savedX = parseInt(database?.getSetting('mini_window_x') || '0', 10);
+      const savedY = parseInt(database?.getSetting('mini_window_y') || '0', 10);
+      const hasSavedPos = savedX > 0 && savedY > 0;
+      const targetX = hasSavedPos ? savedX : Math.round((sw - bounds.width) / 2);
+      const targetY = hasSavedPos ? savedY : Math.max(0, sh - bounds.height - 10);
+      if (bounds.x !== targetX || bounds.y !== targetY) {
+        miniWindow.setBounds({ x: targetX, y: targetY, width: bounds.width, height: bounds.height });
+      }
+      
       miniWindowReady = true;
       // Jika ada deferred show, tampilkan sekarang
       if (deferredShowMiniWindow) {
