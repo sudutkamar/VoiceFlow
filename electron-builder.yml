@@ -37,9 +37,11 @@ extraResources:
   # CPU whisper engine — from build.bat or manual download
   - from: resources/whisper/cpu
     to: whisper/cpu
-  # GPU/CUDA DLLs — user download sendiri kalo perlu
-  # - from: resources/whisper/gpu
-  #   to: whisper/gpu
+  # GPU/CUDA DLLs — bundle kalo ada (dari build.bat atau download-whisper)
+  - from: resources/whisper/gpu
+    to: whisper/gpu
+    filter:
+      - "*.dll"
   # AI models — user download sendiri via app
   # - from: resources/whisper/models
   #   to: whisper/models

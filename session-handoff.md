@@ -1,5 +1,55 @@
 # Session Handoff
 
+## Session: 2026-07-14 (Session 8 — Interaction Effects: Glow Shift + Active Breath)
+
+### Summary
+
+**Added interaction effects** to all interactive elements in main window — sidebar nav, buttons, tabs, cards, list items, preset cards, benchmark items, etc. Pure CSS approach — zero HTML/JS changes.
+
+**Efek yang diterapkan:**
+1. **Hover Glow** — semua `.nav-item`, `.btn`, `.tab`, `.card-hover`, `.preset-card`, `.bench-model-btn`, `.hotkey-btn`, `.theme-btn`, `.recent-item`, `.list-item`, `.btn-action`, `.history-link-btn`, `.bench-result-card`, `.section`, `.info-card`, `.download-progress-card` — translateY(-1px/-2px) + box-shadow glow + border-color accent
+2. **Active Breath** — `.nav-item.active`, `.card-active`, `.bench-model-btn.selected`, `.tab-active` — animasi `glowPulse` / `breathGlow` continuous (denyut lembut)
+3. **Active accent bar glow** — `.nav-item.active::before` — glowPulse animasi + box-shadow glow
+4. **Scale on press** — `.btn:active`, `.nav-item:active`, `.tab:active`, `.preset-card:active` — scale(0.95-0.98) untuk tactile feedback
+5. **Gradient slide** — `.tab-active`, `.btn-primary`, `.bench-run-btn` — `background-size: 200%` + glowSlide animasi subtle
+
+**Keyframes baru:**
+- `glowPulse` — box-shadow berdenyut (2-3s loop)
+- `breathGlow` — box-shadow + scale berdenyut (3s loop)
+- `glowSlide` — background-position geser lambat (4s loop)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `src/styles/app.css` | **ADD** — ~320 lines interaction effects CSS di akhir file |
+
+### Decisions
+- **Pure CSS approach**: No HTML/JS changes, no React state, no performance overhead. All effects via CSS transitions + animations + pseudo-classes.
+- **Consistent language**: Semua elemen pake bahasa visual yang sama — translateY lift + accent glow + subtle shadow.
+- **No mini bar changes**: Efek cuma di main window. Mini bar tetap seperti adanya (AGENTS.md Rule #4).
+- **No recording pipeline changes**: AGENTS.md Rule #1 dipatuhi — recording zero modifications.
+
+### Verification
+- TypeScript compilation: **0 errors** (no TS files changed)
+- CSS syntax: Valid — semua selector cocok dengan HTML yang ada
+- Zero risk to recording: No audio/electron/preload changes
+
+### Risks / Technical Debt
+- Belum test visual di light theme — CSS variables (`--accent-glow`, `--accent`) otomatis menyesuaikan, tapi perlu verify
+- Belum test di vertical mini bar — tidak kena (cuma main window class)
+- `app.css` makin besar (+320 lines) — perlu dipisah nanti
+
+### Next Actions
+1. [ ] Test all hover effects: sidebar nav, buttons, tabs, cards, list items
+2. [ ] Test active breath animation: nav-item.active, card-active, bench-model-btn.selected
+3. [ ] Test press feedback: all buttons — verify scale down works
+4. [ ] Test light theme: toggle theme → verify effect colors still look good
+5. [ ] Test on Benchmark page: model select, run button, result cards
+6. [ ] Test on Settings page: tabs, preset cards, hotkey buttons, theme buttons
+7. [ ] Test on Models page: cards, download progress card
+
+---
+
 ## Session: 2026-07-14 (Session 7 — App.tsx Split + Component Extraction + Audit Fixes)
 
 ### Summary
