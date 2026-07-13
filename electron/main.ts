@@ -169,11 +169,16 @@ function createMiniWindow(): void {
   
   const taskbarHeight = sh; // workArea already excludes taskbar
 
+  // Use saved position if available, else center on primary display
+  const savedX = parseInt(database?.getSetting('mini_window_x') || '0', 10);
+  const savedY = parseInt(database?.getSetting('mini_window_y') || '0', 10);
+  const hasSavedPos = savedX > 0 && savedY > 0;
+
   miniWindow = new BrowserWindow({
     width: miniWidth,
     height: miniHeight,
-    x: Math.round((sw - miniWidth) / 2),
-    y: taskbarHeight - miniHeight - 10,
+    x: hasSavedPos ? savedX : Math.round((sw - miniWidth) / 2),
+    y: hasSavedPos ? savedY : Math.max(0, sh - miniHeight - 10),
     minWidth,
     minHeight,
     maxWidth,
@@ -213,14 +218,25 @@ function createMiniWindow(): void {
     }
   });
 
-  // Save window size on resize
+  // Save window size AND position on resize/move
   miniWindow.on('resize', () => {
     if (miniWindow && !miniWindow.isDestroyed() && database) {
       const bounds = miniWindow.getBounds();
       database.updateSetting('mini_window_width', String(bounds.width));
       database.updateSetting('mini_window_height', String(Math.max(28, Math.min(350, bounds.height))));
+      database.updateSetting('mini_window_x', String(bounds.x));
+      database.updateSetting('mini_window_y', String(bounds.y));
       // Notify renderer of new size
       miniWindow.webContents.send('mini-window-resize', { width: bounds.width, height: bounds.height });
+    }
+  });
+
+  // Save position on move
+  miniWindow.on('move', () => {
+    if (miniWindow && !miniWindow.isDestroyed() && database) {
+      const bounds = miniWindow.getBounds();
+      database.updateSetting('mini_window_x', String(bounds.x));
+      database.updateSetting('mini_window_y', String(bounds.y));
     }
   });
 
