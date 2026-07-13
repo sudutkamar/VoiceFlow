@@ -760,17 +760,39 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (!isQuitting) return;
+  // Cleanup is done in before-quit; don't call app.quit() again here
+  // (redundant quit can trigger fail-fast exception on Windows)
   hotkeyManager?.unregister();
   database?.close();
   logger?.info('VoiceFlow closed');
-  app.quit();
 });
 
 app.on('activate', () => showMainWindow());
 
 app.on('before-quit', () => {
+  if (isQuitting) return; // Prevent re-entry
   isQuitting = true;
   globalShortcut.unregisterAll();
+  
+  // CRITICAL: Destroy tray and windows explicitly to ensure clean shutdown
+  try {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+  } catch {}
+  try {
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.destroy();
+      miniWindow = null;
+    }
+  } catch {}
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy();
+      mainWindow = null;
+    }
+  } catch {}
   
   // CRITICAL: Kill any running whisper-cli process to prevent ghost processes
   try {
@@ -778,6 +800,12 @@ app.on('before-quit', () => {
     if (transcriber) {
       transcriber.cancelTranscription();
     }
+  } catch {}
+  
+  // CRITICAL: Force-stop uIOhook to prevent native crash on exit
+  try {
+    hotkeyManager?.forceStopUiohook();
+    hotkeyManager?.clearWindowReferences();
   } catch {}
   
   // CRITICAL: Cleanup temp files from interrupted downloads

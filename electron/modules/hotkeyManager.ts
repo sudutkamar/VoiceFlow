@@ -420,6 +420,26 @@ export class HotkeyManager {
     this.maybeStopUiohook();
   }
 
+  /** Force-stop uIOhook during app shutdown — ignores push-to-talk state */
+  forceStopUiohook(): void {
+    if (uIOhook && this.uiohookStarted) {
+      try {
+        uIOhook.stop();
+        this.uiohookStarted = false;
+        this.uiohookListenerCount = 0;
+        this.logger.info('uIOhook force-stopped');
+      } catch (err) {
+        this.logger.warn('Error force-stopping uIOhook', err);
+      }
+    }
+  }
+
+  /** Clear window references during shutdown to prevent dangling refs */
+  clearWindowReferences(): void {
+    this.mainWindow = null;
+    this.miniWindow = null;
+  }
+
   // ──────────────────────────────────────────────────────────────────
   //  Escape cancel via uIOhook (non-blocking — does NOT consume key)
   // ──────────────────────────────────────────────────────────────────

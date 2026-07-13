@@ -1,5 +1,101 @@
 # Session Handoff
 
+## Session: 2026-07-14 (Session 7 — App.tsx Split + Component Extraction)
+
+### Summary
+
+**App.tsx split** — Extracted MiniBar and HomePage into separate component files. App.tsx reduced from 976 lines to ~180 lines.
+
+**Files Created:**
+- `src/components/MiniBar/MiniBar.tsx` — Horizontal floating bar (~450 lines)
+- `src/components/HomePage/HomePage.tsx` — Main recording page (~310 lines)
+- `src/styles/variables.css` — CSS variables reference file
+
+**App.tsx now contains:**
+- ErrorBoundary
+- App (root)
+- AppContent (router)
+- MainApp (sidebar + page routing)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `src/App.tsx` | **REWRITE** — Reduced from 976 → ~180 lines. Extracted MiniBar and HomePage. |
+| `src/components/MiniBar/MiniBar.tsx` | **NEW** — Horizontal mini bar component |
+| `src/components/HomePage/HomePage.tsx` | **NEW** — Home page with recording UI |
+| `src/styles/variables.css` | **NEW** — CSS variables reference |
+
+### Decisions
+- **Extract first, split CSS later**: Component extraction is safe and well-tested. CSS splitting can be done incrementally.
+- **Keep MainApp in App.tsx**: Only ~120 lines, not worth extracting yet.
+- **MiniBar as default export**: Allows lazy loading if needed later.
+
+### Verification
+- TypeScript compilation: **0 errors**
+- Vite build: **Success**
+
+### Risks / Technical Debt
+- `src/styles/app.css` still 5556 lines — CSS splitting deferred to next session
+- `electron/ipc/dictation.ipc.ts` still mixed — LLM handlers need extraction
+
+### Next Actions
+1. [ ] Test horizontal mini bar: all recording states
+2. [ ] Test vertical mini bar: all recording states
+3. [ ] Test main app: sidebar navigation + all pages
+4. [ ] Split CSS (variables.css already created)
+5. [ ] Extract LLM IPC handlers
+
+---
+
+## Session: 2026-07-14 (Session 6 — Fix Fail-Fast Exception on Quit)
+
+### Summary
+
+**Fix fail-fast exception** saat quit dari tray. Error "A fail fast exception occurred" terjadi karena:
+1. `window-all-closed` handler memanggil `app.quit()` lagi (redundant, bisa trigger crash)
+2. Windows tidak di-destroy secara eksplisit saat shutdown
+3. uIOhook native module tidak di-force-stop jika push-to-talk aktif
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron/main.ts` | **FIX** — Hapus `app.quit()` dari `window-all-closed`. Tambah explicit `destroy()` untuk tray, miniWindow, mainWindow di `before-quit`. Tambah guard `if (isQuitting) return` untuk prevent re-entry. Force-stop uIOhook + clear window references. |
+| `electron/modules/hotkeyManager.ts` | **NEW** — `forceStopUiohook()` method untuk force-stop uIOhook saat shutdown (ignore push-to-talk state). `clearWindowReferences()` method untuk clear dangling window refs. |
+
+### Root Cause Analysis
+
+**Fail-fast exception** terjadi ketika:
+1. User klik Quit dari tray → `app.quit()` called
+2. `before-quit` fires → cleanup OK
+3. Windows destroyed → `window-all-closed` fires
+4. `window-all-closed` calls `app.quit()` AGAIN → **CRASH**
+   - Redundant quit bisa trigger race condition di Chromium shutdown
+   - Windows sudah destroyed, tapi `app.quit()` coba close lagi
+   - Native modules (uiohook, better-sqlite3) mungkin sudah di-cleanup tapi masih diakses
+
+**Fix:**
+- Hapus `app.quit()` dari `window-all-closed` — app sudah dalam proses quit
+- Destroy windows secara eksplisit di `before-quit` — pastikan clean shutdown
+- Force-stop uIOhook — prevent native crash jika push-to-talk aktif
+- Clear window references — prevent dangling refs
+
+### Decisions
+- **Explicit destroy over implicit**: Destroy windows di `before-quit` daripada rely on Electron's default behavior
+- **Force-stop uIOhook**: `maybeStopUiohook()` hanya stop jika `!pushToTalk`. Force-stop ignore condition ini.
+- **Guard against re-entry**: `if (isQuitting) return` prevent double-cleanup
+
+### Risks / Technical Debt
+- None — this is a targeted bug fix
+
+### Next Actions
+1. [ ] Test quit from tray: right-click tray → Quit → verify no error dialog
+2. [ ] Test quit from main window: click X → verify mini bar appears (not quit)
+3. [ ] Test quit from mini bar: Esc or close → verify clean shutdown
+4. [ ] Test with push-to-talk enabled: quit → verify no uiohook crash
+5. [ ] Test rapid quit: click Quit multiple times fast → verify no crash
+
+---
+
 ## Session: 2026-07-14 (Session 5 — Codebase Audit & Refactor)
 
 ### Summary
