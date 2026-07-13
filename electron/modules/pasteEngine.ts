@@ -6,7 +6,7 @@ import { Logger } from './logger';
 
 /**
  * PowerShell scripts for Ctrl+V keystroke.
- * Two versions: full (reliable) and fast (speed).
+ * Optimized for maximum speed from user-provided script.
  */
 const CACHED_SCRIPT_PATH = path.join(app.getPath('userData'), 'temp', 'paste-keystroke.ps1');
 const FAST_SCRIPT_PATH = path.join(app.getPath('userData'), 'temp', 'paste-keystroke-fast.ps1');
@@ -16,80 +16,109 @@ function ensurePasteScript(): void {
   const dir = path.dirname(CACHED_SCRIPT_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  // Full script (for long text — reliable)
-  if (!fs.existsSync(CACHED_SCRIPT_PATH)) {
-    fs.writeFileSync(CACHED_SCRIPT_PATH, [
-      'param([string]$hwndStr, [uint32]$targetTid)',
-      'Add-Type @"',
-      'using System;',
-      'using System.Runtime.InteropServices;',
-      'public class NI {',
-      '  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);',
-      '  [DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h, int nCmdShow);',
-      '  [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr h);',
-      '  [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);',
-      '  [DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);',
-      '  [DllImport("user32.dll")]public static extern bool AttachThreadInput(uint a, uint b, bool c);',
-      '  [DllImport("user32.dll")]public static extern uint GetCurrentThreadId();',
-      '  [DllImport("user32.dll")]public static extern bool BringWindowToTop(IntPtr h);',
-      '}',
-      '"@',
-      '$hwnd = [IntPtr]::new([long]$hwndStr)',
-      'if($hwndStr -ne "0" -and $hwnd.ToInt64() -ne 0 -and [NI]::IsWindow($hwnd)){',
-      '  $ourTid = [NI]::GetCurrentThreadId()',
-      '  if($targetTid -eq 0){ [uint32]$dummy=0; $targetTid = [NI]::GetWindowThreadProcessId($hwnd, [ref]$dummy) }',
-      '  $attached = $false',
-      '  if($targetTid -ne $ourTid -and $targetTid -ne 0){ $attached = [NI]::AttachThreadInput($ourTid, $targetTid, $true); Start-Sleep -m 10 }',
-      '  [NI]::ShowWindow($hwnd, 9)|Out-Null',
-      '  [NI]::BringWindowToTop($hwnd)|Out-Null',
-      '  [NI]::SetForegroundWindow($hwnd)|Out-Null',
-      '  Start-Sleep -m 30',
-      '  [NI]::SetForegroundWindow($hwnd)|Out-Null',
-      '  Start-Sleep -m 20',
-      '  if($attached){ [NI]::AttachThreadInput($ourTid, $targetTid, $false)|Out-Null }',
-      '}',
-      '[NI]::keybd_event(0x11,0,0,[UIntPtr]::Zero)',
-      '[NI]::keybd_event(0x56,0,0,[UIntPtr]::Zero)',
-      '[NI]::keybd_event(0x56,0,2,[UIntPtr]::Zero)',
-      '[NI]::keybd_event(0x11,0,2,[UIntPtr]::Zero)',
-    ].join('\n'), 'utf-8');
+  // Fast script (for short text — user's optimized version)
+  if (!fs.existsSync(FAST_SCRIPT_PATH)) {
+    fs.writeFileSync(FAST_SCRIPT_PATH, `param($hwnd, [uint32]$targetTid)
+
+# Konversi aman dari string ke IntPtr
+$hwnd = [IntPtr][int64]$hwnd
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class NI2 {
+  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h, int nCmdShow);
+  [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr h);
+  [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);
+  [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")]public static extern bool AttachThreadInput(uint a, uint b, bool c);
+  [DllImport("user32.dll")]public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")]public static extern bool BringWindowToTop(IntPtr h);
+}
+"@
+
+if($hwnd.ToInt64()-ne 0 -and [NI2]::IsWindow($hwnd)){
+  [NI2]::ShowWindow($hwnd, 9)|Out-Null
+  # Dipangkas dari 8ms ke 2ms
+  Start-Sleep -m 2 
+  
+  $ourTid = [NI2]::GetCurrentThreadId()
+  if($targetTid -eq 0){ [uint32]$dummy=0; $targetTid = [NI2]::GetWindowThreadProcessId($hwnd, [ref]$dummy) }
+  
+  $attached = $false
+  if($targetTid -ne $ourTid -and $targetTid -ne 0){ 
+    $attached = [NI2]::AttachThreadInput($ourTid, $targetTid, $true)
+    # Dipangkas dari 5ms ke 1ms
+    Start-Sleep -m 1 
+  }
+  
+  [NI2]::BringWindowToTop($hwnd)|Out-Null
+  [NI2]::SetForegroundWindow($hwnd)|Out-Null
+  # Jeda krusial agar window fokus: dipangkas dari 15ms ke 5ms
+  Start-Sleep -m 5 
+  
+  if($attached){ [NI2]::AttachThreadInput($ourTid, $targetTid, $false)|Out-Null }
+  # Dipangkas dari 8ms ke 2ms
+  Start-Sleep -m 2 
+}
+
+# Proses simulasi pencetan keyboard CTRL + V (Jeda dikurangi dari 3ms ke 1ms)
+[NI2]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -m 1
+[NI2]::keybd_event(0x56,0,0,[UIntPtr]::Zero); Start-Sleep -m 1
+[NI2]::keybd_event(0x56,0,2,[UIntPtr]::Zero); Start-Sleep -m 1
+[NI2]::keybd_event(0x11,0,2,[UIntPtr]::Zero)`, 'utf-8');
   }
 
-  // Fast script (for short text — maximum speed, minimal delays)
-  if (!fs.existsSync(FAST_SCRIPT_PATH)) {
-    fs.writeFileSync(FAST_SCRIPT_PATH, [
-      'param([string]$hwndStr, [uint32]$targetTid)',
-      'Add-Type @"',
-      'using System;',
-      'using System.Runtime.InteropServices;',
-      'public class NI2 {',
-      '  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);',
-      '  [DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h, int nCmdShow);',
-      '  [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr h);',
-      '  [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);',
-      '  [DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);',
-      '  [DllImport("user32.dll")]public static extern bool AttachThreadInput(uint a, uint b, bool c);',
-      '  [DllImport("user32.dll")]public static extern uint GetCurrentThreadId();',
-      '  [DllImport("user32.dll")]public static extern bool BringWindowToTop(IntPtr h);',
-      '}',
-      '"@',
-      '$hwnd = [IntPtr]::new([long]$hwndStr)',
-      'if($hwndStr -ne "0" -and $hwnd.ToInt64() -ne 0 -and [NI2]::IsWindow($hwnd)){',
-      '  $ourTid = [NI2]::GetCurrentThreadId()',
-      '  if($targetTid -eq 0){ [uint32]$dummy=0; $targetTid = [NI2]::GetWindowThreadProcessId($hwnd, [ref]$dummy) }',
-      '  $attached = $false',
-      '  if($targetTid -ne $ourTid -and $targetTid -ne 0){ $attached = [NI2]::AttachThreadInput($ourTid, $targetTid, $true) }',
-      '  [NI2]::ShowWindow($hwnd, 9)|Out-Null',
-      '  [NI2]::BringWindowToTop($hwnd)|Out-Null',
-      '  [NI2]::SetForegroundWindow($hwnd)|Out-Null',
-      '  Start-Sleep -m 20',
-      '  if($attached){ [NI2]::AttachThreadInput($ourTid, $targetTid, $false)|Out-Null }',
-      '}',
-      '[NI2]::keybd_event(0x11,0,0,[UIntPtr]::Zero)',
-      '[NI2]::keybd_event(0x56,0,0,[UIntPtr]::Zero)',
-      '[NI2]::keybd_event(0x56,0,2,[UIntPtr]::Zero)',
-      '[NI2]::keybd_event(0x11,0,2,[UIntPtr]::Zero)',
-    ].join('\n'), 'utf-8');
+  // Full script (for long text — same optimized version)
+  if (!fs.existsSync(CACHED_SCRIPT_PATH)) {
+    fs.writeFileSync(CACHED_SCRIPT_PATH, `param($hwnd, [uint32]$targetTid)
+
+# Konversi aman dari string ke IntPtr
+$hwnd = [IntPtr][int64]$hwnd
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class NI {
+  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr h, int nCmdShow);
+  [DllImport("user32.dll")]public static extern bool IsWindow(IntPtr h);
+  [DllImport("user32.dll")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);
+  [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")]public static extern bool AttachThreadInput(uint a, uint b, bool c);
+  [DllImport("user32.dll")]public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")]public static extern bool BringWindowToTop(IntPtr h);
+}
+"@
+
+if($hwnd.ToInt64()-ne 0 -and [NI]::IsWindow($hwnd)){
+  [NI]::ShowWindow($hwnd, 9)|Out-Null
+  Start-Sleep -m 2
+  
+  $ourTid = [NI]::GetCurrentThreadId()
+  if($targetTid -eq 0){ [uint32]$dummy=0; $targetTid = [NI]::GetWindowThreadProcessId($hwnd, [ref]$dummy) }
+  
+  $attached = $false
+  if($targetTid -ne $ourTid -and $targetTid -ne 0){ 
+    $attached = [NI]::AttachThreadInput($ourTid, $targetTid, $true)
+    Start-Sleep -m 1
+  }
+  
+  [NI]::BringWindowToTop($hwnd)|Out-Null
+  [NI]::SetForegroundWindow($hwnd)|Out-Null
+  Start-Sleep -m 5
+  
+  if($attached){ [NI]::AttachThreadInput($ourTid, $targetTid, $false)|Out-Null }
+  Start-Sleep -m 2
+}
+
+[NI]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -m 1
+[NI]::keybd_event(0x56,0,0,[UIntPtr]::Zero); Start-Sleep -m 1
+[NI]::keybd_event(0x56,0,2,[UIntPtr]::Zero); Start-Sleep -m 1
+[NI]::keybd_event(0x11,0,2,[UIntPtr]::Zero)`, 'utf-8');
   }
 }
 
@@ -128,7 +157,7 @@ export class PasteEngine {
     const isShortText = textLen < 100;
     const isLongText = textLen > 500;
     
-    const windowHideDelay = isShortText ? 50 : isLongText ? 100 : 70;
+    const windowHideDelay = isShortText ? 30 : isLongText ? 60 : 45;
     const maxRetries = isShortText ? 0 : 1;
 
     try {
@@ -158,7 +187,7 @@ export class PasteEngine {
         ok = await this.sendPasteKeystroke(targetWindowHandle || null, targetWindowThread || 0, isShortText);
         if (ok) break;
         if (attempt < maxRetries) {
-          await this.sleep(50);
+          await this.sleep(30);
         }
       }
 
@@ -167,7 +196,7 @@ export class PasteEngine {
 
       // Show VoiceFlow windows again
       if (this.showAfterPaste) {
-        setTimeout(() => this.showAfterPaste!(), 30);
+        setTimeout(() => this.showAfterPaste!(), 20);
       }
 
       return { success: ok, ms: totalMs };
@@ -180,7 +209,7 @@ export class PasteEngine {
       if (pasteCompleted) {
         setTimeout(() => {
           try { clipboard.writeText(savedClipboard || ''); } catch {}
-        }, 150);
+        }, 100);
       } else {
         try { clipboard.writeText(savedClipboard || ''); } catch {}
       }
@@ -227,7 +256,7 @@ Write-Output ([WinCheck]::IsWindow($hwnd))
     const scriptPath = isShortText ? FAST_SCRIPT_PATH : CACHED_SCRIPT_PATH;
 
     return new Promise((resolve) => {
-      const timeout = isShortText ? 2000 : 4000;
+      const timeout = isShortText ? 1500 : 3000;
       
       execFile('powershell.exe', [
         '-NoProfile', '-NonInteractive',
