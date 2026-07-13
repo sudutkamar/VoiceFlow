@@ -1,3 +1,8 @@
+/**
+ * Dictation IPC Handlers
+ * Handles recording, transcription, and text processing pipeline.
+ * LLM handlers are in llm.ipc.ts
+ */
 import { ipcMain, BrowserWindow } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
@@ -11,14 +16,14 @@ import { TextCleaner } from '../modules/textCleaner';
 import { PasteEngine } from '../modules/pasteEngine';
 import { HotkeyManager } from '../modules/hotkeyManager';
 import { AdaptiveLearning } from '../modules/adaptiveLearning';
-import { LlmPostProcessor, AVAILABLE_LLM_MODELS } from '../modules/llmPostProcessor';
+import { LlmPostProcessor } from '../modules/llmPostProcessor';
+import { setupLlmIPC } from './llm.ipc';
 
 let audioConverter: AudioConverter;
 let transcriber: Transcriber;
 let textCleaner: TextCleaner;
 let pasteEngine: PasteEngine;
 let adaptiveLearning: AdaptiveLearning;
-let llmPostProcessor: LlmPostProcessor;
 let isProcessing = false;
 let processingQueue: Array<{ buffer: number[]; mimeType: string; duration: number }> = [];
 let lastTranscript = '';
@@ -46,7 +51,7 @@ export function setupDictationIPC(
   transcriber = new Transcriber(logger);
   transcriber.setMainWindow(mainWindow);
   if (hotkeyManager) {
-    transcriber.setSendToAll((channel: string, ...args: any[]) => hotkeyManager.sendToAll(channel, ...args));
+    transcriber.setSendToAll((channel: string, ...args: any[]) => hotkeyManager.sendToAll(channel, args));
   }
 
   // Sync Transcriber path with any custom models path from database
@@ -58,10 +63,10 @@ export function setupDictationIPC(
   textCleaner = new TextCleaner(logger);
   pasteEngine = new PasteEngine(mainWindow, logger, hideAllForPaste, showAfterPaste);
   adaptiveLearning = new AdaptiveLearning(logger, database);
-  llmPostProcessor = new LlmPostProcessor(logger);
   
-  // Log LLM availability
-  logger.info(`LLM post-processor: llama-cli=${llmPostProcessor.isLlmCliAvailable()}, models=${llmPostProcessor.getAvailableModels().length}`);
+  // Set up LLM IPC handlers (separate module)
+  const llmPostProcessor = new LlmPostProcessor(logger);
+  setupLlmIPC(mainWindow, llmPostProcessor, logger, hotkeyManager);
 
   ipcMain.handle('start-recording', async () => {
     mainWindow.webContents.send('state-change', 'recording');
@@ -384,254 +389,8 @@ export function setupDictationIPC(
   });
 
   // ═══════════════════════════════════════════════════════════════
-  //  LLM Post-Processing IPC
+  //  Benchmark
   // ═══════════════════════════════════════════════════════════════
-
-  ipcMain.handle('llm-check-availability', async () => {
-    try {
-      const available = llmPostProcessor.isLlmCliAvailable() && llmPostProcessor.isModelAvailable();
-      const models = llmPostProcessor.getDownloadedModelsInfo();
-      return { success: true, available, hasCli: llmPostProcessor.isLlmCliAvailable(), binaryDownloaded: llmPostProcessor.isBinaryDownloaded(), models };
-    } catch (err: any) {
-      return { success: false, available: false, error: err.message };
-    }
-  });
-
-  // LLM Binary Download (llama-cli.exe)
-  ipcMain.handle('llm-download-binary', async () => {
-    try {
-      const result = await llmPostProcessor.downloadLlamaBinary((progress, state, dlBytes, totalBytes, modelName) => {
-        const send = hotkeyManager
-          ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-          : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-
-        send('llm-binary-download-progress', {
-          progress,
-          state,
-          downloadedBytes: dlBytes || 0,
-          totalBytes: totalBytes || 0,
-        });
-      });
-
-      // Send final
-      const send = hotkeyManager
-        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-      send('llm-binary-download-progress', {
-        progress: result ? 100 : 0,
-        state: result ? 'completed' : 'error',
-        downloadedBytes: 0,
-        totalBytes: 0,
-      });
-      return { success: result };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('llm-cancel-binary-download', async () => {
-    llmPostProcessor.cancelBinaryDownload();
-    const send = hotkeyManager
-      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-    send('llm-binary-download-progress', {
-      progress: 0,
-      state: 'cancelled',
-      downloadedBytes: 0,
-      totalBytes: 0,
-    });
-    return { success: true };
-  });
-
-  ipcMain.handle('llm-get-binary-download-state', async () => {
-    return llmPostProcessor.getBinaryDownloadState();
-  });
-
-  ipcMain.handle('llm-check-binary', async () => {
-    return { downloaded: llmPostProcessor.isBinaryDownloaded() };
-  });
-
-  ipcMain.handle('llm-get-models', async () => {
-    try {
-      const models = llmPostProcessor.getDownloadedModelsInfo();
-      return { success: true, models };
-    } catch (err: any) {
-      return { success: false, models: [], error: err.message };
-    }
-  });
-
-  ipcMain.handle('llm-get-models-path', async () => {
-    return llmPostProcessor.getModelsPathValue();
-  });
-
-  ipcMain.handle('llm-choose-models-folder', async () => {
-    const { dialog } = require('electron');
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Pilih Folder LLM Models',
-      properties: ['openDirectory', 'createDirectory'],
-      defaultPath: llmPostProcessor.getModelsPathValue(),
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { success: false };
-    }
-    return { success: true, path: result.filePaths[0] };
-  });
-
-  ipcMain.handle('llm-scan-models-folder', async () => {
-    try {
-      const models = llmPostProcessor.getDownloadedModelsInfo();
-      return { success: true, models };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  // Track active LLM download state for progress
-  let activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
-
-  // LLM pause/cancel/download-state handlers
-  ipcMain.handle('llm-pause-download', async () => {
-    llmPostProcessor.pauseDownload();
-    const send = hotkeyManager
-      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-    send('llm-download-progress', {
-      progress: activeLlmDownload.totalBytes > 0
-        ? Math.round((activeLlmDownload.downloadedBytes / activeLlmDownload.totalBytes) * 100)
-        : 0,
-      state: 'paused',
-      modelName: activeLlmDownload.modelName,
-      downloadedBytes: activeLlmDownload.downloadedBytes,
-      totalBytes: activeLlmDownload.totalBytes,
-    });
-    send('download-progress', {
-      progress: activeLlmDownload.totalBytes > 0
-        ? Math.round((activeLlmDownload.downloadedBytes / activeLlmDownload.totalBytes) * 100)
-        : 0,
-      state: 'paused',
-      modelName: activeLlmDownload.modelName,
-      downloadedBytes: activeLlmDownload.downloadedBytes,
-      totalBytes: activeLlmDownload.totalBytes,
-      type: 'llm',
-    });
-    return { success: true };
-  });
-
-  ipcMain.handle('llm-resume-download', async () => {
-    llmPostProcessor.resumeDownload();
-    return { success: true };
-  });
-
-  ipcMain.handle('llm-cancel-download', async () => {
-    llmPostProcessor.cancelDownload();
-    const send = hotkeyManager
-      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-    send('llm-download-progress', {
-      progress: 0,
-      state: 'cancelled',
-      modelName: activeLlmDownload.modelName,
-      downloadedBytes: 0,
-      totalBytes: 0,
-    });
-    send('download-progress', {
-      progress: 0,
-      state: 'cancelled',
-      modelName: activeLlmDownload.modelName,
-      downloadedBytes: 0,
-      totalBytes: 0,
-      type: 'llm',
-    });
-    activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
-    return { success: true };
-  });
-
-  ipcMain.handle('llm-get-download-state', async () => {
-    return llmPostProcessor.getDownloadState();
-  });
-
-  ipcMain.handle('llm-download-model', async (_event, modelName: string) => {
-    try {
-      const modelInfo = AVAILABLE_LLM_MODELS.find((m: any) => m.name === modelName);
-      activeLlmDownload = { modelName, downloadedBytes: 0, totalBytes: modelInfo?.sizeBytes || 0 };
-
-      const result = await llmPostProcessor.downloadModel(modelName, (progress, state, downloadedBytes, totalBytes) => {
-        // Track bytes
-        if (downloadedBytes !== undefined) activeLlmDownload.downloadedBytes = downloadedBytes;
-        if (totalBytes !== undefined) activeLlmDownload.totalBytes = totalBytes;
-
-        // Broadcast progress on dedicated channel for LLM
-        const send = hotkeyManager
-          ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-          : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-        
-        send('llm-download-progress', {
-          progress,
-          state,
-          modelName,
-          downloadedBytes: activeLlmDownload.downloadedBytes,
-          totalBytes: activeLlmDownload.totalBytes,
-        });
-
-        // Also broadcast on general download-progress channel (for Models page compatibility)
-        send('download-progress', {
-          progress,
-          state,
-          modelName,
-          downloadedBytes: activeLlmDownload.downloadedBytes,
-          totalBytes: activeLlmDownload.totalBytes,
-          type: 'llm',
-        });
-      });
-
-      // Send final 100% completion
-      const send = hotkeyManager
-        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-      send('llm-download-progress', {
-        progress: 100,
-        state: result ? 'completed' : 'error',
-        modelName,
-        downloadedBytes: activeLlmDownload.totalBytes,
-        totalBytes: activeLlmDownload.totalBytes,
-      });
-
-      activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
-      return { success: result };
-    } catch (err: any) {
-      activeLlmDownload = { modelName: '', downloadedBytes: 0, totalBytes: 0 };
-      const send = hotkeyManager
-        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
-        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
-      send('llm-download-progress', {
-        progress: 0,
-        state: 'error',
-        modelName,
-        downloadedBytes: 0,
-        totalBytes: 0,
-      });
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('llm-delete-model', async (_event, modelName: string) => {
-    try {
-      const result = llmPostProcessor.deleteModel(modelName);
-      return { success: result };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  // Test: run LLM post-processing on arbitrary text (for UI preview)
-  ipcMain.handle('llm-test-process', async (_event, text: string, modelName?: string) => {
-    try {
-      const result = await llmPostProcessor.process(text, modelName);
-      return { success: result.success, text: result.text, processingMs: result.processingMs, model: result.model, error: result.error };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
 
   ipcMain.handle('run-benchmark', async (_event, audioBuffer: number[], models: string[]) => {
     const sendBench = hotkeyManager
