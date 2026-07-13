@@ -176,9 +176,13 @@ export class Transcriber {
     }
   }
 
+  /**
+   * Whisper directory — always points to userData so downloaded binaries
+   * (CPU/GPU) can be extracted there without needing to bundle them.
+   * Structure: userData/whisper/{cpu,gpu,models}/
+   */
   private getWhisperDir(): string {
-    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper');
-    return path.join(__dirname, '..', '..', 'resources', 'whisper');
+    return path.join(app.getPath('userData'), 'whisper');
   }
 
   private getWhisperPath(): string {
@@ -186,9 +190,6 @@ export class Transcriber {
   }
 
   private getModelsPath(): string {
-    if (app.isPackaged) {
-      return path.join(app.getPath('userData'), 'models');
-    }
     return path.join(this.getWhisperDir(), 'models');
   }
 
