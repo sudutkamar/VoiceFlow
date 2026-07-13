@@ -182,4 +182,19 @@ export function setupSettingsIPC(
       return { success: false, error: String(error) };
     }
   });
+
+  // Log level control
+  ipcMain.handle('set-log-level', async (event, level: string) => {
+    try {
+      if (['debug', 'info', 'warn', 'error'].includes(level)) {
+        logger.setLogLevel(level as any);
+        database.updateSetting('log_level', level);
+        logger.info(`Log level changed to: ${level}`);
+        return { success: true };
+      }
+      return { success: false, error: 'Invalid log level' };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
 }

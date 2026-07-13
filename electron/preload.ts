@@ -34,6 +34,8 @@ export interface ElectronAPI {
   addDictionaryEntry: (phrase: string, replacement: string) => Promise<{ success: boolean; error?: string }>;
   deleteDictionaryEntry: (id: string) => Promise<{ success: boolean; error?: string }>;
   updateDictionaryEntry: (id: string, phrase: string, replacement: string) => Promise<{ success: boolean; error?: string }>;
+  exportDictionary: () => Promise<{ success: boolean; data?: string; error?: string }>;
+  importDictionary: (csvContent: string) => Promise<{ success: boolean; imported?: number; skipped?: number; errors?: string[]; error?: string }>;
   
   // Snippets
   getSnippets: () => Promise<any[]>;
@@ -87,6 +89,7 @@ export interface ElectronAPI {
 
   // Hotkey
   updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
+  setLogLevel: (level: string) => Promise<{ success: boolean; error?: string }>;
   
   // App State
   getAppState: () => Promise<string>;
@@ -164,6 +167,8 @@ const api: ElectronAPI = {
   deleteDictionaryEntry: (id) => ipcRenderer.invoke('delete-dictionary-entry', id),
   updateDictionaryEntry: (id, phrase, replacement) =>
     ipcRenderer.invoke('update-dictionary-entry', id, phrase, replacement),
+  exportDictionary: () => ipcRenderer.invoke('export-dictionary'),
+  importDictionary: (csvContent: string) => ipcRenderer.invoke('import-dictionary', csvContent),
   
   getSnippets: () => ipcRenderer.invoke('get-snippets'),
   addSnippet: (trigger, output) => ipcRenderer.invoke('add-snippet', trigger, output),
@@ -212,6 +217,7 @@ const api: ElectronAPI = {
   openExternal: (url) => shell.openExternal(url),
 
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
+  setLogLevel: (level) => ipcRenderer.invoke('set-log-level', level),
   
   getAppState: () => ipcRenderer.invoke('get-app-state'),
   getTargetApp: () => ipcRenderer.invoke('get-target-app'),

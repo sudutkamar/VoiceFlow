@@ -4,6 +4,27 @@ import * as fs from 'fs';
 import { app, dialog } from 'electron';
 import { Logger } from './logger';
 
+/**
+ * VoiceFlow Database — SQLite wrapper using better-sqlite3.
+ * 
+ * Manages all persistent data:
+ * - Settings (key-value pairs)
+ * - History (transcription results)
+ * - Dictionary (user-defined word corrections)
+ * - Snippets (text shortcuts)
+ * - Learned corrections (adaptive learning)
+ * 
+ * @example
+ * ```typescript
+ * const db = new Database(logger);
+ * db.initialize();
+ * db.updateSetting('hotkey', 'Ctrl+Shift+Space');
+ * const hotkey = db.getSetting('hotkey');
+ * ```
+ *
+ * Schema versioning is handled via migrateSchema().
+ * Current version: 2 (adds model_name, confidence, fuzzy_changes to history)
+ */
 export class VoiceFlowDatabase {
   private db: BetterSqlite3.Database | null = null;
   private logger: Logger;
@@ -23,18 +44,48 @@ export class VoiceFlowDatabase {
     return path.join(dataDir, 'voiceflow.db');
   }
 
+  private DB_VERSION = 2;
+
   initialize(): void {
     try {
       this.db = new BetterSqlite3(this.dbPath);
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('foreign_keys = ON');
       this.createTables();
+      this.migrateSchema();
       this.insertDefaultSettings();
       this.fixInvalidHotkey();
       this.logger.info('Database initialized');
     } catch (error) {
       this.logger.error('Failed to initialize database', error);
       throw error;
+    }
+  }
+
+  private migrateSchema(): void {
+    if (!this.db) return;
+    const versionRow = this.db.prepare("SELECT value FROM settings WHERE key = 'db_version'").get() as any;
+    const currentVersion = parseInt(versionRow?.value || '1', 10);
+
+    if (currentVersion < this.DB_VERSION) {
+      this.logger.info(`Migrating database from v${currentVersion} to v${this.DB_VERSION}`);
+
+      // v2: Add model_name, confidence, fuzzy_changes to dictation_history
+      if (currentVersion < 2) {
+        try {
+          this.db.exec(`ALTER TABLE dictation_history ADD COLUMN model_name TEXT DEFAULT ''`);
+        } catch {} // Column already exists
+        try {
+          this.db.exec(`ALTER TABLE dictation_history ADD COLUMN confidence REAL DEFAULT 0`);
+        } catch {}
+        try {
+          this.db.exec(`ALTER TABLE dictation_history ADD COLUMN fuzzy_changes INTEGER DEFAULT 0`);
+        } catch {}
+      }
+
+      // Update version
+      this.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('db_version', ?)").run(String(this.DB_VERSION));
+      this.logger.info(`Database migrated to v${this.DB_VERSION}`);
     }
   }
 
@@ -198,6 +249,7 @@ export class VoiceFlowDatabase {
       mini_bar_orientation: 'horizontal',
       llm_postprocess: 'false',
       llm_model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+      log_level: 'info',
     };
 
     const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -227,7 +279,7 @@ export class VoiceFlowDatabase {
     this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   }
 
-  addHistory(id: string, rawText: string, finalText: string, durationMs: number, audioDurationMs: number = 0): void {
+  addHistory(id: string, rawText: string, finalText: string, durationMs: number, audioDurationMs: number = 0, modelName: string = '', confidence: number = 0, fuzzyChanges: number = 0): void {
     if (!this.db) throw new Error('Database not initialized');
     const saveHistory = this.getSetting('save_history');
     if (saveHistory !== 'true') return;
@@ -236,8 +288,8 @@ export class VoiceFlowDatabase {
     const charCount = finalText.length;
 
     this.db.prepare(
-      'INSERT INTO dictation_history (id, raw_text, final_text, duration_ms, audio_duration_ms, word_count, char_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, rawText, finalText, durationMs, audioDurationMs, wordCount, charCount, new Date().toISOString());
+      'INSERT INTO dictation_history (id, raw_text, final_text, duration_ms, audio_duration_ms, word_count, char_count, model_name, confidence, fuzzy_changes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, rawText, finalText, durationMs, audioDurationMs, wordCount, charCount, modelName, confidence, fuzzyChanges, new Date().toISOString());
   }
 
   getHistory(limit: number = 50): any[] {
@@ -271,9 +323,9 @@ export class VoiceFlowDatabase {
     if (history.length === 0) return null;
 
     const csv = [
-      'ID,Text,Duration,Created At',
+      'ID,Text,Duration (ms),Audio Duration (ms),Words,Chars,Model,Confidence,Fuzzy Changes,Created At',
       ...history.map(item => 
-        `"${item.id}","${item.final_text.replace(/"/g, '""')}","${item.duration_ms}","${item.created_at}"`
+        `"${item.id}","${item.final_text.replace(/"/g, '""')}","${item.duration_ms}","${item.audio_duration_ms || 0}","${item.word_count || 0}","${item.char_count || 0}","${item.model_name || ''}","${item.confidence || 0}","${item.fuzzy_changes || 0}","${item.created_at}"`
       )
     ].join('\n');
 
@@ -316,6 +368,55 @@ export class VoiceFlowDatabase {
   deleteDictionaryEntry(id: string): void {
     if (!this.db) throw new Error('Database not initialized');
     this.db.prepare('DELETE FROM personal_dictionary WHERE id = ?').run(id);
+  }
+
+  exportDictionary(): string | null {
+    if (!this.db) return null;
+    const entries = this.getDictionary();
+    if (entries.length === 0) return null;
+
+    const csv = [
+      'Phrase,Replacement',
+      ...entries.map(e => `"${e.phrase.replace(/"/g, '""')}","${e.replacement.replace(/"/g, '""')}"`)
+    ].join('\n');
+    return csv;
+  }
+
+  importDictionary(csvContent: string): { imported: number; skipped: number; errors: string[] } {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = { imported: 0, skipped: 0, errors: [] as string[] };
+    const lines = csvContent.split('\n').filter(l => l.trim());
+
+    // Skip header
+    const dataLines = lines[0].includes('Phrase') ? lines.slice(1) : lines;
+
+    for (const line of dataLines) {
+      try {
+        const match = line.match(/^"([^"]*)","([^"]*)"$/);
+        if (!match) {
+          result.errors.push(`Invalid line: ${line.substring(0, 50)}`);
+          continue;
+        }
+        const [, phrase, replacement] = match;
+        if (!phrase || !replacement) {
+          result.skipped++;
+          continue;
+        }
+        // Check if phrase already exists
+        const existing = this.db.prepare('SELECT id FROM personal_dictionary WHERE phrase = ?').get(phrase);
+        if (existing) {
+          result.skipped++;
+          continue;
+        }
+        const id = `dict_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        this.addDictionaryEntry(id, phrase, replacement);
+        result.imported++;
+      } catch (err: any) {
+        result.errors.push(err.message);
+      }
+    }
+    return result;
   }
 
   getSnippets(): any[] {

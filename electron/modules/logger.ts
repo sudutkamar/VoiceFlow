@@ -2,10 +2,34 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+const LOG_LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
+/**
+ * Logger — Application logging with level control.
+ * 
+ * Writes to both console (stdout) and file (app.log).
+ * Supports log levels: debug, info, warn, error.
+ * 
+ * @example
+ * ```typescript
+ * const logger = new Logger();
+ * logger.setLogLevel('debug');
+ * logger.info('App started');
+ * logger.debug('Debug details', { key: 'value' });
+ * ```
+ */
 export class Logger {
   private logPath: string;
   private logStream: fs.WriteStream | null = null;
   private stdoutAvailable: boolean = true;
+  private logLevel: LogLevel = 'info'; // Default: info and above
 
   constructor() {
     const userDataPath = app.getPath('userData');
@@ -16,6 +40,18 @@ export class Logger {
     this.logPath = path.join(logsDir, 'app.log');
     this.initStream();
     this.setupStdoutErrorHandling();
+  }
+
+  setLogLevel(level: LogLevel): void {
+    this.logLevel = level;
+  }
+
+  getLogLevel(): LogLevel {
+    return this.logLevel;
+  }
+
+  private shouldLog(level: LogLevel): boolean {
+    return LOG_LEVELS[level] >= LOG_LEVELS[this.logLevel];
   }
 
   private setupStdoutErrorHandling(): void {
@@ -104,7 +140,9 @@ export class Logger {
   }
 
   debug(message: string, data?: any): void {
-    this.write('DEBUG', message, data);
+    if (this.shouldLog('debug')) {
+      this.write('DEBUG', message, data);
+    }
   }
 
   close(): void {

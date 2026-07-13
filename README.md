@@ -367,6 +367,7 @@ Voice commands bisa dimatikan di Settings → Processing.
 | Voice Commands | Aktifkan perintah suara | On |
 | Fuzzy Matching | Koreksi otomatis kata mirip | On |
 | Initial Prompt | Hint untuk Whisper (kosongkan untuk auto) | (kosong) |
+| LLM Post-Processing | Proses teks dengan AI lokal untuk grammar correction | Off |
 
 ### Hotkey
 | Setting | Deskripsi | Default |
@@ -374,7 +375,11 @@ Voice commands bisa dimatikan di Settings → Processing.
 | Recording Hotkey | Shortcut untuk start/stop | Ctrl+Shift+Space |
 | Push-to-Talk | Mode tahan untuk rekam | Off |
 
----
+### Advanced
+| Setting | Deskripsi | Default |
+|---------|-----------|--------|
+| Log Level | Tingkat logging (debug/info/warn/error) | Info |
+| Dictionary Import/Export | Export/Import kamus pribadi ke/from CSV | - |
 
 ## Troubleshooting
 

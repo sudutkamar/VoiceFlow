@@ -46,4 +46,26 @@ export function setupSnippetIPC(mainWindow: BrowserWindow, database: Database, l
       return { success: false, error: String(error) };
     }
   });
+
+  // Dictionary import/export
+  ipcMain.handle('export-dictionary', async () => {
+    try {
+      const csv = database.exportDictionary();
+      return { success: true, data: csv };
+    } catch (error) {
+      logger.error('Failed to export dictionary', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('import-dictionary', async (event, csvContent: string) => {
+    try {
+      const result = database.importDictionary(csvContent);
+      logger.info(`Dictionary imported: ${result.imported} entries`);
+      return { success: true, ...result };
+    } catch (error) {
+      logger.error('Failed to import dictionary', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }

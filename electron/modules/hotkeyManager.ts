@@ -117,6 +117,24 @@ function getHotkeyKeycodes(hotkey: string): { modifiers: number[]; keyCode: numb
   return { modifiers: modifierCodes, keyCode };
 }
 
+/**
+ * Hotkey Manager — Global keyboard shortcut handling.
+ * 
+ * Supports two modes:
+ * - Toggle mode: Press hotkey to start, press again to stop
+ * - Push-to-talk: Hold hotkey to record, release to stop
+ * 
+ * Uses uiohook-napi for global key detection (push-to-talk)
+ * and Electron's globalShortcut for toggle mode.
+ * 
+ * @example
+ * ```typescript
+ * const manager = new HotkeyManager(mainWindow, database, logger, showMini, hideMini);
+ * manager.register();
+ * // ... later
+ * manager.unregister();
+ * ```
+ */
 export type AppState =
   | 'idle'
   | 'recording'
@@ -303,6 +321,17 @@ export class HotkeyManager {
     if (!keycodes) {
       this.logger.warn(`Cannot parse hotkey for push-to-talk: ${hotkey}`);
       return;
+    }
+
+    // CRITICAL: Remove old handlers first to prevent listener accumulation
+    // This fixes the memory leak when hotkey is updated multiple times
+    if (this.pttKeyDownHandler) {
+      try { uIOhook.removeListener('keydown', this.pttKeyDownHandler); } catch {}
+      this.pttKeyDownHandler = null;
+    }
+    if (this.pttKeyUpHandler) {
+      try { uIOhook.removeListener('keyup', this.pttKeyUpHandler); } catch {}
+      this.pttKeyUpHandler = null;
     }
 
     // Required modifier set: unique logical modifiers (deduplicated from left+right pairs)
@@ -517,6 +546,8 @@ export class HotkeyManager {
     this.pushToTalk = enabled;
     this.logger.info('Push-to-talk mode', { enabled });
     if (wasEnabled !== enabled) {
+      // CRITICAL: Fully unregister before re-registering to prevent listener accumulation
+      // This ensures old handlers are removed before new ones are added
       this.unregister();
       this.register();
     }

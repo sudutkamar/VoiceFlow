@@ -1,10 +1,22 @@
 /**
- * WAV Recorder - Reliable implementation using ScriptProcessorNode
- * Records directly in 16kHz mono 16-bit PCM
- * Includes adaptive VAD (Voice Activity Detection) for auto-stop on silence.
+ * WAV Recorder — ScriptProcessorNode implementation.
+ * 
+ * Records audio directly in 16kHz mono 16-bit PCM format.
+ * Used by useRecorder hook for the main recording pipeline.
+ * 
+ * @example
+ * ```typescript
+ * const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
+ * await recorder.start(micId, { enabled: true, silenceThreshold: 0.01 });
+ * const { buffer, duration } = await recorder.stop();
+ * ```
+ *
+ * NOTE: ScriptProcessorNode is deprecated in web standards but fully supported
+ * in Electron (Chromium). Migration to AudioWorkletNode deferred to v1.1.
+ *
+ * CRITICAL: Do NOT modify this file without reading AGENTS.md Rule #1.
+ * This file is part of the critical recording pipeline.
  */
-
-import { AdaptiveVAD, AdaptiveVADOptions } from './adaptiveVAD';
 
 export interface VadOptions {
   enabled: boolean;
@@ -21,7 +33,6 @@ export class WavRecorder {
   private startTime: number = 0;
   private recording: boolean = false;
   private analyser: AnalyserNode | null = null;
-  private adaptiveVAD: AdaptiveVAD | null = null;
 
   // VAD state
   private vadOptions: VadOptions = { enabled: false, silenceThreshold: 0.01, silenceDurationMs: 3000 };
@@ -32,93 +43,77 @@ export class WavRecorder {
   }
 
   async start(deviceId?: string, vadOptions?: Partial<VadOptions>): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: { ideal: 16000 },
-        channelCount: { ideal: 1 },
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-      },
-    });
-
-    this.audioContext = new AudioContext({ sampleRate: 16000 });
-    this.source = this.audioContext.createMediaStreamSource(this.stream);
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 64;
-    this.source.connect(this.analyser);
-
-    // Initialize adaptive VAD
-    this.adaptiveVAD = new AdaptiveVAD({
-      initialThreshold: vadOptions?.silenceThreshold ?? 0.01,
-      maxSilenceDurationMs: vadOptions?.silenceDurationMs ?? 3000,
-      hangoverMs: 200,
-      minSpeechDurationMs: 100,
-      adaptiveThreshold: true,
-    });
-
-    // Save vadOptions (fix: parameter sebelumnya tidak pernah di-assign)
-    if (vadOptions) {
-      this.vadOptions = {
-        enabled: vadOptions.enabled ?? this.vadOptions.enabled,
-        silenceThreshold: vadOptions.silenceThreshold ?? this.vadOptions.silenceThreshold,
-        silenceDurationMs: vadOptions.silenceDurationMs ?? this.vadOptions.silenceDurationMs,
-      };
+    // CRITICAL FIX: Proper error handling with resource cleanup
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: { ideal: 16000 },
+          channelCount: { ideal: 1 },
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        },
+      });
+    } catch (err: any) {
+      // Don't leak resources if getUserMedia fails
+      this.cleanupResources();
+      throw err;
     }
 
-    // Resume AudioContext if suspended (e.g., triggered via hotkey without user gesture)
-    if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
-    }
+    try {
+      this.audioContext = new AudioContext({ sampleRate: 16000 });
+      this.source = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 64;
+      this.source.connect(this.analyser);
 
-    // Note: onSilence callback is NOT bridged from AdaptiveVAD to avoid double-VAD conflicts.
-    // Auto-stop is handled by the React-level useVad hook which has proper hasDetectedAudio guard.
-    // AdaptiveVAD is used for speech detection only.
-
-    // Use ScriptProcessorNode for reliable audio capture
-    this.chunks = [];
-    this.startTime = Date.now();
-    this.recording = true;
-
-    const scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    scriptProcessor.onaudioprocess = (e) => {
-      if (!this.recording) return;
-      const channelData = e.inputBuffer.getChannelData(0);
-      this.chunks.push(new Float32Array(channelData));
-
-      // Process with adaptive VAD
-      if (this.vadOptions.enabled && this.adaptiveVAD) {
-        this.adaptiveVAD.process(channelData);
+      // Save vadOptions
+      if (vadOptions) {
+        this.vadOptions = {
+          enabled: vadOptions.enabled ?? this.vadOptions.enabled,
+          silenceThreshold: vadOptions.silenceThreshold ?? this.vadOptions.silenceThreshold,
+          silenceDurationMs: vadOptions.silenceDurationMs ?? this.vadOptions.silenceDurationMs,
+        };
       }
-    };
 
-    this.source.connect(scriptProcessor);
-    scriptProcessor.connect(this.audioContext.destination);
-    this.processor = scriptProcessor;
-  }
+      // Resume AudioContext if suspended (e.g., triggered via hotkey without user gesture)
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
 
-  onSilence(callback: () => void): void {
-    this.onSilenceCallback = callback;
+      // Start recording with ScriptProcessorNode
+      this.chunks = [];
+      this.startTime = Date.now();
+      this.recording = true;
+
+      const scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
+      scriptProcessor.onaudioprocess = (e) => {
+        if (!this.recording) return;
+        const channelData = e.inputBuffer.getChannelData(0);
+        this.chunks.push(new Float32Array(channelData));
+      };
+
+      this.source.connect(scriptProcessor);
+      scriptProcessor.connect(this.audioContext.destination);
+      this.processor = scriptProcessor;
+
+    } catch (err: any) {
+      // CRITICAL: Cleanup all resources if setup fails
+      this.cleanupResources();
+      throw err;
+    }
   }
 
   async stop(): Promise<{ buffer: ArrayBuffer; duration: number }> {
-    this.recording = false;
     const duration = Date.now() - this.startTime;
+    this.recording = false;
 
-    // Cleanup ScriptProcessor
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor = null;
-    }
-
-    if (this.source) { this.source.disconnect(); this.source = null; }
-    if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
-    if (this.audioContext) { await this.audioContext.close(); this.audioContext = null; }
+    // Disconnect audio graph
+    this.disconnectAudioGraph();
 
     const wavBuffer = this.encodeWav(this.chunks, 16000);
-    this.chunks = [];
-    this.analyser = null;
+    this.cleanupResources();
 
     return { buffer: wavBuffer, duration };
   }
@@ -128,19 +123,42 @@ export class WavRecorder {
    */
   async cancel(): Promise<void> {
     this.recording = false;
+    this.disconnectAudioGraph();
+    this.cleanupResources();
+  }
 
-    // Cleanup ScriptProcessor
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor = null;
+  /**
+   * Disconnect all audio graph nodes safely.
+   */
+  private disconnectAudioGraph(): void {
+    try { this.processor?.disconnect(); } catch {}
+    try { this.source?.disconnect(); } catch {}
+    try { this.analyser?.disconnect(); } catch {}
+    this.processor = null;
+    this.source = null;
+    this.analyser = null;
+  }
+
+  /**
+   * CRITICAL: Cleanup ALL resources to prevent memory leaks.
+   * This MUST be called on stop, cancel, or error.
+   */
+  private cleanupResources(): void {
+    // Stop all stream tracks (microphone)
+    if (this.stream) {
+      this.stream.getTracks().forEach(t => {
+        try { t.stop(); } catch {}
+      });
+      this.stream = null;
     }
 
-    if (this.source) { this.source.disconnect(); this.source = null; }
-    if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
-    if (this.audioContext) { await this.audioContext.close(); this.audioContext = null; }
+    // Close AudioContext (check state first to avoid double-close)
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      this.audioContext.close().catch(() => {});
+    }
+    this.audioContext = null;
 
     this.chunks = [];
-    this.analyser = null;
   }
 
   private encodeWav(channels: Float32Array[], sampleRate: number): ArrayBuffer {
@@ -185,5 +203,4 @@ export class WavRecorder {
 
   isRecording(): boolean { return this.recording; }
   getAnalyserNode(): AnalyserNode | null { return this.analyser; }
-  getAdaptiveVAD(): AdaptiveVAD | null { return this.adaptiveVAD; }
 }

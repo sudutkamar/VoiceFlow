@@ -10,31 +10,54 @@ import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC, setTranscriberForModelSync } from './ipc/model.ipc';
 import { setupSnippetIPC } from './ipc/snippet.ipc';
 
-// Fix GPU cache errors on Windows - set cache directory to app's own folder
-const cacheDir = path.join(app.getPath('userData'), 'cache');
-if (!fs.existsSync(cacheDir)) {
-  fs.mkdirSync(cacheDir, { recursive: true });
-}
-app.setPath('cache', cacheDir);
-app.commandLine.appendSwitch('disk-cache-dir', cacheDir);
-app.commandLine.appendSwitch('gpu-cache-dir', path.join(cacheDir, 'gpu'));
+// ═══════════════════════════════════════════════════════════════
+//  CRITICAL FIX #1: Single-Instance Lock
+//  Prevents multiple Electron instances running simultaneously.
+//  Without this: database corruption, hotkey conflicts, memory leaks.
+// ═══════════════════════════════════════════════════════════════
+const gotTheLock = app.requestSingleInstanceLock();
 
-// Prevent EPIPE errors from crashing the app (broken pipe when stdout is unavailable)
-process.on('uncaughtException', (err: any) => {
-  if (err?.code === 'EPIPE') {
-    // Silently ignore broken pipe errors
-    return;
-  }
-  // Log other errors but don't crash
-  console.error('Uncaught Exception:', err);
-});
+if (!gotTheLock) {
+  // Another instance is already running — quit this one
+  app.quit();
+} else {
+  // We are the only instance — continue initialization
+  app.on('second-instance', () => {
+    // When a second instance tries to launch, show our main window instead
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.showInactive();
+    }
+  });
 
-process.on('unhandledRejection', (reason: any) => {
-  if (reason?.code === 'EPIPE') {
-    return;
+  // Fix GPU cache errors on Windows - set cache directory to app's own folder
+  const cacheDir = path.join(app.getPath('userData'), 'cache');
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
   }
-  console.error('Unhandled Rejection:', reason);
-});
+  app.setPath('cache', cacheDir);
+  app.commandLine.appendSwitch('disk-cache-dir', cacheDir);
+  app.commandLine.appendSwitch('gpu-cache-dir', path.join(cacheDir, 'gpu'));
+
+  // Prevent EPIPE errors from crashing the app (broken pipe when stdout is unavailable)
+  process.on('uncaughtException', (err: any) => {
+    if (err?.code === 'EPIPE') {
+      // Silently ignore broken pipe errors
+      return;
+    }
+    // Log other errors but don't crash
+    console.error('Uncaught Exception:', err);
+  });
+
+  process.on('unhandledRejection', (reason: any) => {
+    if (reason?.code === 'EPIPE') {
+      return;
+    }
+    console.error('Unhandled Rejection:', reason);
+  });
 
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
@@ -635,6 +658,33 @@ const ensureCacheDirs = () => {
 };
 ensureCacheDirs();
 
+// ═══════════════════════════════════════════════════════════════
+//  CRITICAL FIX #5: Temp File Cleanup on Exit
+//  Cleans up orphaned temp files from interrupted downloads.
+// ═══════════════════════════════════════════════════════════════
+function cleanupTempFiles(): void {
+  try {
+    const tempDirs = [
+      path.join(app.getPath('userData'), 'temp'),
+      path.join(app.getPath('userData'), 'temp-downloads'),
+    ];
+    for (const dir of tempDirs) {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        // Only clean temp files (.tmp, .download, recording_*.wav)
+        if (file.includes('.tmp') || file.includes('.download') || file.startsWith('recording_')) {
+          try {
+            const fp = path.join(dir, file);
+            try { fs.chmodSync(fp, 0o666); } catch {}
+            fs.unlinkSync(fp);
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+}
+
 app.whenReady().then(() => {
   // Auto-grant microphone & media permissions so the floating UI
   // can start recording without showing a blocking permission dialog.
@@ -663,6 +713,12 @@ app.whenReady().then(() => {
 
   database = new Database(logger);
   database.initialize();
+
+  // Initialize log level from settings
+  const savedLogLevel = database.getSetting('log_level') as any;
+  if (savedLogLevel && ['debug', 'info', 'warn', 'error'].includes(savedLogLevel)) {
+    logger.setLogLevel(savedLogLevel);
+  }
 
   // Check before creating the window, so first install can start directly in floating mode.
   // Use VOICEFLOW_FIRST_RUN=1 env var to simulate first run in development
@@ -715,4 +771,19 @@ app.on('activate', () => showMainWindow());
 app.on('before-quit', () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
+  
+  // CRITICAL: Kill any running whisper-cli process to prevent ghost processes
+  try {
+    const transcriber = getTranscriberInstance();
+    if (transcriber) {
+      transcriber.cancelTranscription();
+    }
+  } catch {}
+  
+  // CRITICAL: Cleanup temp files from interrupted downloads
+  cleanupTempFiles();
+  
+  logger?.info('VoiceFlow shutting down — cleanup complete');
 });
+
+} // end of gotTheLock else block

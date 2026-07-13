@@ -109,6 +109,30 @@ function useVad(
 // ══════════════════════════════════════════════════════════════
 //  useRecorder — shared recording logic
 // ══════════════════════════════════════════════════════════════
+/**
+ * Custom React hook for managing the recording lifecycle.
+ * 
+ * Handles:
+ * - Audio capture via WavRecorder
+ * - VAD (Voice Activity Detection) for auto-stop
+ * - IPC communication with main process
+ * - Recording state management (idle → recording → processing → done)
+ * 
+ * @param settings - Application settings from database
+ * @param options - Callback options for transcript, partial, and error handling
+ * @returns Recording state, controls, and refs for visualization
+ * 
+ * @example
+ * ```typescript
+ * const { state, startRec, stopRec, toggle } = useRecorder(settings, {
+ *   onTranscript: (data) => setText(data.cleaned),
+ *   onError: (err) => setError(err),
+ * });
+ * ```
+ *
+ * CRITICAL: Do NOT modify this file without reading AGENTS.md Rule #1.
+ * This hook is part of the critical recording pipeline.
+ */
 export function useRecorder(settings: Record<string, string>, options: UseRecorderOptions = {}): UseRecorderReturn {
   const { onTranscript, onPartial, onError, minRecordingMs = 2000 } = options;
 
@@ -235,9 +259,6 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
         enabled: true,
         silenceThreshold: 0.01,
         silenceDurationMs: 3000,
-      });
-      recorder.onSilence(() => {
-        if (stateRef.current === 'recording') stopRec();
       });
       const analyser = recorder.getAnalyserNode();
       if (analyser) analyserRef.current = analyser;

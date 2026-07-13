@@ -4,6 +4,156 @@ Ini adalah project **VoiceFlow** — aplikasi voice-to-text lokal berbasis Elect
 
 ---
 
+## ⚠️ CRITICAL RULES — JANGAN LANGGAR
+
+### Rule #1: JANGAN RUSAK RECORDING
+Recording audio adalah fitur UTAMA VoiceFlow. Jika recording rusak, aplikasi TIDAK BISA DIPAKAI sama sekali.
+
+**File yang BERHUBUNGAN dengan recording (HARUS HATI-HATI):**
+- `src/utils/wavRecorder.ts` — Audio capture (ScriptProcessorNode)
+- `src/utils/adaptiveVAD.ts` — Voice Activity Detection
+- `src/hooks/useRecorder.ts` — React hook recording lifecycle
+- `src/utils/audio.ts` — Sound effects
+- `electron/modules/recorder.ts` — Main process recording
+- `electron/modules/transcriber.ts` — Whisper inference
+- `electron/ipc/dictation.ipc.ts` — Recording IPC handlers
+- `electron/modules/pasteEngine.ts` — Auto-paste ke target window
+
+**SEBELUM mengubah file-file di atas:**
+1. Baca dan pahami flow recording dari Mic → WAV → Whisper → Text → Paste
+2. Test recording SEBELUM dan SESUDAH perubahan
+3. Jangan asumsi „ini cuma refactor kecil“ — recording punya banyak edge case
+
+### Rule #2: JANGAN LANGSUNG IMPLEMENTasi PERUBAHAN BESAR
+
+Jika ada ide untuk mengganti/mengupgrade sistem yang ada (contoh: ScriptProcessorNode → AudioWorkletNode):
+
+**❌ JANGAN:**
+- Langsung implementasi dan commit
+- Replace sistem yang sudah working
+- Asumsi „ini pasti lebih bagus“
+
+**✅ LAKUKAN:**
+1. **Buat perbandingan (comparison)** — tabel pro/kontra
+2. **Sebutkan risiko** — apa yang bisa rusak?
+3. **Test di branch terpisah** — jangan langsung di main
+4. **Minta approval** — jelaskan ke user sebelum implement
+5. **Fallback plan** — jika gagal, cara revert?
+
+**Contoh format comparison:**
+```
+## ScriptProcessorNode vs AudioWorkletNode
+
+| Aspek | ScriptProcessorNode | AudioWorkletNode |
+|-------|--------------------|--------------------|
+| Status | Deprecated (web) | Modern standard |
+| Electron support | ✅ Full (Chromium 126) | ✅ Full |
+| Main thread | Blocks | Offloaded |
+| Complexity | Simple | Requires worklet file |
+| Migration risk | N/A | HIGH — bisa break recording |
+
+**Rekomendasi:** Tunda migration ke v1.1. ScriptProcessorNode masih work fine di Electron.
+```
+
+### Rule #3: RECORDING ADALAH SISTEM KRITIS
+
+Recording punya dependencies yang kompleks:
+```
+wavRecorder.ts
+  ├── getUserMedia (browser API)
+  ├── AudioContext (browser API)
+  ├── ScriptProcessorNode (deprecated tapi working)
+  ├── AdaptiveVAD (custom)
+  └── WAV encoding (custom)
+
+useRecorder.ts (React hook)
+  ├── WavRecorder instance
+  ├── IPC: sendAudioData → main process
+  ├── IPC: onTranscriptReady ← main process
+  ├── IPC: onPartialTranscript ← main process
+  └── VAD hook (auto-stop)
+
+main process (dictation.ipc.ts)
+  ├── Save WAV to temp file
+  ├── Transcriber.transcribe()
+  │   ├── Audio preprocessing (optional)
+  │   ├── Whisper CLI spawn
+  │   ├── Text post-processing
+  │   │   ├── TextCleaner
+  │   │   ├── FuzzyMatcher
+  │   │   ├── AdaptiveLearning
+  │   │   ├── ConfidenceScorer
+  │   │   └── LlmPostProcessor (optional)
+  │   └── Return result
+  ├── PasteEngine.paste()
+  └── Save to history
+```
+
+Semua dependency ini harus work bersama. Mengubah 1 file bisa ripple effect ke semua sistem.
+
+### Rule #4: JANGAN RUSAK FLOATING UI (MINI BAR)
+
+Floating UI (mini bar) adalah fitur UNIK VoiceFlow. User sudah suka dengan UI/UX-nya. Jangan rusak.
+
+**File Floating UI (HARUS HATI-HATI):**
+- `src/App.tsx` — MiniBar component (horizontal mode)
+- `src/components/VerticalMiniBar.tsx` — Vertical mode
+- `src/styles/app.css` — CSS untuk mini bar
+- `electron/main.ts` — Window creation (miniWindow)
+
+**Yang TIDAK BOLEH diubah tanpa approval:**
+- Layout/positioning mini bar (floating, always-on-top)
+- Zoom/scale behavior
+- Waveform visualization (canvas)
+- Language selector UI
+- Recording state transitions (idle → recording → processing → done)
+- Mini bar resize behavior
+- Mini bar ↔ main window transitions
+
+**Yang BOLEH diubah (dengan hati-hati):**
+- Warna/theme (ikuti CSS variables)
+- Tooltip text
+- Error messages
+- Sound effects
+- Tambah fitur baru (jangan replace yang ada)
+
+**Sebelum mengubah floating UI:**
+1. Baca CSS di `app.css` — search `.mini-bar`, `.m-voice-btn`, `.m-canvas`
+2. Pahami zoom behavior — `miniZoom = windowHeight / BASE_HEIGHT`
+3. Test di horizontal DAN vertical mode
+4. Test resize — drag mini bar untuk ubah ukuran
+5. Test recording flow — mulai → proses → selesai
+
+### Rule #5: TEST CHECKLIST
+
+Setelah mengubah apapun yang berhubungan dengan recording:
+
+**Recording Tests:**
+- [ ] Record 5 detik → teks muncul
+- [ ] Record panjang (30+ detik) → tidak crash
+- [ ] Cancel recording (Esc) → kembali idle
+- [ ] VAD auto-stop → berhenti saat diam
+- [ ] Hotkey record → bisa mulai/stop
+- [ ] Mini bar record → bisa mulai/stop
+- [ ] Paste ke Notepad → text muncul
+- [ ] Copy text → clipboard berisi
+- [ ] Multiple rapid records → tidak memory leak
+- [ ] Microphone denied → error message jelas
+
+**Floating UI Tests:**
+- [ ] Mini bar muncul di bottom center screen
+- [ ] Mini bar horizontal → semua button terlihat
+- [ ] Mini bar vertical → layout benar
+- [ ] Resize mini bar → zoom proportionally
+- [ ] Language cycle → ID/EN/JA/KO/ZH berubah
+- [ ] Recording di mini bar → waveform muncul
+- [ ] Done state → result text muncul
+- [ ] Click mini bar → tidak minimize
+- [ ] Blur mini bar → tetap visible (always-on-top)
+- [ ] Switch horizontal ↔ vertical → smooth transition
+
+---
+
 ## Wajib — Baca & Gunakan Skill Berikut
 
 Setiap kali bekerja di project ini, **WAJIB** membaca dan mengikuti instruksi dari skill-skill ini:

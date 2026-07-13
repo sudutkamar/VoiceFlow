@@ -73,14 +73,27 @@ export class PasteEngine {
     ensurePasteScript();
   }
 
+  /**
+   * CRITICAL FIX #3: Paste engine with retry logic + window validation.
+   * 
+   * Fixes:
+   * - Validates target window still exists before paste
+   * - Adds retry logic for transient PowerShell failures
+   * - Ensures clipboard restore in finally block (no leak)
+   * - Adds timeout protection for paste operation
+   */
   async paste(text: string, targetWindowHandle?: string | null, targetWindowThread?: number): Promise<{ success: boolean; error?: string }> {
     if (!text?.trim()) return { success: false, error: 'No text' };
 
+    const savedClipboard = clipboard.readText();
+    let pasteCompleted = false;
+
     try {
-      const savedClipboard = clipboard.readText();
+      // Set clipboard FIRST (before hiding windows)
       clipboard.writeText(text);
       this.logger.info('Clipboard set', { length: text.length });
 
+      // Hide windows to expose target app
       if (this.hideAllForPaste) {
         this.hideAllForPaste();
       } else {
@@ -89,21 +102,43 @@ export class PasteEngine {
         }
       }
 
-      await this.sleep(200);
-      const ok = await this.sendPasteKeystroke(targetWindowHandle || null, targetWindowThread || 0);
+      // Wait for windows to hide + target app to gain focus
+      await this.sleep(250);
 
+      // CRITICAL: Validate target window still exists before paste
+      if (targetWindowHandle && targetWindowHandle !== '0') {
+        const windowValid = await this.validateWindowHandle(targetWindowHandle);
+        if (!windowValid) {
+          this.logger.warn('Target window no longer valid, pasting to foreground window', { handle: targetWindowHandle });
+          // Continue anyway — paste to whatever is in foreground
+        }
+      }
+
+      // Attempt paste with retry logic
+      let ok = false;
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        ok = await this.sendPasteKeystroke(targetWindowHandle || null, targetWindowThread || 0);
+        if (ok) break;
+        
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          this.logger.warn(`Paste attempt ${attempt + 1} failed, retrying...`);
+          await this.sleep(150 * (attempt + 1));
+        }
+      }
+
+      pasteCompleted = true;
+
+      // Show VoiceFlow windows again
       if (this.showAfterPaste) {
         setTimeout(() => this.showAfterPaste!(), 150);
       }
 
-      setTimeout(() => {
-        try { clipboard.writeText(savedClipboard || ''); } catch {}
-      }, 500);
-
       if (ok) {
         this.logger.info('Paste successful');
       } else {
-        this.logger.warn('Paste keystroke may have failed');
+        this.logger.warn('Paste keystroke failed after retries');
       }
 
       return { success: ok };
@@ -111,7 +146,49 @@ export class PasteEngine {
       this.logger.error('Paste error', err);
       if (this.showAfterPaste) { this.showAfterPaste(); }
       return { success: false, error: err.message };
+    } finally {
+      // CRITICAL: Always restore clipboard, even if paste failed
+      // This prevents user's original clipboard content from being lost
+      if (pasteCompleted) {
+        setTimeout(() => {
+          try { clipboard.writeText(savedClipboard || ''); } catch {}
+        }, 500);
+      } else {
+        // If paste didn't complete, restore immediately
+        try { clipboard.writeText(savedClipboard || ''); } catch {}
+      }
     }
+  }
+
+  /**
+   * Validate that a window handle is still valid (window still exists).
+   * Uses PowerShell to check IsWindow().
+   */
+  private async validateWindowHandle(hwnd: string): Promise<boolean> {
+    if (!hwnd || hwnd === '0') return false;
+    
+    return new Promise((resolve) => {
+      const script = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinCheck {
+  [DllImport(\"user32.dll\")]public static extern bool IsWindow(IntPtr h);
+}
+"@
+$hwnd = [IntPtr]::new(${hwnd})
+Write-Output ([WinCheck]::IsWindow($hwnd))
+`;
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 1000,
+      }, (err, stdout) => {
+        if (err) { resolve(false); return; }
+        const result = (stdout || '').trim().toLowerCase();
+        resolve(result === 'true');
+      });
+    });
   }
 
   private async sendPasteKeystroke(targetWindowHandle: string | null, targetWindowThread: number): Promise<boolean> {

@@ -450,6 +450,26 @@ export class Transcriber {
       return { success: false, error: 'File audio tidak ditemukan' };
     }
 
+    // CRITICAL FIX: Validate WAV format before sending to Whisper
+    try {
+      const audioBuffer = fs.readFileSync(audioPath);
+      if (audioBuffer.length < 44) {
+        return { success: false, error: 'File audio terlalu kecil atau corrupt' };
+      }
+      // Check RIFF header
+      const header = audioBuffer.toString('ascii', 0, 4);
+      if (header !== 'RIFF') {
+        return { success: false, error: 'Format audio tidak valid (bukan WAV)' };
+      }
+      // Check WAVE marker
+      const waveMarker = audioBuffer.toString('ascii', 8, 12);
+      if (waveMarker !== 'WAVE') {
+        return { success: false, error: 'Format audio tidak valid (bukan WAVE)' };
+      }
+    } catch (err) {
+      this.logger.warn('Audio validation failed, proceeding anyway', err);
+    }
+
     // --- Audio preprocessing (SMART: skip if clean) ---
     let processedAudioPath = audioPath;
     let audioQuality = { isNoisy: false, isQuiet: false, isClean: true, rmsLevel: 0, peakLevel: 0, durationMs: audioDurationMs || 0 };

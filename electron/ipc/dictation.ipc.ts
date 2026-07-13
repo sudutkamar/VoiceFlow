@@ -24,6 +24,9 @@ let processingQueue: Array<{ buffer: number[]; mimeType: string; duration: numbe
 let lastTranscript = '';
 let lastCleanedText = '';
 
+// CRITICAL FIX: Max queue size to prevent memory overflow from rapid recording
+const MAX_QUEUE_SIZE = 5;
+
 /**
  * Expose transcriber instance so model.ipc can sync path changes.
  */
@@ -85,6 +88,11 @@ export function setupDictationIPC(
   }
 
   ipcMain.on('audio-recorded', (event, audioData: { buffer: number[]; mimeType: string; duration: number }) => {
+    // CRITICAL FIX: Reject if queue is full to prevent memory overflow
+    if (processingQueue.length >= MAX_QUEUE_SIZE) {
+      logger.warn('Processing queue full, dropping oldest item', { queueSize: processingQueue.length });
+      processingQueue.shift(); // Drop oldest item
+    }
     processingQueue.push(audioData);
     if (!isProcessing) processNextAudio();
   });
