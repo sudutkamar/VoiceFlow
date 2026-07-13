@@ -821,8 +821,8 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             <div className="section-header">LLM Post-Processing <span className="badge badge-new">NEW</span></div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-name">Enable LLM Cleanup</span>
-                <span className="setting-hint">Use local AI to remove filler words, fix grammar &amp; punctuation</span>
+                <span className="setting-name">Enable LLM Grammar Fix</span>
+                <span className="setting-hint">Use local AI to fix grammar, punctuation &amp; sentence flow (applied BEFORE TextCleaner)</span>
               </div>
               <div className={`toggle ${settings.llm_postprocess === 'true' ? 'on' : ''}`} onClick={() => toggle('llm_postprocess')} />
             </div>
@@ -841,10 +841,11 @@ function Settings({ onSuccess, onError }: SettingsProps) {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-name">Download llama-cli</span>
-                <span className="setting-hint">Download llama.cpp release b9967 (18MB zip), extract semua isi zip ke folder resources/llm/ (bersebelahan dengan folder models/)</span>
+                <span className="setting-hint">Download llama.cpp binary (18MB ZIP) dan extract otomatis ke folder resources/llm/</span>
               </div>
               <button className="btn btn-sm btn-primary" onClick={() => {
-                window.electronAPI.openExternal('https://github.com/ggml-org/llama.cpp/releases/download/b9967/llama-b9967-bin-win-cpu-x64.zip');
+                const event = new CustomEvent('navigate-page', { detail: 'llm-models' });
+                window.dispatchEvent(event);
               }}>
                 <Iconify icon="download" size={14} /> Download Binary
               </button>

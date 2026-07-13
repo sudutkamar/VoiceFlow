@@ -40,7 +40,7 @@ interface ElectronAPI {
   updateSnippet: (id: string, trigger: string, output: string) => Promise<{ success: boolean; error?: string }>;
 
   // Hotkey
-  updateHotkey: (hotkey: string) => Promise<{ success: boolean; error?: string }>;
+  updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
 
   // Models
   getModelsPath: () => Promise<string>;
@@ -70,8 +70,20 @@ interface ElectronAPI {
   clearLearnedCorrections: () => Promise<{ success: boolean }>;
   getAdaptiveStats: () => Promise<{ total: number; totalFrequency: number; avgConfidence: number }>;
 
+  // Dictionary (export/import)
+  exportDictionary: () => Promise<{ success: boolean; data?: string; error?: string }>;
+  importDictionary: (csvContent: string) => Promise<{ success: boolean; imported?: number; skipped?: number; errors?: string[]; error?: string }>;
+
+  // Hotkey
+  updateHotkey: (newHotkey: string) => Promise<{ success: boolean; error?: string }>;
+  setLogLevel: (level: string) => Promise<{ success: boolean; error?: string }>;
+
+  // App
+  checkForUpdates: () => Promise<void>;
+  onUpdateDownloadProgress: (callback: (data: { percent: number; transferred: number; total: number }) => void) => () => void;
+
   // LLM Post-Processing
-  llmCheckAvailability: () => Promise<{ success: boolean; available: boolean; hasCli: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmCheckAvailability: () => Promise<{ success: boolean; available: boolean; hasCli: boolean; binaryDownloaded: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   llmGetModels: () => Promise<{ success: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
@@ -83,6 +95,10 @@ interface ElectronAPI {
   llmGetModelsPath: () => Promise<string>;
   llmChooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   llmScanModelsFolder: () => Promise<{ success: boolean; models?: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmDownloadBinary: () => Promise<{ success: boolean; error?: string }>;
+  llmCancelBinaryDownload: () => Promise<{ success: boolean }>;
+  llmGetBinaryDownloadState: () => Promise<{ state: string; progress: number; downloadedBytes: number; totalBytes: number }>;
+  llmCheckBinary: () => Promise<{ downloaded: boolean }>;
   openExternal: (url: string) => Promise<void>;
 
   // GPU / CUDA
@@ -133,6 +149,7 @@ interface ElectronAPI {
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
   onThemeChange: (callback: (theme: string) => void) => () => void;
   onReloadSettings: (callback: () => void) => () => void;
+  onLlmBinaryDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
 }

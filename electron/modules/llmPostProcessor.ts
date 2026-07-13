@@ -3,16 +3,26 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { spawn, execSync } from 'child_process';
+import * as https from 'https';
+import * as http from 'http';
+import * as zlib from 'zlib';
 
 /**
- * LLM Post-Processor — standalone, no external dependencies.
+ * LLM Post-Processor — grammar & punctuation fixer for Whisper transcription.
  *
- * Uses a small GGUF model + llama-cli to clean up Whisper transcription.
- * Model + binary are downloaded from HuggingFace (just like Whisper models).
+ * Receives RAW Whisper output (before TextCleaner) and applies:
+ * - Grammar correction (subject-verb agreement, tense, word order)
+ * - Punctuation (periods, commas, question marks)
+ * - Sentence fluency improvements
  *
- * Pipeline: spawn llama-cli → feed prompt → capture output
+ * Does NOT remove filler words or stutters — those are handled by TextCleaner.
+ * This ensures clear separation of concerns:
+ *   LLM = grammar + structure
+ *   TextCleaner = filler removal + voice commands + capitalization
  *
- * Model: Qwen2.5-0.5B-Instruct-Q4_K_M (379MB) — tiny enough for CPU, good quality for cleanup.
+ * Uses a small GGUF model + llama-cli. Runs locally, no internet needed.
+ *
+ * Model: Qwen2.5-0.5B-Instruct-Q4_K_M (379MB) — tiny enough for CPU, good quality.
  * Fallback: Qwen2.5-0.5B-Instruct-Q3_K_M (280MB) — even smaller.
  */
 
@@ -30,14 +40,14 @@ export const AVAILABLE_LLM_MODELS: LlmModelInfo[] = [
     size: '379 MB',
     sizeBytes: 397808192,
     url: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf',
-    description: '⭐ Rekomendasi: Qwen 0.5B Q4 — cepat + akurat untuk cleanup teks',
+    description: '⭐ Rekomendasi: Qwen 0.5B Q4 — grammar + punctuation fix untuk hasil transkripsi lebih natural',
   },
   {
     name: 'qwen2.5-0.5b-instruct-q3_k_m.gguf',
     size: '280 MB',
     sizeBytes: 280000000,
     url: 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q3_K_M.gguf',
-    description: 'Qwen 0.5B Q3 — lebih kecil, hampir sama akurat',
+    description: 'Qwen 0.5B Q3 — lebih kecil, grammar fix dasar',
   },
   {
     name: 'tinyllama-1.1b-chat-q4_k_m.gguf',
@@ -55,12 +65,20 @@ export const AVAILABLE_LLM_MODELS: LlmModelInfo[] = [
   },
 ];
 
+/** URL untuk download llama-cli binary (llama.cpp Windows CPU build) */
+export const LLAMA_CLI_DOWNLOAD_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b9967/llama-b9967-bin-win-cpu-x64.zip';
+export const LLAMA_CLI_ZIP_NAME = 'llama-b9967-bin-win-cpu-x64.zip';
+
 export interface LlmPostProcessResult {
   success: boolean;
   text: string;
   processingMs: number;
   model?: string;
   error?: string;
+}
+
+export interface DownloadProgressCallback {
+  (progress: number, state: string, downloadedBytes?: number, totalBytes?: number, modelName?: string): void;
 }
 
 export class LlmPostProcessor {
@@ -79,25 +97,28 @@ export class LlmPostProcessor {
   private downloadTotalBytes: number = 0;
   private downloadState: string = 'idle';
   private downloadModelName: string = '';
+  private _lastLogTime: number = 0;
 
-  // System prompt — strict, minimal, only cleanup
+  // System prompt — grammar + punctuation ONLY, no filler-removal (handled by TextCleaner)
   private readonly SYSTEM_PROMPT = `<|system|>
-You are a text cleaner for speech-to-text output.
-Clean the user's speech into natural written text.
+You are a grammar and punctuation assistant for speech-to-text output.
 
 Rules:
-- Remove filler words: um, uh, like, you know, basically, literally, sort of
-- Remove stutters and false starts: "I I I want" → "I want"
-- Fix grammar and punctuation naturally
-- Add proper capitalization
-- DO NOT change meaning, technical terms, names, or code
-- DO NOT add information not in original
-- Keep same language (Indonesian/English/etc)
-- If text is already clean, return as-is
-- Output ONLY the cleaned text. No explanations, no quotes.</|system|>
+- Fix grammar naturally (subject-verb agreement, tense, word order)
+- Add proper punctuation (periods, commas, question marks)
+- Improve sentence fluency and flow
+- Fix run-on sentences by splitting them
+- Capitalize proper nouns and sentence starts
+- DO NOT remove filler words (that's handled elsewhere)
+- DO NOT change technical terms, names, code, or quoted text
+- DO NOT add information not in the original
+- DO NOT change the language (Indonesian stays Indonesian, English stays English)
+- DO NOT rewrite or rephrase beyond grammar/punctuation
+- If text is already grammatical and punctuated correctly, return as-is
+- Output ONLY the corrected text. No explanations, no prefixes, no quotes.</|system|>
 
 <|user|>
-CLEAN THIS:`;
+IMPROVE THIS:`;
 
   private readonly SYSTEM_PROMPT_END = `</|user|>
 
@@ -220,6 +241,7 @@ CLEAN THIS:`;
 
     // Reset download state
     this.downloadCancelled = false;
+    this.binaryDownloadCancelled = false; // juga reset shared cancel flag
     this.downloadPaused = false;
     this.downloadRequest = null;
     this.downloadTempPath = targetPath + '.download';
@@ -322,9 +344,10 @@ CLEAN THIS:`;
       });
 
       // Check pause/cancel before proceeding
-      if (this.downloadCancelled) {
+      if (this.downloadCancelled || this.binaryDownloadCancelled) {
         onProgress?.(0, 'error', 0, expectedSize);
         this.downloadState = 'cancelled';
+        this.binaryDownloadState = 'cancelled';
         return false;
       }
 
@@ -385,19 +408,21 @@ CLEAN THIS:`;
           });
 
           res.on('data', (chunk: Buffer) => {
-            // Check pause/cancel on every chunk
-            if (self.downloadCancelled) {
+            // Check pause/cancel on every chunk (check BOTH flags)
+            if (self.downloadCancelled || self.binaryDownloadCancelled) {
               res.destroy();
               fileStream.end();
               self.downloadRequest = null;
               try { fs.unlinkSync(tempPath); } catch {}
               onProgress?.(0, 'cancelled', 0, totalSize);
               self.downloadState = 'cancelled';
+              self.binaryDownloadState = 'cancelled';
               resolve(false);
               return;
             }
 
-            if (self.downloadPaused) {
+            // Hanya model download yang support pause, binary skip pause
+            if (self.downloadPaused && !self.binaryDownloadCancelled) {
               res.pause();
               self.downloadBytesSoFar = downloaded;
               fileStream.end();
@@ -409,28 +434,33 @@ CLEAN THIS:`;
 
             downloaded += chunk.length;
             self.downloadBytesSoFar = downloaded;
-            const pct = totalSize > 0 ? Math.min(99, Math.round((downloaded / totalSize) * 100)) : 0;
 
-            if (pct !== lastProgress) {
-              lastProgress = pct;
-              onProgress?.(pct, 'downloading', downloaded, totalSize);
-            }
+            // Hitung persentase akurat — tanpa Math.min(99) agar tidak loncat di akhir
+            const pct = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : 0;
 
+            // Kirim progress setiap kali persen berubah ATAU setiap 500ms (mana yang lebih dulu)
             const now = Date.now();
-            if (now - lastLog > 10000) {
+            if (pct !== lastProgress || now - lastLog >= 500) {
+              if (pct !== lastProgress) lastProgress = pct;
               lastLog = now;
-              self.logger.info('Progress', {
-                model: modelName,
-                mb: (downloaded / 1024 / 1024).toFixed(1) + '/' + (totalSize / 1024 / 1024).toFixed(1),
-                pct,
-              });
+              onProgress?.(pct, 'downloading', downloaded, totalSize);
+
+              // Log setiap 10 detik
+              if (now - (self._lastLogTime || 0) >= 10000) {
+                self._lastLogTime = now;
+                self.logger.info('Progress', {
+                  model: modelName,
+                  mb: (downloaded / 1024 / 1024).toFixed(1) + '/' + (totalSize / 1024 / 1024).toFixed(1),
+                  pct,
+                });
+              }
             }
 
             const canWrite = fileStream.write(chunk);
             if (!canWrite) {
               res.pause();
               fileStream.once('drain', () => {
-                if (!self.downloadCancelled && !self.downloadPaused) res.resume();
+                if (!self.downloadCancelled && !self.binaryDownloadCancelled && !self.downloadPaused) res.resume();
               });
             }
           });
@@ -724,5 +754,141 @@ CLEAN THIS:`;
 
   setTimeout(ms: number): void {
     this.timeoutMs = ms;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Binary Download — download + extract llama-cli.zip
+  // ═══════════════════════════════════════════════════════════
+
+  private binaryDownloadCancelled: boolean = false;
+  private binaryDownloadTempPath: string = '';
+  private binaryDownloadBytesSoFar: number = 0;
+  private binaryDownloadTotalBytes: number = 0;
+  private binaryDownloadState: string = 'idle';
+
+  getBinaryDownloadState(): { state: string; progress: number; downloadedBytes: number; totalBytes: number } {
+    return {
+      state: this.binaryDownloadState,
+      progress: this.binaryDownloadTotalBytes > 0 ? Math.round((this.binaryDownloadBytesSoFar / this.binaryDownloadTotalBytes) * 100) : 0,
+      downloadedBytes: this.binaryDownloadBytesSoFar,
+      totalBytes: this.binaryDownloadTotalBytes,
+    };
+  }
+
+  cancelBinaryDownload(): void {
+    this.binaryDownloadCancelled = true;
+    this.binaryDownloadState = 'cancelled';
+    this.logger.info('LLM binary download cancelled');
+  }
+
+  isBinaryDownloaded(): boolean {
+    return fs.existsSync(this.llamaCliPath);
+  }
+
+  /**
+   * Download llama-cli.zip from GitHub and extract to resources/llm/
+   * Uses proven downloadWithRedirects method (same as model downloads).
+   */
+  async downloadLlamaBinary(onProgress?: DownloadProgressCallback): Promise<boolean> {
+    const llmDir = this.getLlmDir();
+    if (!fs.existsSync(llmDir)) {
+      fs.mkdirSync(llmDir, { recursive: true });
+    }
+
+    // Already downloaded?
+    if (this.isBinaryDownloaded()) {
+      onProgress?.(100, 'completed', 0, 0, LLAMA_CLI_ZIP_NAME);
+      return true;
+    }
+
+    this.binaryDownloadCancelled = false;
+    this.downloadCancelled = false; // juga reset shared cancel flag
+    this.binaryDownloadBytesSoFar = 0;
+    this.binaryDownloadTotalBytes = 0;
+    this.binaryDownloadState = 'downloading';
+
+    const zipPath = path.join(llmDir, LLAMA_CLI_ZIP_NAME);
+    const tempPath = zipPath + '.download';
+
+    // Clean leftover temp
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+    try { if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath); } catch {}
+
+    this.logger.info('[LLM Binary] Starting download', { url: LLAMA_CLI_DOWNLOAD_URL });
+    onProgress?.(0, 'downloading', 0, 0, LLAMA_CLI_ZIP_NAME);
+
+    try {
+      // Download as temp .download first (redirects handled internally)
+      const result = await this.downloadWithRedirects(
+        LLAMA_CLI_DOWNLOAD_URL,
+        zipPath, // dest path
+        LLAMA_CLI_ZIP_NAME,
+        18874368, // ~18MB expected size
+        (progress, state, dlBytes, totalBytes) => {
+          this.binaryDownloadBytesSoFar = dlBytes || 0;
+          this.binaryDownloadTotalBytes = totalBytes || 0;
+          onProgress?.(progress, state, dlBytes, totalBytes, LLAMA_CLI_ZIP_NAME);
+        }
+      );
+
+      if (!result || this.binaryDownloadCancelled) {
+        try { fs.unlinkSync(zipPath); } catch {}
+        try { fs.unlinkSync(tempPath); } catch {}
+        this.binaryDownloadState = this.binaryDownloadCancelled ? 'cancelled' : 'error';
+        onProgress?.(0, this.binaryDownloadState, 0, 0, LLAMA_CLI_ZIP_NAME);
+        return false;
+      }
+
+      onProgress?.(100, 'extracting', 0, 0, LLAMA_CLI_ZIP_NAME);
+      this.logger.info('[LLM Binary] Downloaded, extracting...');
+
+      // Extract ZIP using powershell (Expand-Archive)
+      const extractOk = this.extractZip(zipPath, llmDir);
+
+      // Cleanup zip
+      try { fs.unlinkSync(zipPath); } catch {}
+
+      if (extractOk) {
+        this.binaryDownloadState = 'completed';
+        onProgress?.(100, 'completed', 0, 0, LLAMA_CLI_ZIP_NAME);
+        this.logger.info('[LLM Binary] Extraction complete');
+        return true;
+      } else {
+        this.binaryDownloadState = 'error';
+        onProgress?.(0, 'error', 0, 0, LLAMA_CLI_ZIP_NAME);
+        this.logger.error('[LLM Binary] Extraction failed');
+        return false;
+      }
+    } catch (err: any) {
+      this.binaryDownloadState = 'error';
+      this.logger.error('[LLM Binary] Download failed', err);
+      onProgress?.(0, 'error', 0, 0, LLAMA_CLI_ZIP_NAME);
+      try { fs.unlinkSync(zipPath); } catch {}
+      try { fs.unlinkSync(tempPath); } catch {}
+      return false;
+    }
+  }
+
+  /**
+   * Extract ZIP archive using PowerShell Expand-Archive.
+   */
+  private extractZip(zipPath: string, destDir: string): boolean {
+    try {
+      // Use PowerShell to extract
+      const psScript = `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`;
+      execSync(`powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"')}"`, {
+        timeout: 30000,
+        windowsHide: true,
+      });
+
+      // Verify: check if llama-cli.exe exists now
+      return fs.existsSync(this.llamaCliPath) ||
+        // Also check one level deeper (sometimes zip has a subfolder)
+        fs.existsSync(path.join(destDir, 'build', 'bin', 'Release', 'llama-cli.exe')) ||
+        fs.existsSync(path.join(destDir, 'llama.cpp', 'llama-cli.exe'));
+    } catch (err: any) {
+      this.logger.error('[Extract] PowerShell failed', err);
+      return false;
+    }
   }
 }

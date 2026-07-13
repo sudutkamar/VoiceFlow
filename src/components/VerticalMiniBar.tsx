@@ -112,6 +112,7 @@ export default function VerticalMiniBar({ settings }: Props) {
       const mid = h / 2, step = w / (N - 1);
       const avg = src.reduce((a, b) => a + b, 0) / N;
       const glow = Math.min(1, avg / 40);
+      // Main wave — bright blue
       ctx.beginPath(); ctx.moveTo(0, mid - (src[0] / 100) * (mid - 2));
       for (let i = 1; i < N; i++) {
         const x0 = (i - 1) * step, x1 = i * step;
@@ -119,6 +120,7 @@ export default function VerticalMiniBar({ settings }: Props) {
       }
       ctx.strokeStyle = `rgba(99,182,255,${0.85 + glow * 0.15})`; ctx.lineWidth = 2;
       ctx.shadowColor = `rgba(99,182,255,${0.5 + glow * 0.5})`; ctx.shadowBlur = 6 + glow * 8; ctx.stroke(); ctx.shadowBlur = 0;
+      // Mirror wave — soft purple
       ctx.beginPath(); ctx.moveTo(0, mid + (src[0] / 100) * (mid - 2));
       for (let i = 1; i < N; i++) {
         const x0 = (i - 1) * step, x1 = i * step;
@@ -229,249 +231,89 @@ export default function VerticalMiniBar({ settings }: Props) {
   const isHov = state === 'hover';
   const isIdle = state === 'idle';
 
-  // ─── Color theme ───
-  const accent = isLight ? '#3b82f6' : '#4a9eff';
-  const accentGlow = isLight ? 'rgba(59,130,246,0.3)' : 'rgba(74,158,255,0.35)';
-  const purpleAccent = '#7c5cff';
-  const cardBg = isLight ? 'rgba(255,255,255,0.92)' : 'rgba(18,20,34,0.94)';
-  const borderColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)';
-  const textColor = isLight ? '#1e293b' : 'rgba(255,255,255,0.85)';
-  const mutedColor = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.3)';
-  const tooltipBg = isLight ? 'rgba(255,255,255,0.98)' : 'rgba(11,12,20,0.98)';
-  const tooltipShadow = isLight ? '0 8px 24px rgba(0,0,0,0.1)' : '0 8px 32px rgba(0,0,0,0.5)';
+  // Build bar class name
+  const barClass = [
+    'vmb-bar',
+    isLight ? 'vmb-light' : '',
+    isRec ? 'vmb-recording' : '',
+    isDone ? 'vmb-done' : '',
+    isProc ? 'vmb-processing' : '',
+    isHov ? 'vmb-hover' : '',
+  ].filter(Boolean).join(' ');
 
-  // ─── Bar inline style ───
-  const isActiveState = isRec || isProc || isDone;
-
-  // ─── JSX ───
   return (
     <div style={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      <style>{`
-        @keyframes vmbFadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes vmbSpin { to { transform:rotate(360deg); } }
-        @keyframes vmbPulse { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)} }
-        @keyframes vmbPopIn { from { transform:scale(0.5); opacity:0; } to { transform:scale(1); opacity:1; } }
-        @keyframes vmbSlideDown { from { opacity:0; transform:translateY(-4px) scaleY(0.9); } to { opacity:1; transform:translateY(0) scaleY(1); } }
-        @keyframes vmbBreathe {
-          0%,100% { box-shadow: 0 0 12px ${accentGlow}, 0 0 0 0 rgba(124,92,255,0.15); }
-          50% { box-shadow: 0 0 22px ${accentGlow}, 0 0 8px 2px rgba(124,92,255,0.15); }
-        }
-        @keyframes vmbGpuPulse { 0%,100%{opacity:0.4}50%{opacity:1} }
-        @keyframes vmbSlideIn { from { opacity:0; transform:translateX(-8px); } to { opacity:1; transform:translateX(0); } }
-      `}</style>
-
-      {/* Main vertical bar */}
       <div
-        style={{
-          zoom,
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          width: 52, height: 'calc(100% - 12px)',
-          padding: '10px 6px',
-          gap: 4,
-          borderRadius: 22,
-          boxSizing: 'border-box',
-          background: isActiveState
-            ? (isRec
-                ? `linear-gradient(180deg, ${cardBg}, ${cardBg})`
-                : isDone
-                  ? `linear-gradient(180deg, ${cardBg}, ${cardBg})`
-                  : cardBg)
-            : cardBg,
-          backdropFilter: 'blur(40px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-          border: isRec
-            ? `1px solid ${accent}44`
-            : isDone
-              ? `1px solid rgba(74,222,128,0.25)`
-              : borderColor,
-          boxShadow: isRec
-            ? `0 4px 20px ${accentGlow}, 0 0 0 1px ${accent}11, ${isLight ? '0 1px 0 rgba(255,255,255,0.6) inset' : '0 1px 0 rgba(255,255,255,0.06) inset'}`
-            : isDone
-              ? `0 4px 16px rgba(74,222,128,0.15), 0 0 0 1px rgba(74,222,128,0.08), ${isLight ? '0 1px 0 rgba(255,255,255,0.6) inset' : '0 1px 0 rgba(255,255,255,0.06) inset'}`
-              : isHov
-                ? `0 8px 28px rgba(0,0,0,0.12), ${isLight ? '0 1px 0 rgba(255,255,255,0.7) inset' : '0 1px 0 rgba(255,255,255,0.08) inset'}`
-                : `0 4px 16px rgba(0,0,0,0.06), ${isLight ? '0 1px 0 rgba(255,255,255,0.5) inset' : '0 1px 0 rgba(255,255,255,0.04) inset'}`,
-          animation: isRec ? 'vmbBreathe 2s ease-in-out infinite' : 'none',
-          userSelect: 'none',
-          WebkitAppRegion: 'drag' as unknown as string,
-          position: 'relative',
-          transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)',
-          overflow: 'visible',
-          cursor: 'default',
-          zIndex: 10001,
-        }}
+        className={barClass}
+        style={{ zoom }}
         onMouseEnter={() => { if (isIdle) setState('hover'); }}
         onMouseLeave={() => { if (stateRef.current === 'hover') setState('idle'); }}
       >
-        {/* ── TOP SECTION: Language + Indicators ── */}
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 2, width: '100%',
-        }}>
-          {/* Language selector */}
+        {/* ── TOP: Language + Indicators ── */}
+        <div className="vmb-top">
           <button
-            style={{
-              width: 32, height: 32, minWidth: 32, minHeight: 32,
-              borderRadius: 12, padding: 0,
-              background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)',
-              border: 'none',
-              color: textColor,
-              cursor: 'pointer', outline: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              WebkitAppRegion: 'no-drag' as unknown as string,
-              fontSize: 12, fontWeight: 700, lineHeight: 1,
-              transition: 'all 0.2s ease',
-            }}
+            className="vmb-lang"
             onPointerDown={(e) => { e.stopPropagation(); cycleLanguage(); }}
             title={currentLang.l}
           >
             {currentLang.s}
           </button>
 
-          {/* Canvas visualization bar (visible only during recording) */}
+          {/* Canvas visualization (recording only) */}
           {isRec && (
-            <canvas
-              ref={canvasRef}
-              style={{
-                width: '100%', height: 32,
-                borderRadius: 8,
-                opacity: 0.85,
-                animation: 'vmbFadeIn 0.3s ease',
-              }}
-            />
+            <canvas ref={canvasRef} className="vmb-canvas" />
           )}
 
           {/* GPU indicator */}
           {gpuStatus && !isRec && (
-            <div style={{
-              width: 32, height: 32,
-              borderRadius: 12,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, fontWeight: 600,
-              color: accent,
-              background: isLight ? 'rgba(59,130,246,0.06)' : 'rgba(74,158,255,0.08)',
-              border: `1px solid ${accent}22`,
-              animation: 'vmbGpuPulse 3s ease-in-out infinite',
-              fontFamily: 'monospace',
-            }} title="GPU acceleration available">⚡</div>
+            <div className="vmb-gpu" title="GPU acceleration available">⚡</div>
           )}
         </div>
 
-        {/* ── MIC BUTTON (centerpiece) ── */}
+        {/* ── MIC BUTTON ── */}
         <button
-          style={{
-            width: 46, height: 46, minWidth: 46, minHeight: 46,
-            borderRadius: 99, padding: 0,
-            border: 'none',
-            cursor: isProc ? 'default' : 'pointer',
-            outline: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            WebkitAppRegion: 'no-drag' as unknown as string,
-            position: 'relative',
-            overflow: 'hidden',
-            transition: 'all 0.3s cubic-bezier(0.4,0,0.2,1)',
-            flexShrink: 0,
-            background: isRec
-              ? `linear-gradient(135deg, ${accent}, ${purpleAccent})`
-              : isDone
-                ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-                : isProc
-                  ? (isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)')
-                  : `linear-gradient(135deg, ${accent}, ${purpleAccent})`,
-            boxShadow: isRec
-              ? `0 0 24px ${accentGlow}, 0 2px 8px rgba(0,0,0,0.2)`
-              : isDone
-                ? '0 0 18px rgba(74,222,128,0.25), 0 2px 8px rgba(0,0,0,0.15)'
-                : isProc
-                  ? 'none'
-                  : `0 0 14px ${accentGlow}, 0 2px 6px rgba(0,0,0,0.15)`,
-            color: isProc ? (isLight ? '#94a3b8' : 'rgba(255,255,255,0.4)') : '#fff',
-            transform: isRec ? 'scale(1.05)' : 'scale(1)',
-          }}
+          className="vmb-mic"
           onClick={toggle}
           disabled={isProc}
         >
           {/* Idle / hover — mic icon */}
           {(isIdle || isHov) && (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22, position: 'relative', zIndex: 2 }}>
+            <svg className="vmb-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3.5 3.5 0 0 0-3.5 3.5v6a3.5 3.5 0 0 0 7 0v-6A3.5 3.5 0 0 0 12 2Z"/>
               <path d="M19 10.5v1a7 7 0 0 1-14 0v-1"/>
               <path d="M12 18.5V22"/>
             </svg>
           )}
 
-          {/* Recording — timer + dot */}
+          {/* Recording — dot + timer inside button */}
           {isRec && (
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 1, position: 'relative', zIndex: 2,
-            }}>
-              <div style={{
-                width: 5, height: 5,
-                borderRadius: '50%',
-                background: '#f87171',
-                boxShadow: '0 0 8px rgba(248,113,113,0.7)',
-                animation: 'vmbPulse 1s ease-in-out infinite',
-              }} />
-              <span style={{
-                fontSize: 8, lineHeight: 1, letterSpacing: '0.3px',
-                fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums',
-                color: 'rgba(255,255,255,0.85)',
-              }}>{fmt(time)}</span>
+            <div className="vmb-recording-core">
+              <span className="vmb-live-dot" />
+              <span className="vmb-time">{fmt(time)}</span>
             </div>
           )}
 
           {/* Processing — spinner */}
           {isProc && (
-            <div style={{
-              width: 20, height: 20,
-              border: `2px solid ${isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'}`,
-              borderTopColor: accent,
-              borderRadius: '50%',
-              animation: 'vmbSpin 0.7s linear infinite',
-              position: 'relative', zIndex: 2,
-            }} />
+            <div className="vmb-spinner" />
           )}
 
           {/* Done — checkmark */}
           {isDone && (
-            <div style={{
-              width: 20, height: 20,
-              background: 'rgba(255,255,255,0.2)',
-              borderRadius: 10,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, fontWeight: 700,
-              color: '#fff',
-              position: 'relative', zIndex: 2,
-              animation: 'vmbPopIn 0.2s ease',
-            }}>✓</div>
+            <div className="vmb-done-core">✓</div>
           )}
         </button>
 
-        {/* ── BOTTOM SECTION: Actions ── */}
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 4, width: '100%',
-        }}>
-          {/* Cancel (visible during recording) */}
+        {/* ── BOTTOM: Actions ── */}
+        <div className="vmb-bottom">
+          {/* Cancel (recording only) */}
           {isRec && (
             <button
-              style={{
-                width: 34, height: 34, minWidth: 34, minHeight: 34,
-                borderRadius: 12, padding: 0,
-                border: 'none',
-                cursor: 'pointer', outline: 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                WebkitAppRegion: 'no-drag' as unknown as string,
-                background: isLight ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.12)',
-                color: '#ef4444',
-                transition: 'all 0.2s ease',
-                animation: 'vmbFadeIn 0.2s ease',
-              }}
+              className="vmb-action vmb-cancel"
               onClick={(e) => { e.stopPropagation(); cancelRec(); }}
               title="Cancel (Esc)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ width: 14, height: 14 }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
             </button>
@@ -479,18 +321,8 @@ export default function VerticalMiniBar({ settings }: Props) {
 
           {/* Copy / Settings */}
           <button
-            style={{
-              width: 34, height: 34, minWidth: 34, minHeight: 34,
-              borderRadius: 12, padding: 0,
-              border: 'none',
-              cursor: 'pointer', outline: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              WebkitAppRegion: 'no-drag' as unknown as string,
-              background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)',
-              color: textColor,
-              transition: 'all 0.2s ease',
-              opacity: isProc ? 0.4 : 1,
-            }}
+            className={`vmb-action${text ? ' vmb-ready' : ''}`}
+            disabled={isProc}
             onClick={async (e) => {
               e.stopPropagation();
               if (text) { const r = await window.electronAPI?.copyText(text); if (r?.success) { playSound('done'); setState('done'); setTimeout(() => setState('idle'), 900); } }
@@ -499,11 +331,11 @@ export default function VerticalMiniBar({ settings }: Props) {
             title={text ? 'Copy text' : 'Settings'}
           >
             {text ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>
               </svg>
             ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M15 4V2"/><path d="M15 10v-2"/><path d="M12 7h6"/>
                 <path d="m5 19 9.2-9.2a1.9 1.9 0 0 1 2.7 2.7L7.7 21.7a1.9 1.9 0 0 1-2.7-2.7Z"/><path d="m12.5 11.5 2 2"/>
               </svg>
@@ -512,18 +344,8 @@ export default function VerticalMiniBar({ settings }: Props) {
 
           {/* Paste / History */}
           <button
-            style={{
-              width: 34, height: 34, minWidth: 34, minHeight: 34,
-              borderRadius: 12, padding: 0,
-              border: 'none',
-              cursor: 'pointer', outline: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              WebkitAppRegion: 'no-drag' as unknown as string,
-              background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)',
-              color: textColor,
-              transition: 'all 0.2s ease',
-              opacity: isProc ? 0.4 : 1,
-            }}
+            className={`vmb-action${text ? ' vmb-ready' : ''}`}
+            disabled={isProc}
             onClick={async (e) => {
               e.stopPropagation();
               if (text) { const r = await window.electronAPI?.pasteText(text); if (r?.success) setText(''); }
@@ -532,12 +354,12 @@ export default function VerticalMiniBar({ settings }: Props) {
             title={text ? 'Paste text' : 'History'}
           >
             {text ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                 <rect x="8" y="2" width="8" height="5" rx="1.5"/><path d="M8 12h8"/><path d="M8 16h5"/>
               </svg>
             ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v10A2.5 2.5 0 0 1 16.5 18H10l-4.4 3.2A.4.4 0 0 1 5 20.9Z"/>
                 <path d="M9 8h6"/><path d="M9 12h4"/>
               </svg>
@@ -545,30 +367,16 @@ export default function VerticalMiniBar({ settings }: Props) {
           </button>
         </div>
 
-        {/* ── RIGHT-SIDE TOOLTIPS ── */}
-        {/* Result tooltip */}
+        {/* ── TOOLTIPS (right side) ── */}
+
+        {/* Result */}
         {text && isDone && (
           <div
-            style={{
-              position: 'absolute', left: 'calc(100% + 8px)', top: '50%',
-              transform: 'translateY(-50%)',
-              maxWidth: 220, zIndex: 10000,
-              background: tooltipBg, border: borderColor,
-              borderRadius: 14, padding: '10px 14px',
-              color: textColor,
-              cursor: 'pointer',
-              boxShadow: tooltipShadow,
-              backdropFilter: 'blur(40px) saturate(150%)',
-              WebkitBackdropFilter: 'blur(40px) saturate(150%)',
-              animation: 'vmbSlideIn 0.25s ease',
-              fontSize: 12, lineHeight: 1.4,
-            }}
+            className="vmb-tooltip vmb-tooltip-result"
             onClick={async () => { const r = await window.electronAPI?.copyText(text); if (r?.success) playSound('done'); }}
           >
-            <div style={{ color: mutedColor, fontSize: 8, marginBottom: 4, fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-              RESULT
-            </div>
-            <div style={{ color: textColor, wordBreak: 'break-word', fontSize: 11 }}>
+            <div className="vmb-tooltip-label" style={{ color: 'var(--vmb-muted)' }}>RESULT</div>
+            <div className="vmb-tooltip-content">
               {text.length > 80 ? text.substring(0, 80) + '...' : text}
             </div>
           </div>
@@ -576,69 +384,23 @@ export default function VerticalMiniBar({ settings }: Props) {
 
         {/* Partial transcript */}
         {partial && isRec && (
-          <div
-            style={{
-              position: 'absolute', left: 'calc(100% + 8px)', top: '50%',
-              transform: 'translateY(-50%)',
-              maxWidth: 220, zIndex: 10000,
-              background: tooltipBg,
-              border: `1px solid ${accent}22`,
-              borderRadius: 14, padding: '10px 14px',
-              color: textColor,
-              boxShadow: tooltipShadow,
-              backdropFilter: 'blur(40px) saturate(150%)',
-              WebkitBackdropFilter: 'blur(40px) saturate(150%)',
-              animation: 'vmbSlideIn 0.25s ease',
-              fontSize: 11, lineHeight: 1.4, fontStyle: 'italic',
-            }}
-          >
-            <div style={{
-              color: accent, fontSize: 8, marginBottom: 4,
-              fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase',
-            }}>
-              LISTENING
-            </div>
-            <div style={{ color: mutedColor }}>
+          <div className="vmb-tooltip vmb-tooltip-partial">
+            <div className="vmb-tooltip-label" style={{ color: '#4a9eff' }}>LISTENING</div>
+            <div className="vmb-tooltip-content" style={{ color: 'var(--vmb-muted)' }}>
               {partial.length > 60 ? partial.substring(0, 60) + '...' : partial}
             </div>
           </div>
         )}
 
-        {/* Error tooltip */}
+        {/* Error */}
         {error && (
-          <div
-            style={{
-              position: 'absolute', left: 'calc(100% + 8px)', top: '50%',
-              transform: 'translateY(-50%)',
-              whiteSpace: 'nowrap', zIndex: 10000,
-              background: 'rgba(239,68,68,0.9)',
-              color: '#fff', padding: '8px 14px',
-              borderRadius: 10, fontSize: 11, fontWeight: 500,
-              boxShadow: '0 4px 16px rgba(239,68,68,0.3)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              animation: 'vmbFadeIn 0.2s ease',
-            }}
-          >{error}</div>
+          <div className="vmb-tooltip vmb-tooltip-error">{error}</div>
         )}
 
         {/* No model warning */}
         {hasModel === false && !isRec && (
           <div
-            style={{
-              position: 'absolute', left: 'calc(100% + 8px)', top: '50%',
-              transform: 'translateY(-50%)',
-              whiteSpace: 'nowrap', zIndex: 10000,
-              background: isLight ? 'rgba(234,179,8,0.9)' : 'rgba(234,179,8,0.85)',
-              color: isLight ? '#000' : '#000',
-              padding: '8px 14px',
-              borderRadius: 10, fontSize: 11, fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              animation: 'vmbFadeIn 0.2s ease',
-            }}
+            className="vmb-tooltip vmb-tooltip-warning"
             onClick={() => window.electronAPI?.showMain?.('models')}
           >
             ↓ Download model
@@ -648,19 +410,7 @@ export default function VerticalMiniBar({ settings }: Props) {
         {/* GPU CTA */}
         {gpuStatus && hasModel !== false && !isRec && !isDone && (
           <div
-            style={{
-              position: 'absolute', left: 'calc(100% + 8px)', top: 'calc(50% + 28px)',
-              whiteSpace: 'nowrap', zIndex: 10000,
-              background: tooltipBg, border: `1px solid ${accent}22`,
-              borderRadius: 10, padding: '6px 12px',
-              color: accent, fontSize: 9, fontWeight: 500,
-              cursor: 'pointer',
-              boxShadow: tooltipShadow,
-              backdropFilter: 'blur(40px) saturate(150%)',
-              WebkitBackdropFilter: 'blur(40px) saturate(150%)',
-              animation: 'vmbSlideDown 0.3s ease',
-              letterSpacing: '0.2px',
-            }}
+            className="vmb-tooltip vmb-tooltip-gpu"
             onClick={() => window.electronAPI?.showMain?.('settings')}
           >
             GPU — install CUDA

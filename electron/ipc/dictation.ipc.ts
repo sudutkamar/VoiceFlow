@@ -187,12 +187,52 @@ export function setupDictationIPC(
       const llmEnabled = database.getSetting('llm_postprocess') === 'true';
       const llmModel = database.getSetting('llm_model') || 'qwen2.5-0.5b-q4_k_m.gguf';
 
-      let finalText = transcribeResult.text || '';
+      // ─────────────────────────────────────────────────────────────────
+      //  Processing Pipeline
+      //  ─────────────────────────────────────────────────────────────────
+      //  Order matters:
+      //  1. LLM      ← RAW Whisper (grammar + punctuation fix)
+      //  2. TextCleaner    ← filler removal, voice commands, capitalization
+      //  3. AdaptiveLearning     ← learned user corrections
+      //  ─────────────────────────────────────────────────────────────────
+      const rawWhisperText = transcribeResult.text || '';
+      let finalText = rawWhisperText;
+
       if (finalText) {
-        // Phase 1: TextCleaner (rule-based cleanup)
+        // ── Phase 1a: LLM on RAW Whisper text (grammar + punctuation only) ──
+        // LLM receives RAW output, BEFORE TextCleaner strips filler words.
+        // This way LLM focuses on grammar/structure, not cleanup.
+        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length >= 100;
+        if (shouldUseLLM) {
+          try {
+            hotkeyManager?.setState('cleaning');
+            const llmResult = await llmPostProcessor.process(finalText, llmModel);
+
+            if (llmResult.success && llmResult.text !== finalText) {
+              logger.info('[LLM] Grammar fix applied', {
+                model: llmResult.model,
+                processingMs: llmResult.processingMs,
+                beforeLength: finalText.length,
+                afterLength: llmResult.text.length,
+              });
+              finalText = llmResult.text;
+            } else if (llmResult.error) {
+              logger.warn('[LLM] Skipped', { error: llmResult.error });
+            }
+          } catch (err) {
+            logger.warn('[LLM] Error, using original', err);
+          }
+        } else if (llmEnabled && !verbatimMode) {
+          logger.debug('[LLM] Skipped for short text', { length: finalText.length });
+        }
+
+        // ── Phase 1b: TextCleaner (rule-based cleanup) ──
+        // Removes filler words, stutters, false starts.
+        // Applies voice commands ("koma" → ",", "titik" → ".").
+        // LLM has already fixed grammar, so TextCleaner can focus on cleanup.
         finalText = textCleaner.cleanForMode(finalText, mode, { dictionary, snippets, voiceCommands });
-        
-        // Phase 2: Adaptive Learning (learned corrections)
+
+        // ── Phase 2: Adaptive Learning (learned corrections) ──
         try {
           const learned = adaptiveLearning.apply(finalText);
           if (learned.changes > 0) {
@@ -201,37 +241,6 @@ export function setupDictationIPC(
           }
         } catch (err) {
           logger.warn('Adaptive learning failed, using original', err);
-        }
-
-        // Phase 3: LLM Post-Processing (local llama inference)
-        // CRITICAL: Skip LLM for short text for speed
-        // Short text (<100 chars): Skip LLM entirely (instant)
-        // Medium text (100-300 chars): Use LLM if enabled
-        // Long text (>300 chars): Always use LLM if enabled
-        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length >= 100;
-        if (shouldUseLLM) {
-          try {
-            // Update state to show LLM processing
-            hotkeyManager?.setState('cleaning');
-            
-            const llmResult = await llmPostProcessor.process(finalText, llmModel);
-            
-            if (llmResult.success && llmResult.text !== finalText) {
-              logger.info('LLM post-processing applied', {
-                model: llmResult.model,
-                processingMs: llmResult.processingMs,
-                before: finalText.length,
-                after: llmResult.text.length,
-              });
-              finalText = llmResult.text;
-            } else if (llmResult.error) {
-              logger.warn('LLM post-processing skipped', { error: llmResult.error });
-            }
-          } catch (err) {
-            logger.warn('LLM post-processing error, using cleaner result', err);
-          }
-        } else if (llmEnabled && !verbatimMode) {
-          logger.debug('LLM skipped for short text', { length: finalText.length });
         }
       }
 
@@ -274,7 +283,7 @@ export function setupDictationIPC(
       // NOW send transcript to UI — paste is already done
       // UI shows result IMMEDIATELY after paste
       send('transcript-ready', {
-        raw: transcribeResult.rawText || transcribeResult.text,
+        raw: rawWhisperText,
         cleaned: finalText,
         duration: audioData.duration,
         wordCount: textCleaner.getWordCount(finalText),
@@ -286,7 +295,7 @@ export function setupDictationIPC(
           suggestions: transcribeResult.confidence.suggestions,
         } : undefined,
         fuzzyChanges: transcribeResult.fuzzyChanges,
-        rawText: transcribeResult.rawText,
+        rawText: rawWhisperText,
       });
 
       // Record transcription for auto-learning
@@ -382,7 +391,71 @@ export function setupDictationIPC(
     try {
       const available = llmPostProcessor.isLlmCliAvailable() && llmPostProcessor.isModelAvailable();
       const models = llmPostProcessor.getDownloadedModelsInfo();
-      return { success: true, available, hasCli: llmPostProcessor.isLlmCliAvailable(), models };
+      return { success: true, available, hasCli: llmPostProcessor.isLlmCliAvailable(), binaryDownloaded: llmPostProcessor.isBinaryDownloaded(), models };
+    } catch (err: any) {
+      return { success: false, available: false, error: err.message };
+    }
+  });
+
+  // LLM Binary Download (llama-cli.exe)
+  ipcMain.handle('llm-download-binary', async () => {
+    try {
+      const result = await llmPostProcessor.downloadLlamaBinary((progress, state, dlBytes, totalBytes, modelName) => {
+        const send = hotkeyManager
+          ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+          : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+
+        send('llm-binary-download-progress', {
+          progress,
+          state,
+          downloadedBytes: dlBytes || 0,
+          totalBytes: totalBytes || 0,
+        });
+      });
+
+      // Send final
+      const send = hotkeyManager
+        ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+        : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+      send('llm-binary-download-progress', {
+        progress: result ? 100 : 0,
+        state: result ? 'completed' : 'error',
+        downloadedBytes: 0,
+        totalBytes: 0,
+      });
+      return { success: result };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('llm-cancel-binary-download', async () => {
+    llmPostProcessor.cancelBinaryDownload();
+    const send = hotkeyManager
+      ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
+      : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
+    send('llm-binary-download-progress', {
+      progress: 0,
+      state: 'cancelled',
+      downloadedBytes: 0,
+      totalBytes: 0,
+    });
+    return { success: true };
+  });
+
+  ipcMain.handle('llm-get-binary-download-state', async () => {
+    return llmPostProcessor.getBinaryDownloadState();
+  });
+
+  ipcMain.handle('llm-check-binary', async () => {
+    return { downloaded: llmPostProcessor.isBinaryDownloaded() };
+  });
+
+  ipcMain.handle('llm-check-availability', async () => {
+    try {
+      const available = llmPostProcessor.isLlmCliAvailable() && llmPostProcessor.isModelAvailable();
+      const models = llmPostProcessor.getDownloadedModelsInfo();
+      return { success: true, available, hasCli: llmPostProcessor.isLlmCliAvailable(), binaryDownloaded: llmPostProcessor.isBinaryDownloaded(), models };
     } catch (err: any) {
       return { success: false, available: false, error: err.message };
     }

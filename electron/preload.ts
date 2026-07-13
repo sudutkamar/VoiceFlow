@@ -73,7 +73,7 @@ export interface ElectronAPI {
   getAdaptiveStats: () => Promise<{ total: number; totalFrequency: number; avgConfidence: number }>;
 
   // LLM Post-Processing
-  llmCheckAvailability: () => Promise<{ success: boolean; available: boolean; hasCli: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmCheckAvailability: () => Promise<{ success: boolean; available: boolean; hasCli: boolean; binaryDownloaded: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   llmGetModels: () => Promise<{ success: boolean; models: Array<{ name: string; sizeBytes: number }>; error?: string }>;
   llmDownloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   llmDeleteModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
@@ -85,6 +85,10 @@ export interface ElectronAPI {
   llmGetModelsPath: () => Promise<string>;
   llmChooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   llmScanModelsFolder: () => Promise<{ success: boolean; models?: Array<{ name: string; sizeBytes: number }>; error?: string }>;
+  llmDownloadBinary: () => Promise<{ success: boolean; error?: string }>;
+  llmCancelBinaryDownload: () => Promise<{ success: boolean }>;
+  llmGetBinaryDownloadState: () => Promise<{ state: string; progress: number; downloadedBytes: number; totalBytes: number }>;
+  llmCheckBinary: () => Promise<{ downloaded: boolean }>;
   openExternal: (url: string) => Promise<void>;
 
   // Hotkey
@@ -133,6 +137,7 @@ export interface ElectronAPI {
   onBenchmarkProgress: (callback: (data: { model: string; status: string; text?: string; elapsedMs?: number; error?: string }) => void) => () => void;
   onThemeChange: (callback: (theme: string) => void) => () => void;
   onReloadSettings: (callback: () => void) => () => void;
+  onLlmBinaryDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
 }
@@ -216,6 +221,10 @@ const api: ElectronAPI = {
   llmGetModelsPath: () => ipcRenderer.invoke('llm-get-models-path'),
   llmChooseModelsFolder: () => ipcRenderer.invoke('llm-choose-models-folder'),
   llmScanModelsFolder: () => ipcRenderer.invoke('llm-scan-models-folder'),
+  llmDownloadBinary: () => ipcRenderer.invoke('llm-download-binary'),
+  llmCancelBinaryDownload: () => ipcRenderer.invoke('llm-cancel-binary-download'),
+  llmGetBinaryDownloadState: () => ipcRenderer.invoke('llm-get-binary-download-state'),
+  llmCheckBinary: () => ipcRenderer.invoke('llm-check-binary'),
   openExternal: (url) => shell.openExternal(url),
 
   updateHotkey: (newHotkey) => ipcRenderer.invoke('update-hotkey', newHotkey),
@@ -331,6 +340,11 @@ const api: ElectronAPI = {
     const handler = () => callback();
     ipcRenderer.on('reload-settings', handler);
     return () => ipcRenderer.removeListener('reload-settings', handler);
+  },
+  onLlmBinaryDownloadProgress: (callback) => {
+    const handler = (_: any, data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => callback(data);
+    ipcRenderer.on('llm-binary-download-progress', handler);
+    return () => ipcRenderer.removeListener('llm-binary-download-progress', handler);
   },
   onLlmDownloadProgress: (callback) => {
     const handler = (_: any, data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => callback(data);

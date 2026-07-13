@@ -1,60 +1,126 @@
 # Session Handoff
 
-## Session: 2026-07-13 (Critical Issues Fix — Complete Audit Remediation)
+## Session: 2026-07-13 (Session 4 — VerticalMiniBar CSS Restore)
 
 ### Summary
-Fixed all 5 critical issues identified in comprehensive project audit. No UI changes — all fixes are backend/architecture improvements that maintain backward compatibility.
+
+**VerticalMiniBar CSS classes missing** — The previous session claimed to refactor inline styles → CSS classes, but the CSS was never actually added to `app.css`. The VerticalMiniBar component referenced 20+ `vmb-*` classes that didn't exist, rendering the vertical mini bar completely unstyled/broken.
+
+**Fix:** Added complete CSS for all `vmb-*` classes to `app.css` (~650 lines). Copied the glassmorphism pattern from horizontal `.mini-bar` (inner glass, ambient glow, state transitions, animations). Added dark/light theme via `--vmb-*` CSS variables.
 
 ### Files Changed
 | File | Change |
 |------|--------|
-| `electron/main.ts` | **CRITICAL FIX #1**: Added `app.requestSingleInstanceLock()` to prevent multiple Electron instances. Added `second-instance` handler to show existing window. **CRITICAL FIX #5**: Added `cleanupTempFiles()` function + registered in `before-quit` handler. Added whisper process cleanup in `before-quit`. Wrapped entire app initialization in `gotTheLock` else block. |
-| `electron/modules/pasteEngine.ts` | **CRITICAL FIX #3**: Rewrote `paste()` method with: (1) Window validation via `validateWindowHandle()` before paste, (2) Retry logic with exponential backoff (max 3 attempts), (3) `finally` block ensures clipboard always restored, (4) Increased wait time from 200ms to 250ms for window hide. Added `validateWindowHandle()` private method using PowerShell IsWindow() check. |
-| `src/utils/wavRecorder.ts` | **CRITICAL FIX #4 + HIGH FIX**: Kept ScriptProcessorNode (works fine in Electron). Added `cleanupResources()` private method for proper resource cleanup. Added error handling in `start()` with try-catch that cleans up on failure. Audio graph disconnect in `disconnectAudioGraph()` with individual try-catch for each node. AudioContext close check (`state !== 'closed'`) before closing. **Removed unused AdaptiveVAD** — was processing audio wastefully without any callback connected. |
-| `electron/ipc/dictation.ipc.ts` | **HIGH FIX**: Added `MAX_QUEUE_SIZE = 5` constant. Added queue overflow protection: drops oldest item when queue full. Prevents memory overflow from rapid recording. |
-| `electron/modules/transcriber.ts` | **HIGH FIX**: Added WAV format validation before transcription. Checks: file size >= 44 bytes, RIFF header, WAVE marker. Returns clear error message for invalid formats. |
-| `electron/modules/hotkeyManager.ts` | **HIGH FIX**: Fixed memory leak in `registerPushToTalk()` — added removal of old handlers before adding new ones. Prevents listener accumulation when hotkey is updated multiple times. **DOCS**: Added JSDoc documentation for class. |
-| `src/hooks/useRecorder.ts` | **CLEANUP**: Removed unused `recorder.onSilence()` call — the callback was never connected anyway. **DOCS**: Added JSDoc documentation for hook. |
-| `src/utils/wavRecorder.ts` | **CLEANUP**: Removed unused AdaptiveVAD import and processing. Removed unused `onSilence()` and `getAdaptiveVAD()` methods. **DOCS**: Added JSDoc documentation. |
-| `electron/modules/database.ts` | **MEDIUM**: Added schema migration system (`DB_VERSION = 2`). Added `migrateSchema()` for versioned database updates. Updated `addHistory()` to include `model_name`, `confidence`, `fuzzy_changes` fields. Updated `exportHistory()` with more fields. Added `exportDictionary()` and `importDictionary()` methods. Added `log_level` default setting. **DOCS**: Added JSDoc documentation. |
-| `electron/modules/logger.ts` | **MEDIUM**: Added log level control (`setLogLevel()`, `getLogLevel()`, `shouldLog()`). Debug messages now only log when level is 'debug'. **DOCS**: Added JSDoc documentation. |
-| `electron/ipc/snippet.ipc.ts` | **MEDIUM**: Added IPC handlers for `export-dictionary` and `import-dictionary`. |
-| `electron/ipc/settings.ipc.ts` | **MEDIUM**: Added IPC handler for `set-log-level`. |
-| `electron/preload.ts` | **MEDIUM**: Added `exportDictionary()`, `importDictionary()`, `setLogLevel()` methods to preload API. |
-| `electron/main.ts` | **MEDIUM**: Added log level initialization from database settings. |
-| `README.md` | **LOW**: Added LLM Post-Processing, Log Level, Dictionary Import/Export to settings documentation. |
-| `AGENTS.md` | **DOCS**: Added Rule #4 (Floating UI protection), Rule #5 (Test checklist with floating UI tests). |
-| `voiceflow-audio` skill | **DOCS**: Added critical warning, comparison approach, floating UI protection, test checklist. |
-| `electron/modules/autoUpdater.ts` | **NEW**: Auto-update mechanism using electron-updater. Checks for updates on startup, prompts user to download/install. |
-| `electron/modules/crashReporter.ts` | **NEW**: Crash reporting with error logging to file. Handles uncaught exceptions and unhandled rejections. |
-| `vitest.config.ts` | **NEW**: Vitest configuration for unit testing. |
-| `src/test/setup.ts` | **NEW**: Test setup with mocked electronAPI. |
-| `electron/modules/__tests__/textCleaner.test.ts` | **NEW**: Unit tests for TextCleaner module. |
-| `src/i18n/index.ts` | **NEW**: i18n configuration with react-i18next. |
-| `src/i18n/locales/id.json` | **NEW**: Indonesian translations. |
-| `src/i18n/locales/en.json` | **NEW**: English translations. |
+| `src/styles/app.css` | **ADD** — Full CSS for `vmb-bar`, `vmb-top`, `vmb-lang`, `vmb-canvas`, `vmb-gpu`, `vmb-mic`, `vmb-recording-core`, `vmb-live-dot`, `vmb-time`, `vmb-spinner`, `vmb-done-core`, `vmb-bottom`, `vmb-action`, `vmb-cancel`, `vmb-ready`, `vmb-tooltip` (result/partial/error/warning/gpu variants), glassmorphism, animations |
 
 ### Decisions
+- **CSS copied from horizontal pattern**: Same glassmorphism, same animation names (prefixed `vmb-`), same sweep gradient on buttons
+- **Vertical tooltips on right side**: `left: calc(100% + 10px)` — tooltips appear to the right of the vertical bar
+- **Light theme via CSS variables**: `.vmb-light` overrides all `--vmb-*` variables, matching horizontal pattern
+
+### Risks / Technical Debt
+- Canvas waveform still renders above mic button (not inside like horizontal) — acceptable for vertical layout
+- No language dropdown (cycle-only) — intentional for vertical compact layout
+
+### Next Actions
+1. [ ] Test vertical mode: switch to vertical → verify glassmorphism visible
+2. [ ] Test recording: click mic → verify recording pulse + live dot + timer
+3. [ ] Test processing: verify spinner appears
+4. [ ] Test done: verify checkmark + success flash + result tooltip
+5. [ ] Test light theme: toggle theme → verify all colors update
+6. [ ] Test tooltips: result, partial, error, warning — all appear correctly
+7. [ ] Test horizontal mode: verify zero changes to horizontal mini bar
+
+---
+
+## Session: 2026-07-13 (Session 3 — VerticalMiniBar CSS Refactor)
+
+### Summary
+
+**VerticalMiniBar refactor**: All inline styles replaced with CSS classes in `app.css`. Added glassmorphism effects (`::before` inner glow, `::after` ambient glow), proper animations (settle, recording pulse, done flash, processing shimmer), sweep gradient on buttons, CSS-variable-based theming for dark/light. Horizontal MiniBar untouched.
+
+**Horizontal MiniBar:** NOT TOUCHED — `src/App.tsx` has zero changes.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `src/styles/app.css` | **REPLACE** section `/* VERTICAL MINI-BAR */` → 650+ lines of dedicated CSS classes for vertical mini bar: theme variables, glassmorphism, animations, buttons, tooltips |
+| `src/components/VerticalMiniBar.tsx` | **REFACTOR** — All inline styles replaced with CSS classes. Removed `<style>` tag with inline keyframes. Removed color theme variables (accent, cardBg, etc). JSX now uses className-based styling |
+
+### Decisions
+- **CSS classes over inline styles**: Matches horizontal mini bar pattern. Easier to maintain, theme, and animate.
+- **CSS variables for theming**: `--vmb-*` variables on `.vmb-bar`, overridden by `.vmb-light`. Avoids JS-based color switching.
+- **Glassmorphism via pseudo-elements**: `::before` (inner glass) + `::after` (ambient glow) — same pattern as horizontal `.mini-bar`.
+- **Sweep gradient on buttons**: `.vmb-action::before` + `.vmb-mic::before` — matches `.m-orb-btn` and `.m-voice-btn` pattern.
+- **Recording dot + timer inside mic button**: Moved from separate canvas above to inline with mic button (`.vmb-recording-core`). Canvas still renders above.
+- **No changes to recording logic**: All IPC, waveform drawing, language cycling, state management untouched.
+
+### Risks / Technical Debt
+- Vertical bar still uses `zoom` CSS property (non-standard, but works in Electron/Chromium).
+- Canvas waveform still renders above mic button (not inside it like horizontal) — acceptable for vertical layout.
+- No language dropdown (cycle-only) — intentional for vertical compact layout.
+
+### Next Actions
+1. [ ] Test vertical mode: switch to vertical → verify glassmorphism visible
+2. [ ] Test recording: click mic → verify recording pulse + live dot + timer
+3. [ ] Test processing: verify spinner appears
+4. [ ] Test done: verify checkmark + success flash + result tooltip
+5. [ ] Test light theme: toggle theme → verify all colors update
+6. [ ] Test tooltips: result, partial, error, warning — all appear correctly
+7. [ ] Test horizontal mode: verify zero changes to horizontal mini bar
+
+---
+
+## Session: 2026-07-13 (Session 2 — LLM Pipeline Fix + Binary Download UI)
+
+### Summary
+
+**BAGIAN 1 — LLM Pipeline Fix:**
+LLM sekarang terima RAW Whisper (bukan cleaned text). Prompt diganti dari "CLEAN THIS" → "IMPROVE THIS" fokus grammar + punctuation saja. Urutan pipeline: Whisper → LLM(raw) → TextCleaner → AdaptiveLearning.
+
+**BAGIAN 2 — Binary Download System:**
+Tombol "Download Binary" dulu cuma buka link external. Sekarang download real: progress bar + cancel. Extract otomatis via PowerShell Expand-Archive. Semua download (binary + model) pake UI progress konsisten.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron/modules/llmPostProcessor.ts` | **LLM FIX**: Ganti prompt dari "CLEAN THIS" → "IMPROVE THIS" (fokus grammar+punctuation). Hapus overlap dengan TextCleaner. **NEW**: `downloadLlamaBinary()`, `downloadFile()`, `extractZip()` untuk download + extract llama-cli.zip. `isBinaryDownloaded()`, `cancelBinaryDownload()`. Export `DownloadProgressCallback` type. |
+| `electron/ipc/dictation.ipc.ts` | **LLM PIPELINE FIX**: Pindah LLM ke SEBELUM TextCleaner. LLM terima RAW Whisper → output masuk ke TextCleaner. `rawText` di transcript-ready event = pure Whisper. **NEW**: `llm-download-binary`, `llm-cancel-binary-download`, `llm-get-binary-download-state`, `llm-check-binary` IPC handlers. |
+| `electron/preload.ts` | **NEW**: `llmDownloadBinary()`, `llmCancelBinaryDownload()`, `llmGetBinaryDownloadState()`, `llmCheckBinary()`, `onLlmBinaryDownloadProgress()`. |
+| `src/types/electron.d.ts` | **NEW**: Types untuk `llmDownloadBinary`, `llmCancelBinaryDownload`, `llmGetBinaryDownloadState`, `llmCheckBinary`, `onLlmBinaryDownloadProgress`. Updated `llmCheckAvailability` return type (add `binaryDownloaded`). |
+| `src/pages/LlmModels.tsx` | **REWRITE**: Download binary & model jadi satu sistem progress unified. Binary download real (bukan external link). Progress bar + cancel untuk binary. Resume (restart) + cancel untuk model. Status card menunjukkan binary ready / not ready. |
+| `src/pages/Settings.tsx` | **FIX**: Tombol "Download Binary" di Settings sekarang navigasi ke LLM Models page (bukan open external link). Deskripsi diubah. |
+
+### All Previous Changes (Session 1) — Retained in changelog below
+
+### Decisions
+- **LLM pipeline order**: LLM(grammar) → TextCleaner(filler) → AdaptiveLearning. LLM perlu raw text biar bisa meaningful. TextCleaner setelahnya bersihin filler/stutter.
+- **Binary download via PowerShell Expand-Archive**: Built-in Windows, no extra deps. Falls back gracefully.
+- **Model resume = restart**: True resume (byte-range) terlalu kompleks. Cancel + restart cukup untuk model kecil (280-637MB).
 - **ScriptProcessorNode retained**: AudioWorklet migration broke recording. ScriptProcessorNode is deprecated in web standards but fully supported in Electron (Chromium 126). Migration deferred to v1.1 with proper testing.
 - **Single-instance lock placement**: Lock is acquired at module level (before any windows), ensuring no race condition where two instances create windows simultaneously.
 - **Paste retry count = 3**: Balance between reliability (retries help with PowerShell timing) and speed (user shouldn't wait too long for paste).
 - **Queue size = 5**: Large enough to handle normal recording flow, small enough to prevent memory issues.
 
 ### Risks / Technical Debt
-1. **AudioWorklet browser compatibility**: AudioWorklet is supported in Chromium 66+, Electron 31+ uses Chromium 126, so this is safe. But if someone runs on very old Electron, fallback needed.
-2. **PowerShell IsWindow validation**: Adds ~100ms latency to paste operation. Could be cached or optimized later.
-3. **Pre-existing TS errors**: VerticalMiniBar.tsx has 6 `WebkitAppRegion` errors and LlmModels.tsx has 1 icon type error. These are pre-existing and not related to this fix.
-4. **Blob URL for AudioWorklet**: While reliable, it's not the "standard" approach. Future improvement could use a proper worklet file with Vite plugin.
+1. **LLM model download no true resume**: Cancel + restart is fine for <700MB models. For larger models in future, add byte-range resume.
+2. **PowerShell Expand-Archive dependency**: Requires PowerShell 5.0+ (built-in on Win10+). For Win7/8, fallback needed.
+3. **AudioWorklet browser compatibility**: AudioWorklet is supported in Chromium 66+, Electron 31+ uses Chromium 126, so this is safe. But if someone runs on very old Electron, fallback needed.
+4. **PowerShell IsWindow validation**: Adds ~100ms latency to paste operation. Could be cached or optimized later.
+5. **VerticalMiniBar TS errors resolved**: Refactored to CSS classes, `WebkitAppRegion` now via className.
+6. **Blob URL for AudioWorklet**: While reliable, it's not the "standard" approach. Future improvement could use a proper worklet file with Vite plugin.
 
 ### Next Actions
-1. [ ] Test single-instance: launch VoiceFlow twice → second instance should quit, first should focus
-2. [ ] Test paste: record → paste → verify text goes to correct window
-3. [ ] Test paste with invalid target: close target app during recording → verify graceful handling
-4. [ ] Test rapid recording: record 6+ times quickly → verify no memory overflow
-5. [ ] Test AudioWorklet: record → verify waveform visualizer works
-6. [ ] Test AudioWorklet error: deny mic permission → verify no resource leak
-7. [ ] Test temp cleanup: download model → kill app → relaunch → verify temp files cleaned
-8. [ ] Test whisper cleanup: start transcription → kill app → verify no ghost whisper-cli.exe
+1. [ ] Test binary download: click Download Binary → verify progress bar shows → verify llama-cli.exe exists after
+2. [ ] Test binary cancel: click Download Binary → click Cancel → verify state resets
+3. [ ] Test model download: download a model → verify progress bar → verify model appears in list
+4. [ ] Test model cancel: download → cancel → verify clean state
+5. [ ] Test model pause/resume: download → pause → resume (restart) → verify works
+6. [ ] Test LLM pipeline: record with LLM enabled → verify grammar fix applied (check raw vs final diff in UI)
+7. [ ] Test LLM pipeline: record with LLM disabled → verify TextCleaner-only works normally
+8. [ ] Test LLM + verbatim: LLM enabled + verbatim mode → verify LLM skipped
+9. [ ] Test LLM short text: record <100 chars → verify LLM skipped (too short)
+10. [ ] Test single-instance: launch VoiceFlow twice → second instance should quit, first should focus
 
 ### Documentation Updates
 - Updated `AGENTS.md` — Added CRITICAL RULES section:
@@ -66,6 +132,8 @@ Fixed all 5 critical issues identified in comprehensive project audit. No UI cha
 
 ### Changelog
 ```
+style(renderer): refactor VerticalMiniBar — inline styles → CSS classes with glassmorphism
+style(renderer): add vertical mini bar CSS — theme vars, animations, tooltips, buttons
 fix(electron): add single-instance lock to prevent multiple instances
 fix(electron): add temp file cleanup on app exit
 fix(electron): kill whisper process on app exit

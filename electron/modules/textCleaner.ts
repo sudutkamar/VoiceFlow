@@ -462,8 +462,8 @@ export class TextCleaner {
           capitalizeFirst: false,
           capitalizeAfterPeriod: false,
           fixSpacing: true,
-          dictionary: {},
-          snippets: {},
+          dictionary,
+          snippets,
         });
 
       case 'clean':
