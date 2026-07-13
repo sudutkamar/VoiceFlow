@@ -491,3 +491,44 @@ for (const item of d) {
 ```
 
 Kalau ada solusi sederhana dan solusi canggih — **pilih yang sederhana**. Future-proofing yang sebenarnya adalah kode yang mudah diubah nanti.
+
+---
+
+## Struktur Folder — Wajib Rapi & Konsisten
+
+### Aturan utama
+
+1. **Satu fitur → satu file/folder.** Jangan campur 2 fitur beda dalam 1 file.
+2. **Jangan biarkan folder berantakan.** File sampah, backup, draft harus dibersihkan.
+3. **Pisahkan main process (electron/) dan renderer (src/) dengan jelas.**
+4. **Jangan buat file di root project** kecuali konfigurasi build (package.json, tsconfig, vite.config, dll).
+
+### Larangan
+
+| ❌ Jangan | ✅ Ganti dengan |
+|-----------|----------------|
+| File di root project selain config | Taruh di folder yang sesuai (`src/`, `electron/`) |
+| File backup/old/draft (`*_old.ts`, `*-backup.ts`) | Hapus atau taruh di branch |
+| File duplikasi (2 file fungsi sama) | Hapus salah satu, import dari 1 file |
+| File besar >1000 line tanpa pemisahan | Pecah jadi beberapa file sesuai fungsi |
+| Folder kosong | Hapus (kecuali `.gitkeep` yang sengaja) |
+| File .env, .pfx, sertifikat, binary | Taruh di `.gitignore`, jangan commit |
+
+### Checklist sebelum commit
+
+Setiap kali mau commit, cek:
+
+```
+[ ] Apakah ada file baru di root folder? Pindahkan ke folder yang sesuai.
+[ ] Apakah ada file backup/old/draft? Hapus atau git rm.
+[ ] Apakah ada file duplikasi? Gabung atau hapus salah satu.
+[ ] Apakah file >1000 line yang tidak perlu? Pecah.
+[ ] Apakah folder yang tidak dipakai? Hapus.
+[ ] Apakah ada file binary rahasia terlanjur di-stage? Unstage + tambah .gitignore.
+```
+
+### Kapan merapikan struktur
+
+- **Setiap kali nambah fitur baru** — pastikan file baru ditaruh di folder yang tepat
+- **Setelah selesai 1 session** — bersihkan file sampah sebelum commit
+- **Kalau lihat folder berantakan** — langsung rapikan, jangan tunda
