@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import './styles/app.css';
+import './i18n'; // Initialize i18n
 import { useRecorder } from './hooks/useRecorder';
 import { NotificationProvider, useNotification } from './components/Notification';
 import { Iconify, getModelIcon, getModelSizeColor, type IconName } from './utils/icons';

@@ -1,0 +1,107 @@
+{
+  "app": {
+    "name": "VoiceFlow",
+    "description": "Voice to Text that's 100% Local, 100% Free, 100% Private"
+  },
+  "nav": {
+    "home": "Home",
+    "models": "Models",
+    "history": "History",
+    "benchmark": "Benchmark",
+    "settings": "Settings"
+  },
+  "home": {
+    "title": "Voice to Text",
+    "subtitle": "Press the mic button or use hotkey to start recording",
+    "startRecording": "Start Recording",
+    "stopRecording": "Stop Recording",
+    "processing": "Processing...",
+    "copyText": "Copy Text",
+    "pasteText": "Paste Text",
+    "clearText": "Clear Text",
+    "confidence": "Confidence",
+    "words": "Words",
+    "duration": "Duration"
+  },
+  "models": {
+    "title": "AI Models",
+    "subtitle": "Download and manage Whisper models",
+    "download": "Download",
+    "delete": "Delete",
+    "select": "Select",
+    "downloaded": "Downloaded",
+    "notDownloaded": "Not Downloaded",
+    "recommended": "Recommended"
+  },
+  "history": {
+    "title": "History",
+    "subtitle": "All transcription results",
+    "search": "Search...",
+    "empty": "No history yet",
+    "delete": "Delete",
+    "export": "Export CSV",
+    "clear": "Clear All",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This Week",
+    "earlier": "Earlier"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "general": "General",
+      "recording": "Recording",
+      "processing": "Processing",
+      "presets": "Presets",
+      "dictionary": "Dictionary",
+      "snippets": "Snippets",
+      "learning": "Adaptive Learning"
+    },
+    "general": {
+      "theme": "Theme",
+      "darkMode": "Dark Mode",
+      "lightMode": "Light Mode",
+      "autoStart": "Auto Start",
+      "minimizeToTray": "Minimize to Tray",
+      "showMiniWindow": "Show Mini Window",
+      "soundEffects": "Sound Effects",
+      "language": "Language"
+    },
+    "recording": {
+      "microphone": "Microphone",
+      "vad": "Voice Activity Detection",
+      "vadTimeout": "VAD Silence Timeout",
+      "audioPreprocess": "Audio Preprocessing",
+      "pushToTalk": "Push to Talk"
+    },
+    "processing": {
+      "outputMode": "Output Mode",
+      "verbatimMode": "Verbatim Mode",
+      "voiceCommands": "Voice Commands",
+      "fuzzyMatching": "Fuzzy Matching",
+      "initialPrompt": "Initial Prompt",
+      "llmPostProcess": "LLM Post-Processing"
+    }
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "copy": "Copy",
+    "paste": "Paste",
+    "export": "Export",
+    "import": "Import",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning"
+  },
+  "errors": {
+    "micDenied": "Microphone access denied",
+    "micNotFound": "Microphone not found",
+    "micInUse": "Microphone is in use by another app",
+    "transcriptionFailed": "Transcription failed",
+    "modelNotFound": "Model not found",
+    "networkError": "Network error"
+  }
+}

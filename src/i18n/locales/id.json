@@ -1,0 +1,107 @@
+{
+  "app": {
+    "name": "VoiceFlow",
+    "description": "Voice to Text yang 100% Lokal, 100% Gratis, 100% Privat"
+  },
+  "nav": {
+    "home": "Beranda",
+    "models": "Model",
+    "history": "Riwayat",
+    "benchmark": "Benchmark",
+    "settings": "Pengaturan"
+  },
+  "home": {
+    "title": "Voice to Text",
+    "subtitle": "Tekan tombol mic atau gunakan hotkey untuk mulai merekam",
+    "startRecording": "Mulai Merekam",
+    "stopRecording": "Stop Merekam",
+    "processing": "Memproses...",
+    "copyText": "Salin Teks",
+    "pasteText": "Tempel Teks",
+    "clearText": "Hapus Teks",
+    "confidence": "Confidence",
+    "words": "Kata",
+    "duration": "Durasi"
+  },
+  "models": {
+    "title": "Model AI",
+    "subtitle": "Download dan kelola model Whisper",
+    "download": "Download",
+    "delete": "Hapus",
+    "select": "Pilih",
+    "downloaded": "Terdownload",
+    "notDownloaded": "Belum Terdownload",
+    "recommended": "Recommended"
+  },
+  "history": {
+    "title": "Riwayat",
+    "subtitle": "Semua hasil transkripsi",
+    "search": "Cari...",
+    "empty": "Belum ada riwayat",
+    "delete": "Hapus",
+    "export": "Export CSV",
+    "clear": "Hapus Semua",
+    "today": "Hari Ini",
+    "yesterday": "Kemarin",
+    "thisWeek": "Minggu Ini",
+    "earlier": "Lebih Lama"
+  },
+  "settings": {
+    "title": "Pengaturan",
+    "tabs": {
+      "general": "Umum",
+      "recording": "Recording",
+      "processing": "Processing",
+      "presets": "Preset",
+      "dictionary": "Kamus",
+      "snippets": "Snippet",
+      "learning": "Adaptive Learning"
+    },
+    "general": {
+      "theme": "Theme",
+      "darkMode": "Mode Gelap",
+      "lightMode": "Mode Terang",
+      "autoStart": "Auto Start",
+      "minimizeToTray": "Minimize ke Tray",
+      "showMiniWindow": "Tampilkan Mini Window",
+      "soundEffects": "Efek Suara",
+      "language": "Bahasa"
+    },
+    "recording": {
+      "microphone": "Microphone",
+      "vad": "Voice Activity Detection",
+      "vadTimeout": "VAD Silence Timeout",
+      "audioPreprocess": "Audio Preprocessing",
+      "pushToTalk": "Push to Talk"
+    },
+    "processing": {
+      "outputMode": "Output Mode",
+      "verbatimMode": "Verbatim Mode",
+      "voiceCommands": "Voice Commands",
+      "fuzzyMatching": "Fuzzy Matching",
+      "initialPrompt": "Initial Prompt",
+      "llmPostProcess": "LLM Post-Processing"
+    }
+  },
+  "common": {
+    "save": "Simpan",
+    "cancel": "Batal",
+    "delete": "Hapus",
+    "copy": "Salin",
+    "paste": "Tempel",
+    "export": "Export",
+    "import": "Import",
+    "loading": "Memuat...",
+    "error": "Error",
+    "success": "Berhasil",
+    "warning": "Peringatan"
+  },
+  "errors": {
+    "micDenied": "Akses mic ditolak",
+    "micNotFound": "Mic tidak ditemukan",
+    "micInUse": "Mic sedang dipakai aplikasi lain",
+    "transcriptionFailed": "Transkripsi gagal",
+    "modelNotFound": "Model tidak ditemukan",
+    "networkError": "Koneksi error"
+  }
+}

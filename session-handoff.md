@@ -25,6 +25,14 @@ Fixed all 5 critical issues identified in comprehensive project audit. No UI cha
 | `README.md` | **LOW**: Added LLM Post-Processing, Log Level, Dictionary Import/Export to settings documentation. |
 | `AGENTS.md` | **DOCS**: Added Rule #4 (Floating UI protection), Rule #5 (Test checklist with floating UI tests). |
 | `voiceflow-audio` skill | **DOCS**: Added critical warning, comparison approach, floating UI protection, test checklist. |
+| `electron/modules/autoUpdater.ts` | **NEW**: Auto-update mechanism using electron-updater. Checks for updates on startup, prompts user to download/install. |
+| `electron/modules/crashReporter.ts` | **NEW**: Crash reporting with error logging to file. Handles uncaught exceptions and unhandled rejections. |
+| `vitest.config.ts` | **NEW**: Vitest configuration for unit testing. |
+| `src/test/setup.ts` | **NEW**: Test setup with mocked electronAPI. |
+| `electron/modules/__tests__/textCleaner.test.ts` | **NEW**: Unit tests for TextCleaner module. |
+| `src/i18n/index.ts` | **NEW**: i18n configuration with react-i18next. |
+| `src/i18n/locales/id.json` | **NEW**: Indonesian translations. |
+| `src/i18n/locales/en.json` | **NEW**: English translations. |
 
 ### Decisions
 - **ScriptProcessorNode retained**: AudioWorklet migration broke recording. ScriptProcessorNode is deprecated in web standards but fully supported in Electron (Chromium 126). Migration deferred to v1.1 with proper testing.

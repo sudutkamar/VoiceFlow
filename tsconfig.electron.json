@@ -15,5 +15,5 @@
     "sourceMap": true
   },
   "include": ["electron/**/*"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "electron/**/__tests__/**"]
 }

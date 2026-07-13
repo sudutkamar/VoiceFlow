@@ -5,6 +5,8 @@ import { VoiceFlowDatabase as Database } from './modules/database';
 import { Logger } from './modules/logger';
 import { HotkeyManager } from './modules/hotkeyManager';
 import { CudaDownloader } from './modules/cudaDownloader';
+import { AutoUpdater } from './modules/autoUpdater';
+import { CrashReporter } from './modules/crashReporter';
 import { setupDictationIPC, getTranscriberInstance } from './ipc/dictation.ipc';
 import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC, setTranscriberForModelSync } from './ipc/model.ipc';
@@ -42,23 +44,6 @@ if (!gotTheLock) {
   app.commandLine.appendSwitch('disk-cache-dir', cacheDir);
   app.commandLine.appendSwitch('gpu-cache-dir', path.join(cacheDir, 'gpu'));
 
-  // Prevent EPIPE errors from crashing the app (broken pipe when stdout is unavailable)
-  process.on('uncaughtException', (err: any) => {
-    if (err?.code === 'EPIPE') {
-      // Silently ignore broken pipe errors
-      return;
-    }
-    // Log other errors but don't crash
-    console.error('Uncaught Exception:', err);
-  });
-
-  process.on('unhandledRejection', (reason: any) => {
-    if (reason?.code === 'EPIPE') {
-      return;
-    }
-    console.error('Unhandled Rejection:', reason);
-  });
-
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -66,6 +51,8 @@ let database: Database;
 let logger: Logger;
 let hotkeyManager: HotkeyManager;
 let cudaDownloader: CudaDownloader;
+let autoUpdater: AutoUpdater;
+let crashReporter: CrashReporter;
 let isQuitting = false;
 let isPasting = false;
 let miniWindowReady = false;
@@ -711,6 +698,10 @@ app.whenReady().then(() => {
   logger = new Logger();
   logger.info('VoiceFlow starting...');
 
+  // Initialize crash reporter early
+  crashReporter = new CrashReporter(logger);
+  crashReporter.start();
+
   database = new Database(logger);
   database.initialize();
 
@@ -745,6 +736,15 @@ app.whenReady().then(() => {
   }
 
   setupIPC();
+
+  // Initialize auto-updater
+  if (mainWindow) {
+    autoUpdater = new AutoUpdater(mainWindow, logger);
+    // Check for updates on startup (after 5 seconds to avoid blocking)
+    setTimeout(() => {
+      autoUpdater.checkOnStartup();
+    }, 5000);
+  }
 
   // Warm up transcriber model for faster first transcription
   try {

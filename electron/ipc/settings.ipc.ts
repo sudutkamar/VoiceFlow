@@ -197,4 +197,16 @@ export function setupSettingsIPC(
       return { success: false, error: String(error) };
     }
   });
+
+  // Auto-update
+  ipcMain.handle('check-for-updates', async () => {
+    try {
+      const { AutoUpdater } = require('../modules/autoUpdater');
+      // AutoUpdater is already initialized in main, just trigger check
+      mainWindow.webContents.send('check-for-updates-trigger');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
 }

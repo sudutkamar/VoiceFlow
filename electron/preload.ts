@@ -98,6 +98,8 @@ export interface ElectronAPI {
   isAutoStart: () => Promise<boolean>;
   setAutoStart: (enable: boolean) => Promise<{ success: boolean }>;
   quitApp: () => Promise<void>;
+  checkForUpdates: () => Promise<void>;
+  onUpdateDownloadProgress: (callback: (data: { percent: number; transferred: number; total: number }) => void) => () => void;
   minimizeToTray: () => Promise<void>;
   showMain: (page?: string) => Promise<void>;
   minimizeToBar: () => Promise<void>;
@@ -225,6 +227,7 @@ const api: ElectronAPI = {
   isAutoStart: () => ipcRenderer.invoke('is-autostart'),
   setAutoStart: (enable) => ipcRenderer.invoke('set-autostart', enable),
   quitApp: () => ipcRenderer.invoke('quit-app'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   minimizeToTray: () => ipcRenderer.invoke('minimize-to-tray'),
   showMain: (page?: string) => ipcRenderer.invoke('show-main', page),
   minimizeToBar: () => ipcRenderer.invoke('minimize-to-bar'),
@@ -338,6 +341,11 @@ const api: ElectronAPI = {
     const handler = (_: any, data: { width: number; height: number }) => callback(data);
     ipcRenderer.on('mini-window-resize', handler);
     return () => ipcRenderer.removeListener('mini-window-resize', handler);
+  },
+  onUpdateDownloadProgress: (callback) => {
+    const handler = (_: any, data: { percent: number; transferred: number; total: number }) => callback(data);
+    ipcRenderer.on('update-download-progress', handler);
+    return () => ipcRenderer.removeListener('update-download-progress', handler);
   },
 };
 
