@@ -60,7 +60,7 @@ function ensurePasteScript(): void {
     const dir = path.dirname(FAST_SCRIPT_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(FAST_SCRIPT_PATH, [
-      'param([IntPtr]$hwnd, [uint32]$targetTid)',
+      'param([string]$hwndStr, [uint32]$targetTid)',
       '',
       'Add-Type @"',
       'using System;',
@@ -77,7 +77,8 @@ function ensurePasteScript(): void {
       '  [DllImport("user32.dll")]public static extern bool BringWindowToTop(IntPtr h);',
       '}',
       '"@',
-      'if($hwnd.ToInt64()-ne 0 -and [NI2]::IsWindow($hwnd)){',
+      '$hwnd = [IntPtr]::new([long]$hwndStr)',
+      'if($hwndStr -ne "0" -and $hwnd.ToInt64() -ne 0 -and [NI2]::IsWindow($hwnd)){',
       '  [NI2]::ShowWindow($hwnd, 9)|Out-Null; Start-Sleep -m 8',
       '  $ourTid = [NI2]::GetCurrentThreadId()',
       '  if($targetTid -eq 0){ [uint32]$dummy=0; $targetTid = [NI2]::GetWindowThreadProcessId($hwnd, [ref]$dummy) }',
