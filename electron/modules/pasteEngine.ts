@@ -85,13 +85,14 @@ export class PasteEngine {
   async paste(text: string, targetWindowHandle?: string | null, targetWindowThread?: number): Promise<{ success: boolean; error?: string }> {
     if (!text?.trim()) return { success: false, error: 'No text' };
 
+    const pasteStartTime = Date.now();
     const savedClipboard = clipboard.readText();
     let pasteCompleted = false;
 
     try {
       // Set clipboard FIRST
       clipboard.writeText(text);
-      this.logger.info('Clipboard set', { length: text.length });
+      this.logger.info('Paste: clipboard set', { length: text.length, ms: Date.now() - pasteStartTime });
 
       // Hide windows to expose target app
       if (this.hideAllForPaste) {
@@ -102,8 +103,9 @@ export class PasteEngine {
         }
       }
 
-      // CRITICAL FIX: Reduced delay from 250ms to 150ms for faster paste
+      // CRITICAL FIX: Delay for window hide + focus transfer
       await this.sleep(150);
+      this.logger.debug('Paste: windows hidden', { ms: Date.now() - pasteStartTime });
 
       // Validate target window (non-blocking, skip if slow)
       if (targetWindowHandle && targetWindowHandle !== '0') {
@@ -115,30 +117,26 @@ export class PasteEngine {
         }).catch(() => {}); // Don't block on validation
       }
 
-      // Attempt paste with retry logic (reduced retries for speed)
+      // Attempt paste with retry logic
       let ok = false;
-      const maxRetries = 1; // Reduced from 2 to 1 for speed
+      const maxRetries = 1;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        this.logger.debug('Paste: sending keystroke', { attempt, ms: Date.now() - pasteStartTime });
         ok = await this.sendPasteKeystroke(targetWindowHandle || null, targetWindowThread || 0);
         if (ok) break;
         
         if (attempt < maxRetries) {
           this.logger.warn(`Paste attempt ${attempt + 1} failed, retrying...`);
-          await this.sleep(100); // Reduced from 150ms to 100ms
+          await this.sleep(100);
         }
       }
 
+      this.logger.info('Paste: keystroke completed', { success: ok, ms: Date.now() - pasteStartTime });
       pasteCompleted = true;
 
       // Show VoiceFlow windows again
       if (this.showAfterPaste) {
-        setTimeout(() => this.showAfterPaste!(), 100); // Reduced from 150ms
-      }
-
-      if (ok) {
-        this.logger.info('Paste successful');
-      } else {
-        this.logger.warn('Paste keystroke failed after retries');
+        setTimeout(() => this.showAfterPaste!(), 100);
       }
 
       return { success: ok };
@@ -151,7 +149,7 @@ export class PasteEngine {
       if (pasteCompleted) {
         setTimeout(() => {
           try { clipboard.writeText(savedClipboard || ''); } catch {}
-        }, 300); // Reduced from 500ms
+        }, 300);
       } else {
         try { clipboard.writeText(savedClipboard || ''); } catch {}
       }
@@ -196,18 +194,20 @@ Write-Output ([WinCheck]::IsWindow($hwnd))
     ensurePasteScript();
 
     return new Promise((resolve) => {
+      // CRITICAL: Increased timeout from 4s to 8s for long text
       execFile('powershell.exe', [
         '-NoProfile', '-NonInteractive',
         '-File', CACHED_SCRIPT_PATH,
         hwndLiteral, String(tid),
       ], {
-        timeout: 4000,
+        timeout: 8000, // Increased from 4000ms for long text
         windowsHide: true,
       }, (err, stdout, stderr) => {
         if (err) {
           this.logger.error('Paste keystroke error', { error: err.message, stderr });
           resolve(false);
         } else {
+          this.logger.debug('Paste keystroke completed');
           resolve(true);
         }
       });

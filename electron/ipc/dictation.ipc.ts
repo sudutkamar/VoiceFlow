@@ -100,6 +100,7 @@ export function setupDictationIPC(
   async function processAudio(audioData: { buffer: number[]; mimeType: string; duration: number }): Promise<void> {
     isProcessing = true;
     const startTime = Date.now();
+    const timingLog: string[] = [];
 
     try {
       // 1. Save audio (already WAV from browser)
@@ -110,6 +111,7 @@ export function setupDictationIPC(
       const wavPath = path.join(tempDir, `recording_${Date.now()}.wav`);
       const buffer = Buffer.from(audioData.buffer);
       fs.writeFileSync(wavPath, buffer);
+      timingLog.push(`save:${Date.now() - startTime}ms`);
       logger.info('Audio saved', { path: wavPath });
 
       // 2. Transcribe
@@ -146,6 +148,7 @@ export function setupDictationIPC(
 
       // Single pass: transcription with selected model + GPU/CPU
       const formalMode = processingMode === 'clean';
+      const transcribeStart = Date.now();
       const transcribeResult = await transcriber.transcribe(wavPath, model, language, {
         preprocess: effectivePreprocess,
         fuzzyMatch,
@@ -155,6 +158,7 @@ export function setupDictationIPC(
         device: whisperDevice,
         formalMode,
       });
+      timingLog.push(`transcribe:${Date.now() - transcribeStart}ms`);
 
       // Cleanup temp file
       try { fs.unlinkSync(wavPath); } catch (err) { /* temp file may already be gone */ }
@@ -249,11 +253,14 @@ export function setupDictationIPC(
       let pasteResult = { success: false };
       if (autoPaste && finalText) {
         hotkeyManager?.setState('pasting');
+        const pasteStart = Date.now();
         try {
           pasteResult = await pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread());
-          logger.info('Paste completed', { success: pasteResult.success });
+          timingLog.push(`paste:${Date.now() - pasteStart}ms`);
+          logger.info('Paste completed', { success: pasteResult.success, ms: Date.now() - pasteStart });
         } catch (err) {
           logger.warn('Paste failed, continuing...', err);
+          timingLog.push(`paste:failed`);
         }
       }
 
@@ -284,8 +291,9 @@ export function setupDictationIPC(
       database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
 
       hotkeyManager?.setState('done');
+      timingLog.push(`total:${Date.now() - startTime}ms`);
+      logger.info('Dictation complete', { timing: timingLog.join(', '), text: finalText });
       setTimeout(() => hotkeyManager?.setState('idle'), 500);
-      logger.info('Dictation complete', { duration: durationMs, text: finalText });
     } catch (error: any) {
       logger.error('Dictation error', error);
       hotkeyManager?.setState('error');
