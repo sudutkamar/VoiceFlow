@@ -200,7 +200,9 @@ export function setupDictationIPC(
         }
 
         // Phase 3: LLM Post-Processing (local llama inference)
-        if (llmEnabled && !verbatimMode) {
+        // CRITICAL: Skip LLM for short text (less than 50 chars) for speed
+        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length > 50;
+        if (shouldUseLLM) {
           try {
             // Update state to show LLM processing
             hotkeyManager?.setState('cleaning');
@@ -221,6 +223,8 @@ export function setupDictationIPC(
           } catch (err) {
             logger.warn('LLM post-processing error, using cleaner result', err);
           }
+        } else if (llmEnabled && !verbatimMode) {
+          logger.debug('LLM skipped for short text', { length: finalText.length });
         }
       }
 
@@ -239,7 +243,21 @@ export function setupDictationIPC(
         return;
       }
 
-      // Send to UI immediately
+      // CRITICAL FIX: PASTE FIRST, then send transcript-ready to UI
+      // This ensures paste happens BEFORE UI shows "done"
+      const autoPaste = database.getSetting('auto_paste') !== 'false';
+      let pasteResult = { success: false };
+      if (autoPaste && finalText) {
+        hotkeyManager?.setState('pasting');
+        try {
+          pasteResult = await pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread());
+          logger.info('Paste completed', { success: pasteResult.success });
+        } catch (err) {
+          logger.warn('Paste failed, continuing...', err);
+        }
+      }
+
+      // Now send to UI (paste already done)
       send('transcript-ready', {
         raw: transcribeResult.rawText || transcribeResult.text,
         cleaned: finalText,
@@ -254,17 +272,11 @@ export function setupDictationIPC(
         } : undefined,
         fuzzyChanges: transcribeResult.fuzzyChanges,
         rawText: transcribeResult.rawText,
+        pasteSuccess: pasteResult.success,
       });
 
       // Record transcription for auto-learning
       adaptiveLearning.recordTranscription(transcribeResult.text || '');
-
-      // Paste in background
-      const autoPaste = database.getSetting('auto_paste') !== 'false';
-      if (autoPaste && finalText) {
-        hotkeyManager?.setState('pasting');
-        pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread()).catch(() => {});
-      }
 
       // Save to history
       const id = uuidv4();

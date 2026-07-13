@@ -89,7 +89,7 @@ export class PasteEngine {
     let pasteCompleted = false;
 
     try {
-      // Set clipboard FIRST (before hiding windows)
+      // Set clipboard FIRST
       clipboard.writeText(text);
       this.logger.info('Clipboard set', { length: text.length });
 
@@ -102,29 +102,29 @@ export class PasteEngine {
         }
       }
 
-      // Wait for windows to hide + target app to gain focus
-      await this.sleep(250);
+      // CRITICAL FIX: Reduced delay from 250ms to 150ms for faster paste
+      await this.sleep(150);
 
-      // CRITICAL: Validate target window still exists before paste
+      // Validate target window (non-blocking, skip if slow)
       if (targetWindowHandle && targetWindowHandle !== '0') {
-        const windowValid = await this.validateWindowHandle(targetWindowHandle);
-        if (!windowValid) {
-          this.logger.warn('Target window no longer valid, pasting to foreground window', { handle: targetWindowHandle });
-          // Continue anyway — paste to whatever is in foreground
-        }
+        // Don't wait for validation — just proceed
+        this.validateWindowHandle(targetWindowHandle).then(valid => {
+          if (!valid) {
+            this.logger.warn('Target window invalid, using foreground', { handle: targetWindowHandle });
+          }
+        }).catch(() => {}); // Don't block on validation
       }
 
-      // Attempt paste with retry logic
+      // Attempt paste with retry logic (reduced retries for speed)
       let ok = false;
-      const maxRetries = 2;
+      const maxRetries = 1; // Reduced from 2 to 1 for speed
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         ok = await this.sendPasteKeystroke(targetWindowHandle || null, targetWindowThread || 0);
         if (ok) break;
         
-        // Wait before retry (exponential backoff)
         if (attempt < maxRetries) {
           this.logger.warn(`Paste attempt ${attempt + 1} failed, retrying...`);
-          await this.sleep(150 * (attempt + 1));
+          await this.sleep(100); // Reduced from 150ms to 100ms
         }
       }
 
@@ -132,7 +132,7 @@ export class PasteEngine {
 
       // Show VoiceFlow windows again
       if (this.showAfterPaste) {
-        setTimeout(() => this.showAfterPaste!(), 150);
+        setTimeout(() => this.showAfterPaste!(), 100); // Reduced from 150ms
       }
 
       if (ok) {
@@ -147,14 +147,12 @@ export class PasteEngine {
       if (this.showAfterPaste) { this.showAfterPaste(); }
       return { success: false, error: err.message };
     } finally {
-      // CRITICAL: Always restore clipboard, even if paste failed
-      // This prevents user's original clipboard content from being lost
+      // CRITICAL: Always restore clipboard
       if (pasteCompleted) {
         setTimeout(() => {
           try { clipboard.writeText(savedClipboard || ''); } catch {}
-        }, 500);
+        }, 300); // Reduced from 500ms
       } else {
-        // If paste didn't complete, restore immediately
         try { clipboard.writeText(savedClipboard || ''); } catch {}
       }
     }

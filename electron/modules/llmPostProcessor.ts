@@ -107,7 +107,8 @@ CLEAN THIS:`;
     this.logger = logger;
     this.llamaCliPath = this.getLlamaCliPath();
     this.modelsPath = this.getModelsPath();
-    this.timeoutMs = 30000;
+    // Dynamic timeout based on text length (shorter = faster)
+    this.timeoutMs = 15000; // Reduced from 30s to 15s
     this.defaultModel = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
   }
 
@@ -553,6 +554,10 @@ CLEAN THIS:`;
     }
 
     try {
+      // Dynamic timeout: shorter text = shorter timeout
+      const dynamicTimeout = Math.min(15000, Math.max(5000, text.length * 2));
+      this.timeoutMs = dynamicTimeout;
+
       const result = await this.runLlamaInference(text, model, modelPath);
       const processingMs = Date.now() - startTime;
 
@@ -611,11 +616,11 @@ CLEAN THIS:`;
       const args = [
         '-m', modelPath,
         '-f', promptFile,
-        '-n', '512',        // max tokens output
+        '-n', '256',        // max tokens output (reduced from 512 for speed)
         '--temp', '0.1',    // low temperature
         '--top-p', '0.9',
         '--repeat-penalty', '1.1',
-        '-t', '2',          // 2 threads — enough for tiny model
+        '-t', '4',          // 4 threads for faster inference
         '--no-display-prompt', // don't echo prompt
         '--single-turn',    // exit after generation (don't enter interactive mode)
       ];
