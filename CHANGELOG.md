@@ -1,5 +1,28 @@
 # Changelog VoiceFlow
 
+## [1.0.1] - 2026-07-14
+
+### Added
+- `src/utils/languages.ts` — Shared language definitions (LANGUAGES array, getLanguageByCode, getNextLanguage)
+- `src/utils/constants.ts` — Centralized magic numbers for recording, VAD, UI, paste, and queue settings
+
+### Fixed
+- **Duplicate IPC handler** — `llm-check-availability` was registered twice in `dictation.ipc.ts`, potentially causing handler conflicts
+- **GPU tooltip operator precedence bug** — `!hasModel === false` evaluated to `hasModel === true`, preventing GPU tooltip from showing during loading state
+
+### Changed
+- **Root cleanup** — Removed `nul` (Windows artifact), `notes.txt` (stale), `logo.png` (duplicate of src/assets)
+- **File relocation** — Moved `paste-keystroke.ps1` to `electron/utils/`, `voiceflow.pfx` to `.build/`
+- **Shared code extraction** — MiniBar, VerticalMiniBar, and useRecorder now use shared languages.ts and constants.ts
+- `.gitignore` — Added `.build/` directory, removed stale `nul` entry
+
+### Technical Debt
+- `src/App.tsx` still 976 lines — needs splitting into separate component files
+- `src/styles/app.css` still 5556 lines — needs splitting by component
+- `electron/ipc/dictation.ipc.ts` has LLM handlers mixed with dictation — needs splitting
+
+---
+
 ## [1.0.0] - In Progress
 
 ### Added

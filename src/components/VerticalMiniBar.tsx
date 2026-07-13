@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
 import { playSound } from '../utils/audio';
-
-const LANGUAGES = [
-  { c: 'auto', s: '🌐', l: 'Auto Detect' },
-  { c: 'id', s: 'ID', l: 'Indonesia' },
-  { c: 'en', s: 'EN', l: 'English' },
-  { c: 'ja', s: 'JA', l: '日本語' },
-  { c: 'ko', s: 'KO', l: '한국어' },
-  { c: 'zh', s: 'ZH', l: '中文' },
-];
+import { LANGUAGES, getLanguageByCode, getNextLanguage } from '../utils/languages';
 
 function fmt(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -50,8 +42,7 @@ export default function VerticalMiniBar({ settings }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const smoothLevels = useRef<number[]>(Array(16).fill(0));
 
-  const langs = LANGUAGES;
-  const currentLang = langs.find((l) => l.c === localLang) || langs[0];
+  const currentLang = getLanguageByCode(localLang);
 
   // Sync language from settings
   useEffect(() => { if (settings.language && settings.language !== localLang) setLocalLang(settings.language); }, [settings.language]);
@@ -212,14 +203,13 @@ export default function VerticalMiniBar({ settings }: Props) {
   }, [state, cancelRec]);
 
   const cycleLanguage = useCallback(async () => {
-    const idx = Math.max(0, langs.findIndex(l => l.c === currentLang.c));
-    const next = langs[(idx + 1) % langs.length];
-    setLocalLang(next.c);
+    const next = getNextLanguage(currentLang.code);
+    setLocalLang(next.code);
     try {
-      const result = await window.electronAPI.updateSetting('language', next.c);
-      if (result?.success === false) setLocalLang(currentLang.c);
-    } catch { setLocalLang(currentLang.c); }
-  }, [currentLang.c]);
+      const result = await window.electronAPI.updateSetting('language', next.code);
+      if (result?.success === false) setLocalLang(currentLang.code);
+    } catch { setLocalLang(currentLang.code); }
+  }, [currentLang.code]);
 
   useEffect(() => {
     if (state === 'done' && text) { const t = setTimeout(() => setText(''), 5000); return () => clearTimeout(t); }
@@ -254,9 +244,9 @@ export default function VerticalMiniBar({ settings }: Props) {
           <button
             className="vmb-lang"
             onPointerDown={(e) => { e.stopPropagation(); cycleLanguage(); }}
-            title={currentLang.l}
+            title={currentLang.label}
           >
-            {currentLang.s}
+            {currentLang.short}
           </button>
 
           {/* Canvas visualization (recording only) */}

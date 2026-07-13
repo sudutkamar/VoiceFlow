@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { WavRecorder } from '../utils/wavRecorder';
+import { MIN_RECORDING_MS, PROCESSING_TIMEOUT_MS, DEFAULT_VAD_SILENCE_MS, TIMER_INTERVAL_MS } from '../utils/constants';
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
 
@@ -134,7 +135,7 @@ function useVad(
  * This hook is part of the critical recording pipeline.
  */
 export function useRecorder(settings: Record<string, string>, options: UseRecorderOptions = {}): UseRecorderReturn {
-  const { onTranscript, onPartial, onError, minRecordingMs = 2000 } = options;
+  const { onTranscript, onPartial, onError, minRecordingMs = MIN_RECORDING_MS } = options;
 
   const [state, setState] = useState<State>('idle');
   const [text, setText] = useState('');
@@ -165,7 +166,7 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
 
   // VAD
   const vadEnabled = settings.vad_enabled !== 'false';
-  const vadSilenceMs = parseInt(settings.vad_silence_ms || '3000', 10);
+  const vadSilenceMs = parseInt(settings.vad_silence_ms || String(DEFAULT_VAD_SILENCE_MS), 10);
   const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
 
   // Auto-stop on silence
@@ -268,7 +269,7 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
       setTime(0);
       setClipPeak(0);
       setMicLevel(0);
-      timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), 200);
+      timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), TIMER_INTERVAL_MS);
     } catch (err: any) {
       let errorMsg = 'Mic error';
       if (err.name === 'NotAllowedError') errorMsg = 'Mic access denied';
@@ -297,9 +298,9 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
           if (stateRef.current === 'processing') {
             setError('Timeout');
             setState('idle');
-            setTimeout(() => setError(''), 3000);
+            setTimeout(() => setError(''), PROCESSING_TIMEOUT_MS);
           }
-        }, 25000);
+        }, PROCESSING_TIMEOUT_MS);
       } catch { setState('idle'); }
     }
   }, []);

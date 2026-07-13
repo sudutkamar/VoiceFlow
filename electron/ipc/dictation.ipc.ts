@@ -451,16 +451,6 @@ export function setupDictationIPC(
     return { downloaded: llmPostProcessor.isBinaryDownloaded() };
   });
 
-  ipcMain.handle('llm-check-availability', async () => {
-    try {
-      const available = llmPostProcessor.isLlmCliAvailable() && llmPostProcessor.isModelAvailable();
-      const models = llmPostProcessor.getDownloadedModelsInfo();
-      return { success: true, available, hasCli: llmPostProcessor.isLlmCliAvailable(), binaryDownloaded: llmPostProcessor.isBinaryDownloaded(), models };
-    } catch (err: any) {
-      return { success: false, available: false, error: err.message };
-    }
-  });
-
   ipcMain.handle('llm-get-models', async () => {
     try {
       const models = llmPostProcessor.getDownloadedModelsInfo();

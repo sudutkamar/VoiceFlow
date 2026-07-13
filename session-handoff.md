@@ -1,5 +1,62 @@
 # Session Handoff
 
+## Session: 2026-07-14 (Session 5 — Codebase Audit & Refactor)
+
+### Summary
+
+**Full codebase audit** — Identified and fixed critical bugs, cleaned up root directory, extracted shared code, and improved naming conventions.
+
+**Critical Fixes:**
+1. **Duplicate IPC handler** (`llm-check-availability` was registered twice in `dictation.ipc.ts`) — Removed duplicate
+2. **Operator precedence bug** (`!hasModel === false` in App.tsx GPU tooltip) — Fixed to `hasModel !== false`
+
+**Root Cleanup:**
+- Deleted `nul` (Windows artifact)
+- Deleted `notes.txt` (stale notes)
+- Deleted `logo.png` (duplicate of `src/assets/logo.png`)
+- Moved `paste-keystroke.ps1` → `electron/utils/`
+- Moved `voiceflow.pfx` → `.build/`
+- Updated `.gitignore` to include `.build/`
+
+**Shared Code Extraction:**
+- Created `src/utils/languages.ts` — Shared language definitions (LANGUAGES array, getLanguageByCode, getNextLanguage)
+- Created `src/utils/constants.ts` — Centralized magic numbers (MIN_RECORDING_MS, PROCESSING_TIMEOUT_MS, WAVEFORM_POINTS, etc.)
+- Updated `src/App.tsx` — MiniBar now uses shared languages + constants
+- Updated `src/components/VerticalMiniBar.tsx` — Now uses shared languages module
+- Updated `src/hooks/useRecorder.ts` — Now uses shared constants for timeouts and intervals
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron/ipc/dictation.ipc.ts` | **FIX** — Removed duplicate `llm-check-availability` handler (was at lines 390 & 454) |
+| `src/App.tsx` | **FIX** — Fixed `!hasModel === false` → `hasModel !== false`. **REFACTOR** — Uses shared languages.ts and constants.ts |
+| `src/utils/languages.ts` | **NEW** — Shared language definitions |
+| `src/utils/constants.ts` | **NEW** — Shared constants (recording, VAD, UI, paste, queue) |
+| `src/components/VerticalMiniBar.tsx` | **REFACTOR** — Uses shared languages module |
+| `src/hooks/useRecorder.ts` | **REFACTOR** — Uses shared constants |
+| `.gitignore` | **UPDATE** — Added `.build/`, removed `nul` entry |
+| Root directory | **CLEANUP** — Deleted `nul`, `notes.txt`, `logo.png`. Moved `paste-keystroke.ps1`, `voiceflow.pfx` |
+
+### Decisions
+- **Extract before split**: Created shared modules first, then updated consumers. This ensures no logic changes, only organization.
+- **Backward compatible**: All property mappings preserved (e.g., `currentLang.code` replaces `currentLang.c` but produces same values)
+- **Constants as single source**: Magic numbers like 25000 (timeout), 2000 (min recording), 3000 (VAD silence) now have named constants
+
+### Risks / Technical Debt
+- `src/App.tsx` still 976 lines — needs splitting into separate component files (Phase 4)
+- `src/styles/app.css` still 5556 lines — needs splitting by component (Phase 4)
+- `electron/ipc/dictation.ipc.ts` still has LLM handlers mixed with dictation — needs splitting (Phase 4)
+
+### Next Actions
+1. [ ] Test horizontal mini bar: record → verify all states work (idle → recording → processing → done)
+2. [ ] Test vertical mini bar: same flow
+3. [ ] Test language cycle: click language button → verify cycles through ID/EN/JA/KO/ZH
+4. [ ] Test GPU tooltip: verify appears when hasModel is null (loading state)
+5. [ ] Test main app: record → paste → verify works
+6. [ ] Test settings page: verify no regressions
+
+---
+
 ## Session: 2026-07-13 (Session 4 — VerticalMiniBar CSS Restore)
 
 ### Summary

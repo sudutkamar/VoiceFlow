@@ -8,6 +8,7 @@ dist/
 dist-electron/
 release/
 release-assets/
+.build/
 
 # Database
 data/*.db
@@ -44,7 +45,6 @@ dist-build/
 # OS
 .DS_Store
 Thumbs.db
-nul
 
 # Debug
 npm-debug.log*

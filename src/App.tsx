@@ -5,6 +5,8 @@ import { useRecorder } from './hooks/useRecorder';
 import { NotificationProvider, useNotification } from './components/Notification';
 import { Iconify, getModelIcon, getModelSizeColor, type IconName } from './utils/icons';
 import { playSound } from './utils/audio';
+import { LANGUAGES, getLanguageByCode, getNextLanguage } from './utils/languages';
+import { MINI_BAR_BASE_HEIGHT, MINI_BAR_BASE_WIDTH, MINI_BAR_MIN_HEIGHT, MINI_BAR_MAX_HEIGHT, RESULT_TOOLTIP_DELAY_MS, ERROR_TOOLTIP_DELAY_MS, WAVEFORM_POINTS, WAVEFORM_SMOOTHING, PROCESSING_TIMEOUT_MS, TIMER_INTERVAL_MS } from './utils/constants';
 import appLogo from './assets/logo.png';
 import VerticalMiniBar from './components/VerticalMiniBar';
 
@@ -120,18 +122,14 @@ function MiniBar() {
   } = recorder;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const smoothLevels = useRef<number[]>(Array(24).fill(0));
+  const smoothLevels = useRef<number[]>(Array(WAVEFORM_POINTS).fill(0));
   const prevStateRef = useRef<State>('idle');
   const resizeTimerRef = useRef<any>(null);
   const debounceRef = useRef<any>(null);
   const skipResizeRef = useRef(false);
 
-  const MIN_HEIGHT = 28;
-  const MAX_HEIGHT = 120;
-  const BASE_HEIGHT = 52;
-
-  // Calculate zoom based on window height (base bar height = 52px, width is auto)
-  const miniZoom = windowHeight / BASE_HEIGHT;
+  // Calculate zoom based on window height
+  const miniZoom = windowHeight / MINI_BAR_BASE_HEIGHT;
 
   // Listen for window resize to update zoom scale
   useEffect(() => {
@@ -140,16 +138,14 @@ function MiniBar() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         if (skipResizeRef.current) return;
-        const h = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, window.innerHeight));
+        const h = Math.min(MINI_BAR_MAX_HEIGHT, Math.max(MINI_BAR_MIN_HEIGHT, window.innerHeight));
         const w = window.innerWidth;
         setWindowHeight(h);
         setWindowWidth(w);
         // Skip horizontal resize logic if window is in vertical orientation
         if (window.innerHeight > window.innerWidth * 2) return;
         // Ensure window width fits the zoomed content
-        // Bar natural width at base: ~244px (40+6+90+6+40+6+40+16 padding)
-        const BAR_BASE_WIDTH = 244;
-        const minW = Math.round(BAR_BASE_WIDTH * (h / BASE_HEIGHT));
+        const minW = Math.round(MINI_BAR_BASE_WIDTH * (h / MINI_BAR_BASE_HEIGHT));
         if (w < minW - 4) {
           skipResizeRef.current = true;
           window.electronAPI.resizeMiniWindow(h, minW).finally(() => {
@@ -263,10 +259,10 @@ function MiniBar() {
   // Canvas visualization effect
   useEffect(() => {
     if (state !== 'recording') {
-      smoothLevels.current = Array(24).fill(0);
+      smoothLevels.current = Array(WAVEFORM_POINTS).fill(0);
       return;
     }
-    const POINTS = 24;
+    const POINTS = WAVEFORM_POINTS;
     const drawCanvas = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -353,26 +349,17 @@ function MiniBar() {
     return () => { cancelAnimationFrame(animRef.current); };
   }, [state]);
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`; };
-  const langs = [
-    { c: 'auto', f: '🌐', l: 'Auto Detect', s: 'AUTO' },
-    { c: 'id', f: 'ID', l: 'Indonesia', s: 'ID' },
-    { c: 'en', f: 'EN', l: 'English', s: 'EN' },
-    { c: 'ja', f: 'JA', l: '日本語', s: 'JA' },
-    { c: 'ko', f: 'KO', l: '한국어', s: 'KO' },
-    { c: 'zh', f: 'CN', l: '中文', s: 'ZH' },
-  ];
-  const currentLang = langs.find((l) => l.c === (settings.language || 'auto')) || langs[0];
+  const currentLang = getLanguageByCode(settings.language);
   const formatHotkey = (hk: string) => hk.replace('CommandOrControl', 'Ctrl').replace('Control', 'Ctrl').replace(/\+/g, ' + ');
   const hotkeyLabel = formatHotkey(settings.hotkey || 'CommandOrControl+Shift+Space');
   const cycleLanguage = async () => {
-    const idx = Math.max(0, langs.findIndex((l) => l.c === currentLang.c));
-    const next = langs[(idx + 1) % langs.length];
-    setSettings(prev => ({ ...prev, language: next.c }));
+    const next = getNextLanguage(currentLang.code);
+    setSettings(prev => ({ ...prev, language: next.code }));
     try {
-      const result = await window.electronAPI.updateSetting('language', next.c);
-      if (result?.success === false) setSettings(prev => ({ ...prev, language: currentLang.c }));
+      const result = await window.electronAPI.updateSetting('language', next.code);
+      if (result?.success === false) setSettings(prev => ({ ...prev, language: currentLang.code }));
     } catch {
-      setSettings(prev => ({ ...prev, language: currentLang.c }));
+      setSettings(prev => ({ ...prev, language: currentLang.code }));
     }
   };
 
@@ -409,7 +396,7 @@ function MiniBar() {
             className="m-lang"
             onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); cycleLanguage(); }}
           >
-            <span className="m-lang-current">{currentLang.s}</span>
+            <span className="m-lang-current">{currentLang.short}</span>
           </button>
         </div>
 
@@ -537,7 +524,7 @@ function MiniBar() {
           Belum ada model AI — klik untuk download
         </div>
       )}
-      {gpuStatus && !hasModel === false && state !== 'recording' && (
+      {gpuStatus && hasModel !== false && state !== 'recording' && (
         <div className="m-tooltip info" onClick={() => window.electronAPI.showMain('settings')}>
           GPU terdeteksi — klik untuk download CUDA
         </div>
