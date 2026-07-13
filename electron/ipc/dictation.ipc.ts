@@ -250,24 +250,9 @@ export function setupDictationIPC(
         return;
       }
 
-      // CRITICAL FIX: PASTE FIRST, then send transcript-ready to UI
-      // This ensures paste happens BEFORE UI shows "done"
-      const autoPaste = database.getSetting('auto_paste') !== 'false';
-      let pasteResult = { success: false };
-      if (autoPaste && finalText) {
-        hotkeyManager?.setState('pasting');
-        const pasteStart = Date.now();
-        try {
-          pasteResult = await pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread());
-          timingLog.push(`paste:${Date.now() - pasteStart}ms`);
-          logger.info('Paste completed', { success: pasteResult.success, ms: Date.now() - pasteStart });
-        } catch (err) {
-          logger.warn('Paste failed, continuing...', err);
-          timingLog.push(`paste:failed`);
-        }
-      }
-
-      // Now send to UI (paste already done)
+      // CRITICAL FIX: Send transcript to UI IMMEDIATELY, then paste in background
+      // This makes UI respond instantly — user sees result immediately
+      // Paste happens in parallel — user doesn't need to wait for paste
       send('transcript-ready', {
         raw: transcribeResult.rawText || transcribeResult.text,
         cleaned: finalText,
@@ -282,8 +267,21 @@ export function setupDictationIPC(
         } : undefined,
         fuzzyChanges: transcribeResult.fuzzyChanges,
         rawText: transcribeResult.rawText,
-        pasteSuccess: pasteResult.success,
       });
+      hotkeyManager?.setState('done');
+
+      // Paste in background (non-blocking) — UI already shows result
+      const autoPaste = database.getSetting('auto_paste') !== 'false';
+      if (autoPaste && finalText) {
+        // Don't await — paste in background
+        pasteEngine.paste(finalText, hotkeyManager?.getTargetWindowHandle(), hotkeyManager?.getTargetWindowThread())
+          .then(result => {
+            logger.info('Background paste completed', { success: result.success, ms: result.ms });
+          })
+          .catch(err => {
+            logger.warn('Background paste failed', err);
+          });
+      }
 
       // Record transcription for auto-learning
       adaptiveLearning.recordTranscription(transcribeResult.text || '');

@@ -78,18 +78,18 @@ function ensurePasteScript(): void {
       '}',
       '"@',
       'if($hwnd.ToInt64()-ne 0 -and [NI2]::IsWindow($hwnd)){',
-      '  [NI2]::ShowWindow($hwnd, 9)|Out-Null; Start-Sleep -m 15',
+      '  [NI2]::ShowWindow($hwnd, 9)|Out-Null; Start-Sleep -m 8',
       '  $ourTid = [NI2]::GetCurrentThreadId()',
       '  if($targetTid -eq 0){ [uint32]$dummy=0; $targetTid = [NI2]::GetWindowThreadProcessId($hwnd, [ref]$dummy) }',
       '  $attached = $false',
-      '  if($targetTid -ne $ourTid -and $targetTid -ne 0){ $attached = [NI2]::AttachThreadInput($ourTid, $targetTid, $true); Start-Sleep -m 10 }',
-      '  [NI2]::BringWindowToTop($hwnd)|Out-Null; [NI2]::SetForegroundWindow($hwnd)|Out-Null; Start-Sleep -m 25',
+      '  if($targetTid -ne $ourTid -and $targetTid -ne 0){ $attached = [NI2]::AttachThreadInput($ourTid, $targetTid, $true); Start-Sleep -m 5 }',
+      '  [NI2]::BringWindowToTop($hwnd)|Out-Null; [NI2]::SetForegroundWindow($hwnd)|Out-Null; Start-Sleep -m 15',
       '  if($attached){ [NI2]::AttachThreadInput($ourTid, $targetTid, $false)|Out-Null }',
-      '  Start-Sleep -m 15',
+      '  Start-Sleep -m 8',
       '}',
-      '[NI2]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -m 5',
-      '[NI2]::keybd_event(0x56,0,0,[UIntPtr]::Zero); Start-Sleep -m 5',
-      '[NI2]::keybd_event(0x56,0,2,[UIntPtr]::Zero); Start-Sleep -m 5',
+      '[NI2]::keybd_event(0x11,0,0,[UIntPtr]::Zero); Start-Sleep -m 3',
+      '[NI2]::keybd_event(0x56,0,0,[UIntPtr]::Zero); Start-Sleep -m 3',
+      '[NI2]::keybd_event(0x56,0,2,[UIntPtr]::Zero); Start-Sleep -m 3',
       '[NI2]::keybd_event(0x11,0,2,[UIntPtr]::Zero)',
     ].join('\n'), 'utf-8');
   }
@@ -122,7 +122,7 @@ export class PasteEngine {
    * Medium text (100-500 chars): ~500ms total  
    * Long text (>500 chars): ~800ms total
    */
-  async paste(text: string, targetWindowHandle?: string | null, targetWindowThread?: number): Promise<{ success: boolean; error?: string }> {
+  async paste(text: string, targetWindowHandle?: string | null, targetWindowThread?: number): Promise<{ success: boolean; error?: string; ms?: number }> {
     if (!text?.trim()) return { success: false, error: 'No text' };
 
     const pasteStartTime = Date.now();
@@ -135,13 +135,12 @@ export class PasteEngine {
     const isLongText = textLen > 500;
     
     // Short text: faster delays; Long text: slightly longer for reliability
-    const windowHideDelay = isShortText ? 80 : isLongText ? 150 : 120;
-    const maxRetries = isShortText ? 0 : 1; // No retries for short text (faster)
+    const windowHideDelay = isShortText ? 50 : isLongText ? 100 : 70;
+    const maxRetries = isShortText ? 0 : 1;
 
     try {
       // Set clipboard FIRST
       clipboard.writeText(text);
-      this.logger.debug('Paste: clipboard set', { length: textLen, ms: Date.now() - pasteStartTime });
 
       // Hide windows to expose target app
       if (this.hideAllForPaste) {
@@ -170,30 +169,25 @@ export class PasteEngine {
         }
       }
 
-      this.logger.info('Paste completed', { 
-        success: ok, 
-        textLength: textLen,
-        category: isShortText ? 'short' : isLongText ? 'long' : 'medium',
-        ms: Date.now() - pasteStartTime 
-      });
       pasteCompleted = true;
+      const totalMs = Date.now() - pasteStartTime;
 
       // Show VoiceFlow windows again
       if (this.showAfterPaste) {
-        setTimeout(() => this.showAfterPaste!(), 50); // Faster show
+        setTimeout(() => this.showAfterPaste!(), 30);
       }
 
-      return { success: ok };
+      return { success: ok, ms: totalMs };
     } catch (err: any) {
       this.logger.error('Paste error', err);
       if (this.showAfterPaste) { this.showAfterPaste(); }
-      return { success: false, error: err.message };
+      return { success: false, error: err.message, ms: Date.now() - pasteStartTime };
     } finally {
       // Always restore clipboard
       if (pasteCompleted) {
         setTimeout(() => {
           try { clipboard.writeText(savedClipboard || ''); } catch {}
-        }, 200);
+        }, 150);
       } else {
         try { clipboard.writeText(savedClipboard || ''); } catch {}
       }
@@ -241,8 +235,8 @@ Write-Output ([WinCheck]::IsWindow($hwnd))
     const scriptPath = isShortText ? FAST_SCRIPT_PATH : CACHED_SCRIPT_PATH;
 
     return new Promise((resolve) => {
-      // Adaptive timeout: short text = faster timeout
-      const timeout = isShortText ? 2500 : 5000;
+      // Adaptive timeout: short text = very fast timeout
+      const timeout = isShortText ? 2000 : 4000;
       
       execFile('powershell.exe', [
         '-NoProfile', '-NonInteractive',
