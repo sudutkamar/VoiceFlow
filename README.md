@@ -8,9 +8,10 @@ VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara r
 
 ## Daftar Isi
 
+- [Apa itu VoiceFlow?](#apa-itu-voiceflow)
 - [Untuk Siapa VoiceFlow?](#untuk-siapa-voiceflow)
+- [Cara Kerja VoiceFlow](#cara-kerja-voiceflow)
 - [Fitur Utama](#fitur-utama)
-- [Cara Kerja](#cara-kerja)
 - [Install](#install)
 - [Panduan Penggunaan](#panduan-penggunaan)
 - [Model AI](#model-ai)
@@ -22,6 +23,20 @@ VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara r
 - [Build dari Source](#build-dari-source)
 - [Credits](#credits)
 - [Lisensi](#lisensi)
+
+---
+
+## Apa itu VoiceFlow?
+
+VoiceFlow adalah aplikasi **voice-to-text** yang berjalan 100% lokal di komputer kamu. Artinya:
+
+- 🎤 **Kamu bicara** → VoiceFlow merekam suara kamu
+- 🧠 **AI memproses** → Whisper AI mengubah suara menjadi teks
+- 📋 **Hasilnya muncul** → Teks otomatis ditempel ke aplikasi yang sedang kamu pakai
+
+**Tidak perlu internet. Tidak perlu cloud. Tidak perlu API key.**
+
+Semua proses terjadi di komputer kamu. Suara kamu tidak pernah keluar dari PC.
 
 ---
 
@@ -37,6 +52,86 @@ VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara r
 | **Siapa pun yang ingin multitasking** | Ngetik sambil ngapa-ngapain |
 
 VoiceFlow dirancang khusus untuk **pengguna Indonesia** dengan dukungan penuh bahasa Indonesia, voice commands dalam Bahasa Indonesia, dan dokumentasi berbahasa Indonesia.
+
+---
+
+## Cara Kerja VoiceFlow
+
+### Alur Proses
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CARA KERJA VOICEFLOW                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  1. RECORD          2. TRANSCRIBE        3. CLEAN           4. PASTE
+  ─────────          ────────────         ─────────          ────────
+  ┌───────┐          ┌───────────┐        ┌──────────┐       ┌────────┐
+  │  🎤   │  ──────▶ │  🧠 AI    │  ────▶ │  📝 Text │  ───▶ │  📋    │
+  │  Mic  │          │  Whisper  │        │  Cleaner │       │  Done! │
+  └───────┘          └───────────┘        └──────────┘       └────────┘
+     │                    │                    │                  │
+     ▼                    ▼                    ▼                  ▼
+  Record suara       Konversi suara      Bersihkan teks      Tempel ke
+  dari microphone    ke teks mentah      + voice commands    aplikasi aktif
+```
+
+### Penjelasan Tiap Tahap
+
+#### 1. 🎤 Record (Merekam)
+- Kamu tekan `Ctrl+Shift+Space` atau klik tombol Mic
+- VoiceFlow mulai merekam suara dari microphone
+- **Waveform visualizer** menampilkan level suara real-time
+- **VAD (Voice Activity Detection)** otomatis deteksi saat kamu diam
+- Kamu bisa lihat floating mini window di bagian bawah layar
+
+#### 2. 🧠 Transcribe (Konversi ke Teks)
+- Audio yang direkam dikirim ke **Whisper AI** (OpenAI)
+- Whisper menggunakan model AI yang sudah di-download
+- Proses ini terjadi **100% lokal** di komputer kamu
+- Waktu transkripsi tergantung model yang dipakai:
+  - Model kecil (base): ~3-5 detik
+  - Model besar (large): ~10-30 detik
+
+#### 3. 📝 Clean (Bersihkan Teks)
+- Teks mentah dari Whisper masih kasar, perlu dibersihkan
+- **Text Cleaner** menghapus noise, spasi berlebih, dll
+- **Voice Commands** dieksekusi (paragraf baru, koma, titik, dll)
+- **Fuzzy Matching** mengoreksi kata yang salah ketik
+- **Dictionary** mengganti kata sesuai kamus pribadi kamu
+- **Auto Capitalize** menambahkan huruf besar di awal kalimat
+- **Snippet Expansion** mengganti shortcut jadi teks panjang
+
+#### 4. 📋 Paste (Tempel)
+- Teks bersih otomatis **ditempel ke clipboard**
+- VoiceFlow **hide diri sendiri** sebentar
+- Teks di-paste ke aplikasi yang sedang aktif (Word, VS Code, dll)
+- VoiceFlow **show diri sendiri** lagi
+- Clipboard dikembalikan ke teks semula
+- **Floating UI menampilkan "Done!"** sebagai konfirmasi
+
+### Diagram Lengkap
+
+```
+┌──────────┐     ┌─────────────┐     ┌──────────┐     ┌──────────┐
+│  Mic     │────▶│  Audio      │────▶│  Whisper │────▶│  Text    │
+│  Input   │     │  Processing │     │  AI      │     │  Output  │
+└──────────┘     └─────────────┘     └──────────┘     └──────────┘
+                       │                                      │
+                       ▼                                      ▼
+                ┌──────────────┐                    ┌────────────────┐
+                │ Noise Gate   │                    │ Smart Cleanup  │
+                │ Compressor   │                    │ Voice Commands │
+                │ Normalizer   │                    │ Dictionary     │
+                │ HPF + LPF    │                    │ Snippets       │
+                └──────────────┘                    └────────────────┘
+                                                           │
+                                                           ▼
+                                                    ┌──────────────┐
+                                                    │  Auto-Paste  │
+                                                    │  ke Aplikasi │
+                                                    └──────────────┘
+```
 
 ---
 
@@ -86,6 +181,7 @@ Floating window ini:
 | **Fuzzy Matching** | Koreksi otomatis kata yang mirip, bisa dikustom lewat Dictionary |
 | **Personal Dictionary** | Kamus pribadi — ganti "voiceflow" → "VoiceFlow", "react" → "React" |
 | **Snippets** | Shortcut — ucapkan "tanda tangan" → output teks panjang |
+| **LLM Post-Processing** | Grammar correction via AI lokal untuk teks yang lebih natural |
 
 ### 📚 History & Data
 
@@ -110,39 +206,6 @@ Floating window ini:
 
 ---
 
-## Cara Kerja
-
-```
-┌──────────┐     ┌─────────────┐     ┌──────────┐     ┌──────────┐
-│  Mic     │────▶│  Audio      │────▶│  Whisper │────▶│  Text    │
-│  Input   │     │  Processing │     │  AI      │     │  Output  │
-└──────────┘     └─────────────┘     └──────────┘     └──────────┘
-                       │                                      │
-                       ▼                                      ▼
-                ┌──────────────┐                    ┌────────────────┐
-                │ Noise Gate   │                    │ Smart Cleanup  │
-                │ Compressor   │                    │ Voice Commands │
-                │ Normalizer   │                    │ Dictionary     │
-                │ HPF + LPF    │                    │ Snippets       │
-                └──────────────┘                    └────────────────┘
-                                                           │
-                                                           ▼
-                                                    ┌──────────────┐
-                                                    │  Auto-Paste  │
-                                                    │  ke Aplikasi │
-                                                    └──────────────┘
-```
-
-1. **Record** — Suara kamu direkam via microphone (16kHz mono)
-2. **Process** — Audio diproses (noise reduction, normalisasi, dll) — opsional
-3. **Transcribe** — Whisper AI mengubah audio menjadi teks
-4. **Clean** — Teks dibersihkan, dikapitalisasi, voice commands dieksekusi
-5. **Paste** — Hasil otomatis ditempel ke aplikasi yang aktif
-
-Semua proses terjadi secara lokal di komputer kamu. **Tidak ada data yang dikirim ke internet.**
-
----
-
 ## Install
 
 ### Pakai Installer (Rekomendasi)
@@ -163,7 +226,7 @@ Semua proses terjadi secara lokal di komputer kamu. **Tidak ada data yang dikiri
 **Setelah install:**
 
 1. Buka tab **Models** di aplikasi
-2. Download model AI (recommended: `ggml-base-q5_1.bin` — 57 MB)
+2. Download model AI (recommended: `ggml-base-q5_1.bin` — 57 MB untuk kecepatan, atau `ggml-small.bin` untuk akurasi)
 3. Jika punya GPU NVIDIA, buka Settings → GPU → Download CUDA
 4. Siap digunakan! Tekan `Ctrl+Shift+Space` untuk mulai merekam
 
@@ -225,11 +288,13 @@ npm run dev
 ### Pertama Kali Pakai
 
 1. Buka VoiceFlow
-2. Download model AI di tab **Models** (recommended: `ggml-base-q5_1.bin`)
+2. Download model AI di tab **Models**:
+   - **Untuk kecepatan:** `ggml-base-q5_1.bin` (57 MB)
+   - **Untuk akurasi:** `ggml-small.bin` (466 MB) ⭐
 3. Cek mic berfungsi di **Settings → Recording → Test Mic**
 4. Tekan `Ctrl+Shift+Space` untuk mulai merekam
 5. Bicara dengan jelas
-6. Tekan `Ctrl+Shift+Space` lagi untuk stop
+6. Tekan `Ctrl+Shift+Space` lagi untuk stop (atau diam untuk auto-stop via VAD)
 7. Hasil transkripsi otomatis muncul dan/atau ter-paste ke aplikasi aktif
 
 ### Tips Biar Akurat
@@ -239,7 +304,7 @@ npm run dev
 | **Posisi mic** | Jaga jarak mic 10-20 cm dari mulut |
 | **Bicara natural** | Gak perlu terlalu lambat atau terlalu keras |
 | **Lingkungan** | Usahakan ruangan tidak terlalu bising |
-| **Model besar** | Untuk akurasi maksimal, pakai model `ggml-large-v3-turbo` |
+| **Model besar** | Untuk akurasi maksimal, pakai model `ggml-small.bin` atau lebih besar |
 | **VAD timeout** | Atur di Settings jika terlalu cepat/slow stop |
 | **Dictionary** | Tambahkan kata-kata khusus yang sering kamu pakai |
 
@@ -255,28 +320,37 @@ npm run dev
 
 ## Model AI
 
+### ⭐ Rekomendasi
+
+| Model | Ukuran | Kecepatan | Akurasi | Kapan Pakai |
+|-------|--------|-----------|---------|-------------|
+| **ggml-small.bin** | 466 MB | Sedang | ⭐ 90-95% | **BEST OVERALL** — akurasi tinggi, masih cepat |
+| **ggml-base-q5_1.bin** | 57 MB | ⚡ Sangat cepat | 85-90% | **FASTEST** — untuk daily use, coding, chat |
+
+### Semua Model
+
 | Model | Ukuran | Kecepatan | Akurasi | Cocok Untuk |
 |-------|--------|-----------|---------|-------------|
-| `ggml-tiny.bin` | 75 MB | ⚡ Sangat cepat | Rendah | Testing, PC spek rendah |
-| `ggml-base-q5_1.bin` | 57 MB | ⚡ Cepat | Sedang | ⭐ Recommended untuk daily use |
-| `ggml-base.bin` | 142 MB | ✅ Cepat | Sedang | Daily use, akurasi lebih baik |
-| `ggml-small.bin` | 466 MB | 🐢 Sedang | Tinggi | Bahasa campuran |
+| `ggml-tiny.bin` | 75 MB | ⚡⚡⚡ | Rendah | Testing, PC spek rendah |
+| `ggml-base-q5_1.bin` | 57 MB | ⚡⚡⚡ | Sedang | ⭐ Cepat untuk daily use |
+| `ggml-base.bin` | 142 MB | ⚡⚡ | Sedang | Daily use, akurasi lebih baik |
+| `ggml-small.bin` | 466 MB | ⚡ | ⭐ Tinggi | **BEST OVERALL** |
+| `ggml-medium.bin` | 1.5 GB | 🐌 | Sangat tinggi | Butuh RAM 8GB+ |
+| `ggml-large-v3-turbo-q5_0.bin` | 548 MB | ⚡ | ⭐ Tertinggi | PC kuat, butuh akurasi maksimal |
+| `ggml-large-v3-turbo.bin` | 1.5 GB | ⚡ | ⭐ Tertinggi | PC kuat, butuh akurasi maksimal |
+| `ggml-large-v3.bin` | 3.1 GB | 🐌 | ⭐ Tertinggi | Butuh RAM 16GB+ |
 
-### Model Large (butuh RAM 8GB+)
+### Rekomendasi Berdasarkan Kebutuhan
 
-| Model | Ukuran | Kecepatan | Akurasi |
-|-------|--------|-----------|---------|
-| `ggml-medium.bin` | 1.5 GB | 🐌 Lambat | Sangat tinggi |
-| `ggml-large-v3-turbo-q5_0.bin` | 548 MB | ✅ Cepat | ⭐ Tertinggi (recommended) |
-| `ggml-large-v3-turbo.bin` | 1.5 GB | ✅ Cepat | ⭐ Tertinggi |
-| `ggml-large-v3.bin` | 3.1 GB | 🐌 Lambat | ⭐ Tertinggi |
-
-**Rekomendasi:**
-- **PC 4GB RAM** → `ggml-base-q5_1.bin` atau `ggml-tiny.bin`
-- **PC 8GB RAM** → `ggml-base.bin` atau `ggml-large-v3-turbo-q5_0.bin`
-- **PC 16GB+ RAM** → `ggml-large-v3-turbo.bin`
-- **Prioritas kecepatan** → `ggml-base-q5_1.bin`
-- **Prioritas akurasi** → `ggml-large-v3-turbo-q5_0.bin`
+| Kebutuhan | Model yang Cocok | Alasan |
+|-----------|------------------|--------|
+| **Kecepatan + Akurasi** | `ggml-small.bin` | Sweet spot — 90-95% akurasi, masih cepat |
+| **Sangat Cepat** | `ggml-base-q5_1.bin` | 57MB, ~3 detik processing |
+| **Akurasi Maksimal** | `ggml-large-v3-turbo-q5_0.bin` | Tapi butuh PC kuat |
+| **PC Lambat / RAM 4GB** | `ggml-base-q5_1.bin` | Ringan, tidak timeout |
+| **Coding / Chat** | `ggml-base-q5_1.bin` | Cukup akurat, sangat cepat |
+| **Menulis Artikel** | `ggml-small.bin` | Butuh akurasi lebih tinggi |
+| **Transkrip Wawancara** | `ggml-small.bin` atau lebih besar | Akurasi sangat penting |
 
 ---
 
@@ -381,6 +455,8 @@ Voice commands bisa dimatikan di Settings → Processing.
 | Log Level | Tingkat logging (debug/info/warn/error) | Info |
 | Dictionary Import/Export | Export/Import kamus pribadi ke/from CSV | - |
 
+---
+
 ## Troubleshooting
 
 | Masalah | Solusi |
@@ -390,14 +466,15 @@ Voice commands bisa dimatikan di Settings → Processing.
 | **Tidak ada suara** | Cek mic di Settings → Recording (lihat level input). Jika 0, mic mungkin tidak terpilih |
 | **Recording auto-stop terus** | Naikkan VAD Silence Timeout di Settings, atau matikan VAD |
 | **Transkripsi kosong** | Bicara lebih jelas, atau gunakan model yang lebih besar |
-| **Transkripsi tidak akurat** | Ganti ke model lebih besar (large-v3-turbo), atau tambahkan initial prompt |
+| **Transkripsi tidak akurat** | Ganti ke model `ggml-small.bin` atau lebih besar, atau tambahkan initial prompt |
 | **Hotkey tidak berfungsi** | Mungkin dipakai aplikasi lain. Ganti hotkey di Settings |
 | **GPU tidak terdeteksi** | Pastikan NVIDIA GPU + driver terinstall. Download CUDA dari Settings |
-| **App lambat** | Gunakan model lebih kecil (tiny/base), atau aktifkan CPU mode |
+| **App lambat** | Gunakan model lebih kecil (`ggml-base-q5_1.bin`), atau aktifkan CPU mode |
 | **Error "whisper-cli.exe not found"** | Download [whisper-cpu.zip](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/whisper-cpu.zip), extract ke folder instalasi → `resources/whisper/` |
 | **NotEnoughMemory** | Model terlalu besar untuk RAM kamu. Gunakan model yang lebih kecil |
 | **Floating UI tidak muncul** | Pastikan "Show Mini Window" aktif di Settings |
 | **Hasil tidak ter-paste** | Cek "Auto Paste" di Settings, atau paste manual |
+| **Whisper timeout** | Model terlalu berat untuk PC kamu. Downgrade ke model yang lebih kecil |
 
 ---
 
