@@ -21,6 +21,12 @@ interface Props {
   onDeleteEngine: (type: 'cpu' | 'gpu') => void;
 }
 
+interface GpuScanResult {
+  present: string[];
+  missing: string[];
+  total: number;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -45,9 +51,14 @@ export function GeneralTab({
 }: Props) {
   const [editingHotkey, setEditingHotkey] = useState(false);
   const [appVersion, setAppVersion] = useState('');
+  const [gpuPath, setGpuPath] = useState('');
+  const [gpuScan, setGpuScan] = useState<GpuScanResult | null>(null);
+  const [scanning, setScanning] = useState(false);
 
+  // Load GPU path on mount
   React.useEffect(() => {
     window.electronAPI.getVersion?.().then((v: string) => setAppVersion(v || '1.0.0')).catch(() => setAppVersion('1.0.0'));
+    window.electronAPI.getGpuPath?.().then((p: string) => setGpuPath(p || '')).catch(() => {});
   }, []);
 
   const handleHotkey = useCallback(async (e: React.KeyboardEvent) => {
@@ -96,6 +107,50 @@ export function GeneralTab({
       await window.electronAPI.cancelCudaDownload();
       setCudaDownload(null);
     } catch {}
+  };
+
+  // GPU folder management
+  const handleChooseGpuFolder = async () => {
+    try {
+      const result = await window.electronAPI.chooseGpuFolder();
+      if (result.success && result.path) {
+        setGpuPath(result.path);
+        onSuccess(`GPU folder: ${result.path}`);
+      }
+    } catch (err: any) {
+      onError(err.message || 'Gagal memilih folder');
+    }
+  };
+
+  const handleScanGpuFolder = async () => {
+    if (scanning) return;
+    try {
+      setScanning(true);
+      const result = await window.electronAPI.scanGpuFolder();
+      setGpuScan(result);
+      if (result.missing.length === 0 && result.present.length > 0) {
+        onSuccess(`GPU OK — ${result.present.length}/${result.total} DLL tersedia`);
+      } else if (result.present.length > 0) {
+        onSuccess(`${result.present.length}/${result.total} DLL ditemukan, ${result.missing.length} hilang`);
+      }
+    } catch (err: any) {
+      onError(err.message || 'Gagal scan folder');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleResetGpuPath = async () => {
+    try {
+      const result = await window.electronAPI.resetGpuPath();
+      if (result.success && result.path) {
+        setGpuPath(result.path);
+        setGpuScan(null);
+        onSuccess('GPU path direset ke default');
+      }
+    } catch (err: any) {
+      onError(err.message || 'Gagal reset path');
+    }
   };
 
   return (
@@ -350,26 +405,86 @@ export function GeneralTab({
             )}
           </div>
         </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <span className="setting-name">Whisper Engine</span>
-            <span className="setting-hint">CPU engine files (wajib)</span>
-          </div>
-          <button className="btn btn-sm btn-danger" onClick={() => onDeleteEngine('cpu')}>
-            <Iconify icon="delete" size={14} /> Hapus CPU
-          </button>
-        </div>
-        {gpuStatus?.cudaDllsPresent && (
+        {/* CPU Engine Path */}
+        {gpuStatus?.cpuDir && (
           <div className="setting-row">
-            <div className="setting-info">
-              <span className="setting-name">CUDA / GPU</span>
-              <span className="setting-hint">GPU acceleration files (opsional)</span>
+            <div className="setting-info" style={{ flex: 1 }}>
+              <div className="engine-path-display">
+                <span className="engine-path-icon">
+                  <Iconify icon="cpu" size={14} style={{ color: 'var(--accent)' }} />
+                </span>
+                <span className="engine-path-label">CPU</span>
+                <span className="engine-path-sep" />
+                <span className="engine-path-text" title={gpuStatus.cpuDir}>{gpuStatus.cpuDir}</span>
+                <span className="engine-path-badge badge-ok">✓</span>
+              </div>
             </div>
-            <button className="btn btn-sm btn-danger" onClick={() => onDeleteEngine('gpu')}>
-              <Iconify icon="delete" size={14} /> Hapus GPU
+            <button className="btn btn-sm btn-danger" onClick={() => onDeleteEngine('cpu')}>
+              <Iconify icon="delete" size={14} />
             </button>
           </div>
         )}
+
+        {/* GPU/CUDA Path */}
+        {gpuStatus?.gpuDir && (
+          <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className="setting-name">
+                <Iconify icon="gpu" size={13} style={{ marginRight: '4px', color: gpuStatus.cudaDllsPresent ? 'var(--success)' : 'var(--text-muted)', verticalAlign: 'middle' }} />
+                CUDA / GPU
+                {gpuStatus.cudaDllsPresent ? (
+                  <span className="engine-path-badge badge-ok" style={{ marginLeft: '6px' }}>✓ Installed</span>
+                ) : (
+                  <span className="engine-path-badge badge-warn" style={{ marginLeft: '6px' }}>Not Downloaded</span>
+                )}
+              </span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button className="btn btn-secondary btn-sm" onClick={handleChooseGpuFolder}>
+                  <Iconify icon="folder" size={13} /> Pilih
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={handleScanGpuFolder} disabled={scanning}>
+                  {scanning ? <><span className="btn-spinner" /> Scanning...</> : <><Iconify icon="scan" size={13} /> Scan</>}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={handleResetGpuPath}>
+                  <Iconify icon="refresh" size={13} /> Reset
+                </button>
+                {gpuStatus.cudaDllsPresent && (
+                  <button className="btn btn-danger btn-sm" onClick={() => onDeleteEngine('gpu')}>
+                    <Iconify icon="delete" size={13} /> Hapus
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="engine-path-display">
+              <span className="engine-path-icon">
+                <Iconify icon="folder" size={14} style={{ color: gpuStatus.cudaDllsPresent ? 'var(--success)' : 'var(--text-muted)' }} />
+              </span>
+              <span className="engine-path-text" title={gpuPath || gpuStatus.gpuDir} style={{ color: 'var(--text)' }}>
+                {gpuPath || gpuStatus.gpuDir || '—'}
+              </span>
+              {!gpuStatus.cudaDllsPresent && (
+                <span className="engine-path-badge badge-warn">Missing</span>
+              )}
+            </div>
+            {/* Scan results */}
+            {gpuScan && (
+              <div style={{
+                display: 'flex',
+                gap: '6px',
+                flexWrap: 'wrap',
+                fontSize: '10px',
+              }}>
+                {gpuScan.present.map(dll => (
+                  <span key={dll} className="engine-path-badge badge-ok">{dll}</span>
+                ))}
+                {gpuScan.missing.map(dll => (
+                  <span key={dll} className="engine-path-badge badge-warn">{dll}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="setting-row">
           <div className="setting-info">
             <span className="setting-name">Language</span>

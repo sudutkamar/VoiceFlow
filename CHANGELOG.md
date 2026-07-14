@@ -1,5 +1,17 @@
 # Changelog VoiceFlow
 
+## [1.0.5] - 2026-07-14
+
+### Changed
+- **GPU/CUDA folder management** — user bisa Pilih Folder, Scan, dan Reset path CUDA/GPU engine di Settings > System. Sama seperti Models page
+- **UI Engine Paths** — CPU Engine dan GPU/CUDA pakai `.engine-path-display` CSS pattern
+- **GPU path customizable** — setting `custom_gpu_path` disimpan di DB, load saat startup
+- **Scan GPU** — scan folder untuk cek DLL yang ada/hilang, tampilkan hasil per-DLL
+- `cudaDownloader.ts` — tambah `setCudaPath()`, `resetCudaPath()`, `scanCudaFolder()`, `getCudaPathValue()`
+- `transcriber.ts` — tambah `detectGpuExternal()` public method untuk re-detect GPU
+- `database.ts` — default setting `custom_gpu_path: ''`
+- CSS baru: `.engine-path-display`, `.engine-path-icon`, `.engine-path-label`, `.engine-path-sep`, `.engine-path-text`, `.engine-path-badge`, `.badge-ok`, `.badge-warn`, `.badge-info`
+
 ## [1.0.4] - 2026-07-14
 
 ### Fixed (CRITICAL - Recording Fix)

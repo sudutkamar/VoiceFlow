@@ -95,16 +95,6 @@ function Models({ onSuccess, onError }: ModelsProps) {
     } catch {}
   }, []);
 
-  const getDisplayPath = (fullPath: string): string => {
-    // Try to make path more user-friendly
-    try {
-      const homeDir = window.electronAPI.getModelsBaseDir;
-      return fullPath;
-    } catch {
-      return fullPath;
-    }
-  };
-
   useEffect(() => {
     loadModels(true);
     loadSettings();
@@ -484,23 +474,15 @@ function Models({ onSuccess, onError }: ModelsProps) {
       </div>
 
       {/* Models Save Location */}
-      <div className="info-card">
+      <div className="info-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
         <div className="info-card-row">
-          <div className="info-card-content" style={{ flex: 1 }}>
-            <span className="info-label">📂 Lokasi Models:</span>
-            <span className="info-value info-path" title={modelsPath} style={{ display: 'block', fontSize: '12px', wordBreak: 'break-all', marginTop: '4px' }}>{modelsPath}</span>
-            <span style={{ fontSize: '11px', opacity: 0.6, marginTop: '2px', display: 'block' }}>
-              {modelsPath.toLowerCase().includes('documents') 
-                ? '✅ Disimpan di folder Documents — mudah ditemukan dan survived reinstalasi'
-                : modelsPath.toLowerCase().includes('resources')
-                ? '⚡ Mode development — pakai bundled resources'
-                : '📁 Folder custom — anda yang pilih'
-              }
-            </span>
-          </div>
+          <span className="info-label" style={{ margin: 0 }}>
+            <Iconify icon="folder" size={12} style={{ marginRight: '4px', verticalAlign: 'middle', opacity: 0.7 }} />
+            Models Folder
+          </span>
           <div className="info-card-actions">
             <button className="btn btn-secondary btn-sm" onClick={handleChooseFolder}>
-              <Iconify icon="folder" size={14} /> Pilih Folder
+              <Iconify icon="folder" size={14} /> Pilih
             </button>
             <button className="btn btn-secondary btn-sm" onClick={handleResetPath}>
               <Iconify icon="refresh" size={14} /> Reset
@@ -515,10 +497,21 @@ function Models({ onSuccess, onError }: ModelsProps) {
                   <span className="btn-spinner" /> Scanning...
                 </>
               ) : (
-                <><Iconify icon="scan" size={14} /> Scan Folder</>
+                <><Iconify icon="scan" size={14} /> Scan</>
               )}
             </button>
           </div>
+        </div>
+        <div className="engine-path-display">
+          <span className="engine-path-icon">
+            <Iconify icon="folder" size={14} style={{ color: modelsPath.toLowerCase().includes('documents') ? 'var(--accent)' : 'var(--text-muted)' }} />
+          </span>
+          <span className="engine-path-text" title={modelsPath} style={{ color: 'var(--text)' }}>
+            {modelsPath || '—'}
+          </span>
+          <span className={`engine-path-badge ${modelsPath.toLowerCase().includes('documents') ? 'badge-ok' : modelsPath.toLowerCase().includes('resources') ? 'badge-info' : 'badge-warn'}`}>
+            {modelsPath.toLowerCase().includes('documents') ? 'Documents' : modelsPath.toLowerCase().includes('resources') ? 'Dev' : 'Custom'}
+          </span>
         </div>
       </div>
 

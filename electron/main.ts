@@ -11,6 +11,7 @@ import { setupDictationIPC, getTranscriberInstance } from './ipc/dictation.ipc';
 import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC, setTranscriberForModelSync } from './ipc/model.ipc';
 import { setupSnippetIPC } from './ipc/snippet.ipc';
+import { registerEngineIpc } from './ipc/engine.ipc';
 import { getDefaultModelsDir, getResourcesModelsDir, getOldModelsDirs, migrateModelsTo, modelsDirHasContent, ensureDir } from './utils/modelsPath';
 
 // ═══════════════════════════════════════════════════════════════
@@ -508,6 +509,22 @@ function setupIPC(): void {
   setupModelIPC(mainWindow, database, logger);
   setupSnippetIPC(mainWindow, database, logger);
 
+  // GPU/CUDA folder management IPC
+  registerEngineIpc({
+    logger,
+    database,
+    cudaDownloader,
+    transcriberRef: getTranscriberInstance,
+    mainWindow,
+  });
+
+  // Load custom GPU path from settings
+  const customGpuPath = database.getSetting('custom_gpu_path');
+  if (customGpuPath) {
+    cudaDownloader.setCudaPath(customGpuPath);
+    logger.info(`Custom GPU path loaded: ${customGpuPath}`);
+  }
+
   ipcMain.handle('get-app-state', () => hotkeyManager.getState());
   ipcMain.handle('get-target-app', () => hotkeyManager.getTargetAppName());
   ipcMain.handle('get-version', () => app.getVersion());
@@ -571,8 +588,12 @@ function setupIPC(): void {
   ipcMain.handle('get-gpu-status', async () => {
     try {
       const status = await cudaDownloader.checkStatus();
+      // CPU engine — bundled di resources/whisper/cpu/
+      const cpuDir = app.isPackaged
+        ? path.join(process.resourcesPath, 'whisper', 'cpu')
+        : path.join(__dirname, '..', 'resources', 'whisper', 'cpu');
+      // GPU/CUDA — downloaded user ke userData/whisper/gpu/
       const whisperDir = path.join(app.getPath('userData'), 'whisper');
-      const cpuDir = path.join(whisperDir, 'cpu');
       const gpuDir = path.join(whisperDir, 'gpu');
       return {
         hasGpu: status.hasNvidiaGpu,

@@ -61,6 +61,8 @@ export class CudaDownloader {
 
   constructor(logger: Logger) {
     this.logger = logger;
+    // GPU/CUDA di-download user → userData/whisper/gpu/
+    // Tidak bisa di resources/ karena user perlu download, bukan bundled.
     const whisperDir = path.join(app.getPath('userData'), 'whisper');
     this.cudaPath = path.join(whisperDir, 'gpu');
     this.tempPath = path.join(app.getPath('userData'), 'cuda-temp.zip');
@@ -238,6 +240,44 @@ export class CudaDownloader {
 
   getCudaPath(): string | null {
     return this.areCudaDllsPresent() ? this.cudaPath : null;
+  }
+
+  getCudaPathValue(): string {
+    return this.cudaPath;
+  }
+
+  setCudaPath(newPath: string): { success: boolean; error?: string } {
+    try {
+      if (!newPath || !fs.existsSync(newPath)) {
+        return { success: false, error: 'Folder tidak ditemukan' };
+      }
+      this.cudaPath = newPath;
+      this.logger.info(`GPU path updated: ${newPath}`);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  }
+
+  resetCudaPath(): string {
+    const whisperDir = path.join(app.getPath('userData'), 'whisper');
+    this.cudaPath = path.join(whisperDir, 'gpu');
+    this.logger.info(`GPU path reset to default: ${this.cudaPath}`);
+    return this.cudaPath;
+  }
+
+  scanCudaFolder(): { present: string[]; missing: string[]; total: number } {
+    const present: string[] = [];
+    const missing: string[] = [];
+    for (const dll of CUDA_DLLS) {
+      const dllPath = path.join(this.cudaPath, dll);
+      if (fs.existsSync(dllPath)) {
+        present.push(dll);
+      } else {
+        missing.push(dll);
+      }
+    }
+    return { present, missing, total: CUDA_DLLS.length };
   }
 
   getDownloadUrl(): string {

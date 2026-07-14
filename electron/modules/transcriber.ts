@@ -167,10 +167,17 @@ export class Transcriber {
   // ═══════════════════════════════════════════════════════════════
 
   private detectGpu(): void {
+    this.detectGpuExternal();
+  }
+
+  /**
+   * Re-detect GPU status. Dipanggil dari IPC saat user ganti folder GPU.
+   */
+  detectGpuExternal(): void {
     try {
+      // GPU/CUDA di-download user → userData/whisper/gpu/ggml-cuda.dll
       const cudaDllPath = path.join(this.getUserDataDir(), 'gpu', 'ggml-cuda.dll');
-      // Check if ggml-cuda.dll exists in the same dir as whisper binary
-      // whisper loads CUDA backend from its own directory
+      // whisper load CUDA backend dari direktori yang sama dengan binary
       const cudaDllInWhisperDir = path.join(this.getWhisperCpuDir(), 'ggml-cuda.dll');
       this.hasGpu = cachedPathExists(cudaDllPath) || cachedPathExists(cudaDllInWhisperDir);
       this.logger.info(`GPU: ${this.hasGpu ? 'CUDA ✓' : 'CPU only'}`);
@@ -180,11 +187,9 @@ export class Transcriber {
   }
 
   /**
-   * CPU whisper binary — bundled in resources/ (packaged) or resources/ (dev).
-   * GPU DLL + Models — downloaded by user to userData/whisper/ after install.
-   * Structure:
-   *   bundled:  resources/whisper/cpu/whisper-cli.exe
-   *   download: userData/whisper/{gpu,models}/
+   * CPU whisper binary — bundled in resources/whisper/cpu/ (packaged) or resources/whisper/cpu/ (dev).
+   * GPU/CUDA DLL — downloaded by user to userData/whisper/gpu/.
+   * Models — stored in Documents/VoiceFlow/models/.
    */
   private getWhisperCpuDir(): string {
     if (app.isPackaged) return path.join(process.resourcesPath, 'whisper', 'cpu');

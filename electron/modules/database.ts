@@ -250,6 +250,7 @@ export class VoiceFlowDatabase {
       llm_postprocess: 'false',
       llm_model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
       custom_models_path: '',
+      custom_gpu_path: '',
       log_level: 'info',
     };
 

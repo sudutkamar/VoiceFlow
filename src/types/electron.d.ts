@@ -105,6 +105,10 @@ interface ElectronAPI {
 
   // GPU / CUDA
   getGpuStatus: () => Promise<{ hasGpu: boolean; mode: string; whisperDir: string; cpuDir: string; gpuDir: string; cudaDllsPresent?: boolean; needsDownload?: boolean; downloadUrl?: string }>;
+  getGpuPath: () => Promise<string>;
+  chooseGpuFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  scanGpuFolder: () => Promise<{ present: string[]; missing: string[]; total: number }>;
+  resetGpuPath: () => Promise<{ success: boolean; path?: string }>;
   downloadCuda: () => Promise<{ success: boolean; error?: string }>;
   pauseCudaDownload: () => Promise<void>;
   resumeCudaDownload: () => Promise<void>;

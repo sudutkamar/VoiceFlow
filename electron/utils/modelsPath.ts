@@ -127,9 +127,3 @@ export function ensureDir(dir: string): void {
   }
 }
 
-/**
- * Get the path for GPU CUDA DLLs (stored alongside models, not in userData/whisper).
- */
-export function getGpuDir(baseDir: string): string {
-  return path.join(baseDir, '..', 'gpu');
-}

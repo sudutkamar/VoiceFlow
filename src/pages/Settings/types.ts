@@ -29,6 +29,9 @@ export interface GpuStatus {
   cudaDllsPresent?: boolean;
   needsDownload?: boolean;
   downloadUrl?: string;
+  whisperDir?: string;
+  cpuDir?: string;
+  gpuDir?: string;
 }
 
 export interface CudaDownloadState {
