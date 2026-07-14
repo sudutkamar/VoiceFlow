@@ -463,13 +463,16 @@ export class Transcriber {
     }
 
     // --- Model selection (with cache) ---
+    // CRITICAL: model could be empty string (default after fresh install)
+    // fs.existsSync(path.join(dir, '')) returns true (it's the dir itself)
+    // This would cause whisper to receive a directory path as model file
     const selectedModel = autoModel
       ? this.selectOptimalModel(model)
-      : (this.isModelAvailable(model) ? model : this.selectOptimalModel(model));
+      : (model && this.isModelAvailable(model) ? model : this.selectOptimalModel(model));
 
     const modelPath = path.join(this.modelsPath, selectedModel);
-    if (!cachedPathExists(modelPath)) {
-      return { success: false, error: `Model "${selectedModel}" belum diunduh.` };
+    if (!cachedPathExists(modelPath) || !selectedModel) {
+      return { success: false, error: 'Model tidak ditemukan. Silakan download model terlebih dahulu.' };
     }
 
     if (!cachedPathExists(audioPath)) {
@@ -693,13 +696,14 @@ export class Transcriber {
     }
 
     // Model selection
+    // CRITICAL: model could be empty string (default after fresh install)
     const selectedModel = autoModel
       ? this.selectOptimalModel(model)
-      : (this.isModelAvailable(model) ? model : this.selectOptimalModel(model));
+      : (model && this.isModelAvailable(model) ? model : this.selectOptimalModel(model));
 
     const modelPath = path.join(this.modelsPath, selectedModel);
-    if (!cachedPathExists(modelPath)) {
-      return { success: false, error: `Model "${selectedModel}" belum diunduh.` };
+    if (!cachedPathExists(modelPath) || !selectedModel) {
+      return { success: false, error: 'Model tidak ditemukan. Silakan download model terlebih dahulu.' };
     }
 
     if (!cachedPathExists(audioPath)) {
@@ -815,6 +819,10 @@ export class Transcriber {
     options: any,
     audioDurationMs: number
   ): Promise<TranscribeResult> {
+    // CRITICAL: validate modelPath is a file, not a directory
+    if (!modelName || !modelPath.endsWith('.bin')) {
+      return Promise.resolve({ success: false, error: 'Model tidak valid. Silakan pilih atau download model terlebih dahulu.' });
+    }
     return new Promise((resolve) => {
       // 🎯 SPEED-OPTIMIZED ARGS
       const args = [

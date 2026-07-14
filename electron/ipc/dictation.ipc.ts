@@ -420,8 +420,9 @@ export function setupDictationIPC(
     const modelsDir = transcriber.getModelsPathValue();
 
     // Check preferred model first, then fallback to known models
+    // CRITICAL: skip if preferredModel is empty (default model='' = not downloaded yet)
     const accuracyOrder = [
-      preferredModel,
+      ...(preferredModel ? [preferredModel] : []),
       'ggml-large-v3-q5_0.bin',
       'ggml-large-v3-turbo-q8_0.bin',
       'ggml-large-v3-turbo-q5_0.bin',
