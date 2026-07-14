@@ -83,4 +83,4 @@ export const MAX_QUEUE_SIZE = 5;
 // ═══════════════════════════════════════════════════════════════
 
 /** Minimum text length for LLM post-processing */
-export const LLM_MIN_TEXT_LENGTH = 100;
+export const LLM_MIN_TEXT_LENGTH = 30;

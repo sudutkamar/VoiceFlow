@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { WavRecorder } from '../utils/wavRecorder';
 import { MIN_RECORDING_MS, PROCESSING_TIMEOUT_MS, DEFAULT_VAD_SILENCE_MS, TIMER_INTERVAL_MS } from '../utils/constants';
+import { findBestMic } from '../utils/micDetector';
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
 
@@ -54,50 +55,90 @@ interface UseRecorderReturn {
 // ══════════════════════════════════════════════════════════════
 //  useVad — Voice Activity Detection hook
 // ══════════════════════════════════════════════════════════════
+/**
+ * VAD hook — Voice Activity Detection using TIME-DOMAIN audio samples.
+ *
+ * Uses getFloatTimeDomainData() (actual audio samples, range -1..1)
+ * for actual loudness measurement.
+ *
+ * Threshold 0.012: silence ~0.001-0.005, speech ~0.02-0.2
+ */
 function useVad(
   analyserRef: React.MutableRefObject<AnalyserNode | null>,
   active: boolean,
   timeoutMs: number,
-  threshold: number = 15
+  threshold: number = 0.002
 ): boolean {
   const [silenceDetected, setSilence] = useState(false);
   const silenceStart = useRef(0);
   const animRef = useRef(0);
   const hasDetectedAudio = useRef(false);
+  const maxRecordingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!active) {
       setSilence(false);
       hasDetectedAudio.current = false;
       silenceStart.current = 0;
+      if (maxRecordingTimeout.current) {
+        clearTimeout(maxRecordingTimeout.current);
+        maxRecordingTimeout.current = null;
+      }
       return;
     }
-    const checkAndLoop = () => {
+
+    // Emergency stop: setelah 30 detik, force silence untuk trigger stop
+    // Meskipun tidak ada suara terdeteksi, recording harus berhenti.
+    const emergencyTimerId = setTimeout(() => {
+      console.log('[VAD] Emergency stop: 30s timeout reached');
+      hasDetectedAudio.current = true;
+      silenceStart.current = Date.now() - timeoutMs - 100;
+    }, 30000);
+
+    let debugCount = 0;
+    const loop = () => {
       const analyser = analyserRef.current;
-      if (!analyser) { animRef.current = requestAnimationFrame(checkAndLoop); return; }
-      const loop = () => {
-        if (!analyserRef.current) { setSilence(false); return; }
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
-
-        if (rms >= threshold) hasDetectedAudio.current = true;
-
-        if (rms < threshold) {
-          if (!hasDetectedAudio.current) return;
-          if (!silenceStart.current) silenceStart.current = Date.now();
-          else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
-        } else {
-          silenceStart.current = 0;
-          setSilence(false);
-        }
+      if (!analyser) {
         animRef.current = requestAnimationFrame(loop);
-      };
+        return;
+      }
+      const data = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(data);
+      // RMS of time-domain samples (-1..1)
+      const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
+
+      // Debug: log RMS setiap 100 frame
+      debugCount++;
+      if (debugCount % 100 === 0) {
+        const maxVal = Math.max(...Array.from(data).map(Math.abs));
+        console.log('[VAD] RMS:', rms.toFixed(6), 'threshold:', threshold, 'max:', maxVal.toFixed(6), 'detected:', hasDetectedAudio.current, 'silenceStart:', silenceStart.current ? (Date.now() - silenceStart.current) + 'ms' : 'none');
+      }
+
+      if (rms >= threshold) {
+        if (!hasDetectedAudio.current) {
+          console.log('[VAD] FIRST SPEECH DETECTED! RMS:', rms.toFixed(6));
+        }
+        hasDetectedAudio.current = true;
+        silenceStart.current = 0;
+      } else {
+        if (!hasDetectedAudio.current) {
+          // Belum pernah dengar suara — terus aja loop
+          animRef.current = requestAnimationFrame(loop);
+          return;
+        }
+        if (!silenceStart.current) silenceStart.current = Date.now();
+        else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
+      }
       animRef.current = requestAnimationFrame(loop);
     };
-    animRef.current = requestAnimationFrame(checkAndLoop);
+    animRef.current = requestAnimationFrame(loop);
+
     return () => {
       cancelAnimationFrame(animRef.current);
+      if (maxRecordingTimeout.current) {
+        clearTimeout(maxRecordingTimeout.current);
+        maxRecordingTimeout.current = null;
+      }
       silenceStart.current = 0;
       hasDetectedAudio.current = false;
       setSilence(false);
@@ -164,10 +205,15 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
   // Sync stateRef
   useEffect(() => { stateRef.current = state; }, [state]);
 
-  // VAD
+  // VAD — always active when recording (VAD or timer-based)
   const vadEnabled = settings.vad_enabled !== 'false';
   const vadSilenceMs = parseInt(settings.vad_silence_ms || String(DEFAULT_VAD_SILENCE_MS), 10);
-  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs);
+  const vadActive = state === 'recording';
+  console.log('[useRecorder] VAD state:', { state, vadEnabled, vadActive, vadSilenceMs });
+  // Gunakan DEFAULT_SILENCE_THRESHOLD (0.01) dari constants untuk threshold VAD
+  // Threshold 0.002 terlalu rendah — noise floor PC bisa trigger false positive silence
+  const vadThreshold = 0.012; // 0.012: silence ~0.001-0.005, speech ~0.02-0.2
+  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs, vadThreshold);
 
   // Auto-stop on silence
   useEffect(() => {
@@ -178,6 +224,7 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
 
   // IPC subscriptions (runs once, uses callback refs)
   useEffect(() => {
+    console.log('[useRecorder] Setting up IPC subscriptions...');
     const unsubs = [
       window.electronAPI.onStartRecording(() => {
         if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
@@ -254,14 +301,14 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
   const startRec = useCallback(async () => {
     if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
     try {
+      console.log('[useRecorder] startRec: creating WavRecorder...');
       const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
       wavRecorderRef.current = recorder;
-      await recorder.start(settings.selected_mic || undefined, {
-        enabled: true,
-        silenceThreshold: 0.01,
-        silenceDurationMs: 3000,
-      });
+      console.log('[useRecorder] startRec: calling recorder.start()...');
+      await recorder.start(settings.selected_mic || undefined);
+      console.log('[useRecorder] startRec: recorder started OK');
       const analyser = recorder.getAnalyserNode();
+      console.log('[useRecorder] startRec: analyser =', analyser ? 'AVAILABLE' : 'null');
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();
       setState('recording');
@@ -270,13 +317,42 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
       setClipPeak(0);
       setMicLevel(0);
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), TIMER_INTERVAL_MS);
+      console.log('[useRecorder] startRec: state set to recording, timer started');
     } catch (err: any) {
       let errorMsg = 'Mic error';
       if (err.name === 'NotAllowedError') errorMsg = 'Mic access denied';
       else if (err.name === 'NotReadableError') errorMsg = 'Mic in use by other app';
       else if (err.name === 'OverconstrainedError' || err.name === 'NotFoundError') {
-        errorMsg = 'Mic not found, using default';
+        // Auto-remedial: clear invalid device, try to find working mic
+        errorMsg = 'Mic device not available. Trying to find working mic...';
+        setError(errorMsg);
         window.electronAPI.updateSetting('selected_mic', '').catch(() => {});
+        
+        // Auto-detect best working mic
+        try {
+          const best = await findBestMic();
+          if (best.deviceId) {
+            await window.electronAPI.updateSetting('selected_mic', best.deviceId);
+            console.log('[useRecorder] Auto-selected new mic:', best.deviceId, best.label);
+            // Retry with new device
+            const recorder2 = new WavRecorder({ sampleRate: 16000, channels: 1 });
+            wavRecorderRef.current = recorder2;
+            await recorder2.start(best.deviceId);
+            const analyser2 = recorder2.getAnalyserNode();
+            if (analyser2) analyserRef.current = analyser2;
+            startRef.current = Date.now();
+            setState('recording');
+            setTime(0);
+            setClipPeak(0);
+            setMicLevel(0);
+            timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), TIMER_INTERVAL_MS);
+            console.log('[useRecorder] startRec: retry with auto-detected mic OK');
+            return; // skip setError
+          }
+        } catch (autoErr) {
+          console.warn('[useRecorder] Auto-detect failed:', autoErr);
+        }
+        errorMsg = 'Mic not found. Using default. Check Settings > Recording.';
       } else if (err.message) errorMsg = err.message.substring(0, 60);
       setError(errorMsg);
       setTimeout(() => setError(''), 5000);
@@ -291,9 +367,21 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
     setState('processing');
     if (wavRecorderRef.current) {
       try {
-        const { buffer, duration } = await wavRecorderRef.current.stop();
+        const rec = wavRecorderRef.current;
         wavRecorderRef.current = null;
-        window.electronAPI.sendAudioData({ buffer: Array.from(new Uint8Array(buffer)), mimeType: 'audio/wav', duration });
+        const { buffer, duration } = await rec.stop();
+        
+        // Validate buffer before sending
+        if (!buffer || buffer.byteLength === 0) {
+          console.error('[useRecorder] Empty audio buffer received from recorder');
+          setError('Recording failed: empty audio');
+          setState('idle');
+          setTimeout(() => setError(''), 3000);
+          return;
+        }
+        
+        // Kirim ArrayBuffer via IPC — preload.ts handle berbagai format buffer
+        window.electronAPI.sendAudioData({ buffer: new Uint8Array(buffer), mimeType: 'audio/wav', duration });
         processingTimeoutRef.current = setTimeout(() => {
           if (stateRef.current === 'processing') {
             setError('Timeout');
@@ -301,13 +389,20 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
             setTimeout(() => setError(''), PROCESSING_TIMEOUT_MS);
           }
         }, PROCESSING_TIMEOUT_MS);
-      } catch { setState('idle'); }
+      } catch (err: any) {
+        console.error('[useRecorder] stopRec error:', err);
+        setError(err?.message || 'Recording failed');
+        setState('idle');
+        setTimeout(() => setError(''), 3000);
+      }
     }
   }, []);
 
   const cancelRec = useCallback(async () => {
     if (stateRef.current !== 'recording') {
       if (stateRef.current === 'processing') {
+        // Cancel whisper process di main process agar tidak buang resource
+        try { await window.electronAPI.cancelTranscription(); } catch {}
         setState('idle');
         setPartial('');
         if (processingTimeoutRef.current) {

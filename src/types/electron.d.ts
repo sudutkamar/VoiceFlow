@@ -4,7 +4,8 @@ interface ElectronAPI {
   stopRecording: () => Promise<{ success: boolean; error?: string }>;
   getTranscript: () => Promise<{ success: boolean; text?: string; error?: string }>;
   toggleDictation: () => Promise<void>;
-  sendAudioData: (data: { buffer: number[]; mimeType: string; duration: number }) => void;
+  sendAudioData: (data: { buffer: ArrayBuffer | Uint8Array | number[]; mimeType: string; duration: number }) => void;
+  cancelTranscription: () => Promise<{ success: boolean }>;
 
   // Clipboard
   copyText: (text: string) => Promise<{ success: boolean; error?: string }>;

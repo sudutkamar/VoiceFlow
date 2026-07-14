@@ -93,17 +93,35 @@ goto build_start
 echo   GPU already present, skipping.
 
 :build_start
-echo [1/3] Building React frontend...
+echo [1/4] Checking default AI model (ggml-base-q5_1.bin)...
+if exist "resources\whisper\models\ggml-base-q5_1.bin" (
+    echo   Model OK
+    goto build_model_ok
+)
+echo   Default model not found. Downloading automatically (57 MB)...
+echo   (Download dari HuggingFace, membutuhkan internet)
+curl -L -o "resources\whisper\models\ggml-base-q5_1.bin" ^
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
+if %errorlevel% equ 0 (
+    echo   Model downloaded successfully
+) else (
+    echo   FAILED: Could not download model.
+    echo   The app WILL NOT WORK without a model.
+    echo   Run: build.bat download-model
+)
+:build_model_ok
+
+echo [2/4] Building React frontend...
 call npm run build:renderer
 if %errorlevel% neq 0 ( echo FAILED & pause & exit /b 1 )
 echo OK
 
-echo [2/3] Building Electron backend...
+echo [3/4] Building Electron backend...
 call npm run build:electron
 if %errorlevel% neq 0 ( echo FAILED & pause & exit /b 1 )
 echo OK
 
-echo [3/3] Creating Windows installer...
+echo [4/4] Creating Windows installer...
 call npx electron-builder --win
 if %errorlevel% neq 0 ( echo FAILED & pause & exit /b 1 )
 
@@ -161,10 +179,12 @@ if exist "resources\whisper\cpu\whisper-cli.exe" (
 ) else (
     echo   whisper-cli.exe: MISSING - run: build.bat download-whisper
 )
-if exist "resources\whisper\models\ggml-base.bin" (
-    echo   model: OK
+if exist "resources\whisper\models\ggml-base-q5_1.bin" (
+    echo   model (ggml-base-q5_1.bin): OK
+) else if exist "resources\whisper\models\ggml-base.bin" (
+    echo   model (ggml-base.bin): OK
 ) else (
-    echo   model: MISSING - run: build.bat download-model
+    echo   model: MISSING - run: build.bat download-model (recommended: option 1)
 )
 
 echo.
@@ -206,15 +226,17 @@ echo  DOWNLOAD - Whisper Model
 echo ========================================
 echo.
 echo Pilih model:
-echo   1] ggml-base.bin (142 MB) - recommended
-echo   2] ggml-tiny.bin (75 MB) - cepat, PC lama
-echo   3] ggml-small.bin (466 MB) - akurasi lebih baik
+echo   1] ggml-base-q5_1.bin (57 MB) - DEFAULT, paling kecil, recommended
+echo   2] ggml-base.bin (142 MB) - akurasi lebih baik
+echo   3] ggml-tiny.bin (75 MB) - cepat, PC lama
+echo   4] ggml-small.bin (466 MB) - akurasi tinggi
 echo.
-set /p MODEL="Pilih [1-3]: "
+set /p MODEL="Pilih [1-4]: "
 
-if "%MODEL%"=="1" set "MODEL_NAME=ggml-base.bin"
-if "%MODEL%"=="2" set "MODEL_NAME=ggml-tiny.bin"
-if "%MODEL%"=="3" set "MODEL_NAME=ggml-small.bin"
+if "%MODEL%"=="1" set "MODEL_NAME=ggml-base-q5_1.bin"
+if "%MODEL%"=="2" set "MODEL_NAME=ggml-base.bin"
+if "%MODEL%"=="3" set "MODEL_NAME=ggml-tiny.bin"
+if "%MODEL%"=="4" set "MODEL_NAME=ggml-small.bin"
 if "%MODEL_NAME%"=="" (
     echo Pilihan tidak valid & pause & exit /b 1
 )

@@ -1,5 +1,186 @@
 # Session Handoff
 
+## Session: 2026-07-14 (Session 13 — CRITICAL FIX: Audio Pipeline Audit — Amplitude Doubling, VAD, IPC Optimization)
+
+### Summary
+
+**Audit menyeluruh pipeline recording → 3 critical bugs + 5 high + 3 medium fixed.**
+
+#### Session 13b — Fix: Recording Tidak Berfungsi
+
+**Masalah:** User melaporkan mic tidak terdeteksi saat record.
+
+**Diagnosis:**
+1. Kode pipeline benar secara logika — tidak ada compile error, semua flow terhubung
+2. Potensi masalah di VAD threshold terlalu tinggi (0.012 → diturunkan ke 0.005)
+3. Potensi masalah di ArrayBuffer transfer via IPC (Uint8Array lebih aman dari ArrayBuffer untuk structured clone)
+4. Potensi masalah di VAD emergency stop — recording bisa tidak pernah berhenti jika VAD tidak deteksi suara
+5. Menambah debug logging di seluruh pipeline untuk tracing runtime
+
+**Fixes applied dalam sesi ini:**
+1. VAD threshold: 0.012 → 0.008 → 0.005 (lebih sensitif terhadap suara pelan)
+2. VAD safety timeout: 30 detik emergency stop (force silence trigger) — tidak perlu menunggu deteksi suara
+3. IPC buffer: Kirim `Uint8Array` bukan `ArrayBuffer` langsung — structured clone lebih aman dengan TypedArray
+4. Debug logging: console.log di `WavRecorder.start()`, `useRecorder.startRec()`, `useRecorder.stopRec()`, `dictation.ipc.ts audio-recorded`
+
+#### Bug #1 (CRITICAL) — Amplitude Doubling
+`wavRecorder.ts` punya DUAL signal path (source → scriptProcessor DAN source → analyser → scriptProcessor). Audio capture menerima 2× sinyal yang di-mix, menyebabkan amplitude DOUBLING dan distorsi.
+
+**Fix:** Single path `source → analyser → scriptProcessor → destination`. Hapus direct `source → scriptProcessor`. VAD hook tetap bisa baca analyser karena analyser ada di signal path.
+
+#### Bug #2 (CRITICAL) — VAD Frequency Domain
+`useVad` hook pakai `getByteFrequencyData()` (frequency magnitudes 0-255) bukan `getFloatTimeDomainData()` (samples -1..1). RMS dari frequency domain tidak representasi volume suara yang akurat.
+
+**Fix:** Ganti ke `getFloatTimeDomainData()` + threshold 0.012 (sesuai range -1..1).
+
+#### Bug #3 (CRITICAL) — IPC Audio Transfer Inefficient
+`Array.from(new Uint8Array(buffer))` → `number[]` → JSON serialization. 10 detik WAV = ~1MB JSON di IPC.
+
+**Fix:** Kirim `ArrayBuffer` langsung via structured clone IPC. Zero-copy.
+
+#### Fixes Lain:
+- **LLM threshold** 100 → 30 karakter (agar dikte pendek juga kena LLM)
+- **Queue overflow notification** — user dikasih tau kalau audio di-drop
+- **Cancel transcription IPC** — cancel dari renderer sekarang kill whisper di main process
+- **Model selection deduplication** — `getBestAvailableModel()` di dictation.ipc.ts panggil `transcriber.selectOptimalModel()` langsung (single source of truth)
+- **Dead code cleanup** — Hapus `VadOptions` interface dan VAD state dari `WavRecorder` (tidak dipakai, semua VAD di React hook)
+
+### Files Changed (Session 13a)
+| File | Change |
+|------|--------|
+| `src/utils/wavRecorder.ts` | **FIX** — Single signal path (hapus dual path). Hapus VadOptions + VAD dead code. + Debug logging getUserMedia. |
+| `src/hooks/useRecorder.ts` | **FIX** — VAD time domain (getByteFrequencyData→getFloatTimeDomainData). Kirim Uint8Array via IPC. Cancel transcription IPC. VAD threshold 15→0.005. Emergency 30s timeout. Debug logging. |
+| `electron/preload.ts` | **FIX** — sendAudioData terima ArrayBuffer|Uint8Array|number[]. Tambah cancelTranscription API. Robust buffer extraction. |
+| `src/types/electron.d.ts` | **FIX** — sendAudioData type +Uint8Array. Tambah cancelTranscription. |
+| `electron/ipc/dictation.ipc.ts` | **FIX** — audio-recorded handler terima (buffer, mimeType, duration) terpisah. processAudio queue pake Buffer. LLM threshold 30. cancel-transcription IPC. Model selection via Transcriber. Debug logging. |
+| `electron/modules/transcriber.ts` | **FIX** — selectOptimalModel() public untuk reuse. |
+| `src/utils/constants.ts` | **FIX** — LLM_MIN_TEXT_LENGTH 100 → 30. |
+
+### Decisions
+- **Single signal path**: AnalyserNode tetap di path utama agar Chromium tidak optimize-away. VAD hook membaca analyser via getFloatTimeDomainData().
+- **VAD threshold 0.012**: Time domain RMS. Silence ~0.001-0.005, speech ~0.02-0.2. Threshold 0.012 cocok untuk deteksi suara minimal.
+- **ArrayBuffer IPC**: Structured clone algorithm di Electron mendukung transfer ArrayBuffer zero-copy. Tidak perlu JSON serialization.
+- **Cancel transcription via IPC**: User cancel processing → kirim IPC → main process kill whisper. Prevent ghost processes.
+
+### Risks / Technical Debt
+- `src/utils/adaptiveVAD.ts` (121 lines) masih dead code — sophisticated VAD yang tidak dipakai. Perlu diaktifkan atau dihapus nanti.
+- `src/utils/audioWorkletProcessor.js` (55 lines) dead code — AudioWorklet migration ditunda ke v1.1.
+- `src/utils/soundEffects.ts` masih pakai `window.voiceflowSoundEnabled` global flag (anti-pattern).
+- `useRecorder` VAD masih polling-based (requestAnimationFrame). AdaptiveVAD class punya event-driven approach yang lebih efisien.
+
+## Session: 2026-07-14 (Session 14 — UX Fix: Auto-Detect Working Mic, Filter Virtual Devices, Mic Test)
+
+### Summary
+
+**Masalah:** User melihat banyak opsi mic di Settings — termasuk device virtual (CABLE, VoiceMeeter, Stereo Mix) yang tidak menangkap suara. Bingung memilih mana yang benar.
+
+**Solusi (3 bagian):**
+
+1. **`src/utils/micDetector.ts`** (NEW) — Filter virtual devices + test audio level
+   - `filterRealMics()` — scoring: +3 untuk keyword mic/headset, -5 untuk keyword virtual/CABLE
+   - `testMicLevel(deviceId)` — record 1 detik, hitung RMS. Return null jika gagal
+   - `findBestMic()` — auto-detect: cari device dengan RMS > 0.008
+
+2. **RecordingTab UX** — Filter virtual devices by default, toggle untuk show all
+   - Dropdown hanya menampilkan real mics (virtual disembunyikan)
+   - Tombol "Test" — record 1 detik dari device yang dipilih, tampilkan RMS level
+   - Indikator color-coded: ✓ OK / ⚠ Low / ✗ Failed
+   - Checkbox "Show N virtual devices" untuk user advance
+
+3. **Auto-remedial saat mic not found** — `useRecorder.ts`
+   - Jika `OverconstrainedError` / `NotFoundError` → auto-detect best mic dengan `findBestMic()`
+   - Retry recording dengan device baru tanpa perlu klik ulang
+   - Fallback ke default jika auto-detect gagal
+
+4. **Auto-detect startup** — MiniBar + VerticalMiniBar
+   - Saat load, verify `selected_mic` masih berfungsi
+   - Jika tidak ada `selected_mic`, auto-detect best working mic
+   - Mengganti logic `mics[0]` (ambil first device) dengan `findBestMic()` (test audio level)
+
+### Files Changed
+- `src/utils/micDetector.ts` — **NEW** (120 lines) — filter, test, auto-detect
+- `src/pages/Settings/RecordingTab.tsx` — **REWRITE** — filter + test button + virtual toggle
+- `src/hooks/useRecorder.ts` — **EDIT** — auto-remedial + retry with findBestMic()
+- `src/components/MiniBar/MiniBar.tsx` — **EDIT** — auto-detect startup with findBestMic()
+- `src/components/VerticalMiniBar.tsx` — **EDIT** — auto-detect startup with findBestMic()
+- `src/pages/Settings/useSettings.ts` — **EDIT** — import filterRealMics
+- `src/utils/wavRecorder.ts` — **EDIT** — AudioContext resume retry 3x, fix TS type
+
+### Decisions
+- **Filter ≠ hide permanently**: Virtual devices hanya disembunyikan di dropdown. User bisa toggle "Show virtual" untuk melihat semua.
+- **Test mic sebelum pilih**: `testMicLevel()` adalah non-destructive — hanya 1 detik, langsung cleanup.
+- **Auto-remedial with retry**: Lebih baik dari sekedar reset ke default. User tidak perlu klik ulang.
+- **findBestMic asynchronous**: Tidak blocking startup. Jalankan parallel setelah settings loaded.
+
+### Risks / Technical Debt
+- `testMicLevel()` create AudioContext sementara — ada overhead ~100ms. Acceptable untuk UX.
+- Virtual device filtering berdasarkan keyword — mungkin ada false positive/negative. User bisa toggle "Show virtual".
+- `findBestMic()` test 5 device × 500ms = 2.5s max. Cukup cepat.
+
+### Next Actions
+1. [x] **FIX** — Amplitude doubling (single signal path)
+2. [x] **FIX** — VAD time domain + threshold 0.012 + emergency 30s timeout
+3. [x] **FIX** — IPC buffer type: ArrayBuffer → Uint8Array (structured clone safe)
+4. [x] **FIX** — Debug logging di seluruh pipeline
+5. [x] **FIX** — Cancel transcription via IPC
+6. [x] **FIX** — Filter virtual devices di RecordingTab
+7. [x] **FIX** — Test mic button with RMS level
+8. [x] **FIX** — Auto-remedial retry with findBestMic()
+9. [x] **FIX** — Auto-detect best mic on startup
+10. [ ] **TEST**: Buka Settings > Recording → verify hanya real mics yang tampil
+11. [ ] **TEST**: Klik "Test" → verify muncul level RMS
+12. [ ] **TEST**: Pilih device salah → verify auto-remedial pilih mic lain
+13. [ ] **TEST**: `npm run build:electron && npm run dev` → record → verify text appears
+14. [ ] Clean up dead code: adaptiveVAD.ts, audioWorkletProcessor.js
+
+---
+
+## Session: 2026-07-14 (Session 12 — CRITICAL FIX: Bundle Default Model in Installer)
+
+### Summary
+
+**Recording tidak berfungsi setelah build & install.** Di dev mode aplikasi bekerja, tapi setelah di-build via `build.bat` dan diinstall, tidak bisa record voice-to-text.
+
+**Root Cause:** Commits `f169f93` dan `82decc1` menghapus AI models dari `extraResources` (electron-builder.yml) untuk memperkecil installer, dan mengubah default model jadi `''` (empty string). Akibatnya:
+- Dev mode: models ada di `resources/whisper/models/` → path fallback ke resources → bekerja
+- Production: models TIDAK dibundel di installer → tidak ada model → transkripsi gagal dengan error "Model tidak ditemukan"
+
+**Fix (3 langkah):**
+
+1. **Bundle default model di extraResources** — `ggml-base-q5_1.bin` (~57 MB, terkecil) dibundel langsung di installer. User tidak perlu download manual setelah install.
+2. **First-run copy ke userData** — Saat pertama jalan, bundled model di-copy dari resources ke `userData/whisper/models/` supaya persist walau app diupdate/diuninstall.
+3. **Default model di database** — Diubah dari `''` jadi `'ggml-base-q5_1.bin'`.
+4. **build.bat auto-download** — Saat build, jika model default tidak ada, di-download otomatis dari HuggingFace.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron-builder.yml` | **EDIT** — Added `resources/whisper/models/ggml-base-q5_1.bin` to extraResources |
+| `electron/modules/database.ts` | **EDIT** — Default model `''` → `'ggml-base-q5_1.bin'` |
+| `electron/main.ts` | **EDIT** — Added first-run model copy from resources to userData |
+| `build.bat` | **EDIT** — Added auto-download default model if missing + updated download-model options (added ggml-base-q5_1.bin as option 1) + updated setup checker |
+| `electron/modules/transcriber.ts` | **EDIT** — Added diagnostic logging for model selection |
+| `electron/ipc/dictation.ipc.ts` | **EDIT** — Added diagnostic logging for audio data and transcription result |
+| `src/hooks/useRecorder.ts` | **EDIT** — Fixed silent error swallowing in stopRec; added buffer validation and error logging |
+
+### Decisions
+- **Bundle minimal model**: Hanya `ggml-base-q5_1.bin` (57 MB) yang dibundel. User bisa download model lebih besar dari dalam app. Installer tetap ~240 MB.
+- **Copy to userData on first run**: Models di-copy ke userData supaya persist walau app diuninstall/diupdate. User-downloaded models (biasanya di userData) tetap priority.
+- **Auto-download in build.bat**: Jika model tidak ada di `resources/whisper/models/`, build.bat akan download otomatis dari HuggingFace. Tidak perlu manual.
+- **Error logging added**: Fix silent catch blocks in recording pipeline for easier future debugging.
+
+### Risks / Technical Debt
+- None — all changes are backward compatible. Existing userData models take priority.
+
+### Next Actions
+1. [ ] Run `build.bat build` → verify installer creates successfully
+2. [ ] Install the built app → verify recording works out of the box
+3. [ ] Test in dev mode `npm run dev` → verify still works
+4. [ ] Test model download from Models page → verify downloaded model takes priority
+5. [ ] Test app update scenario → verify bundled model re-copied if userData empty
+
+---
+
 ## Session: 2026-07-14 (Session 10 — Fix Recording: Model Path Fallback)
 
 ### Summary

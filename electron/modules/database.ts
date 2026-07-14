@@ -219,7 +219,7 @@ export class VoiceFlowDatabase {
     const defaults: Record<string, string> = {
       hotkey: 'CommandOrControl+Shift+Space',
       language: 'auto',
-      model: '', // empty = no model downloaded yet, user must download first
+      model: 'ggml-base-q5_1.bin', // default bundled model (~57 MB — always available)
       save_history: 'true',
       auto_paste: 'true',
       cleanup_enabled: 'false',

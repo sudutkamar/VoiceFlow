@@ -3,6 +3,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SettingsData, DictEntry, SnippetEntry, GpuStatus, CudaDownloadState, LearnedCorrection, AdaptiveStats } from './types';
+import { filterRealMics } from '../../utils/micDetector';
 
 export function useSettings(onSuccess: (msg: string) => void, onError: (msg: string) => void) {
   const [settings, setSettings] = useState<SettingsData>({});
@@ -58,7 +59,9 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
   const loadMics = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      setMics(devices.filter(d => d.kind === 'audioinput'));
+      const allMics = devices.filter(d => d.kind === 'audioinput');
+      // Store ALL mics (components will filter as needed)
+      setMics(allMics);
     } catch (err) {
       console.warn('[Settings] Failed to load mics:', err);
     }

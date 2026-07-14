@@ -25,7 +25,7 @@ let textCleaner: TextCleaner;
 let pasteEngine: PasteEngine;
 let adaptiveLearning: AdaptiveLearning;
 let isProcessing = false;
-let processingQueue: Array<{ buffer: number[]; mimeType: string; duration: number }> = [];
+let processingQueue: Array<{ buffer: Buffer; mimeType: string; duration: number }> = [];
 let lastTranscript = '';
 let lastCleanedText = '';
 
@@ -92,17 +92,42 @@ export function setupDictationIPC(
     processAudio(item);
   }
 
-  ipcMain.on('audio-recorded', (event, audioData: { buffer: number[]; mimeType: string; duration: number }) => {
+  ipcMain.on('audio-recorded', (event, buffer: ArrayBuffer, mimeType: string, duration: number) => {
+    logger.info('[audio-recorded] Received audio data', {
+      bufferSize: buffer?.byteLength || 0,
+      mimeType,
+      duration,
+    });
+    
+    const sendErr = hotkeyManager
+      ? (msg: string) => hotkeyManager.sendToAll('error', msg)
+      : (msg: string) => mainWindow.webContents.send('error', msg);
+    
+    // Validate audio data
+    if (!buffer || buffer.byteLength === 0) {
+      logger.error('[audio-recorded] Invalid or empty audio data received');
+      sendErr('Recording failed: no audio data received');
+      return;
+    }
+    
     // CRITICAL FIX: Reject if queue is full to prevent memory overflow
     if (processingQueue.length >= MAX_QUEUE_SIZE) {
       logger.warn('Processing queue full, dropping oldest item', { queueSize: processingQueue.length });
       processingQueue.shift(); // Drop oldest item
     }
-    processingQueue.push(audioData);
-    if (!isProcessing) processNextAudio();
+    
+    const nodeBuffer = Buffer.from(buffer);
+    logger.info('[audio-recorded] Converted to Buffer', { nodeBufferLength: nodeBuffer.length });
+    processingQueue.push({ buffer: nodeBuffer, mimeType, duration });
+    if (!isProcessing) {
+      logger.info('[audio-recorded] Queue not busy, starting processing...');
+      processNextAudio();
+    } else {
+      logger.info('[audio-recorded] Queue busy, enqueued. Queue size:', processingQueue.length);
+    }
   });
 
-  async function processAudio(audioData: { buffer: number[]; mimeType: string; duration: number }): Promise<void> {
+  async function processAudio(audioData: { buffer: Buffer; mimeType: string; duration: number }): Promise<void> {
     isProcessing = true;
     const startTime = Date.now();
     const timingLog: string[] = [];
@@ -110,17 +135,20 @@ export function setupDictationIPC(
     try {
       // 1. Save audio (already WAV from browser)
       hotkeyManager?.setState('converting');
-      logger.info('Processing audio...', { size: audioData.buffer.length, duration: audioData.duration });
+      logger.info('[processAudio] Starting...', { 
+        bufferSize: audioData.buffer.length, 
+        duration: audioData.duration 
+      });
       
       const tempDir = getTempDir();
       const wavPath = path.join(tempDir, `recording_${Date.now()}.wav`);
-      const buffer = Buffer.from(audioData.buffer);
-      fs.writeFileSync(wavPath, buffer);
+      fs.writeFileSync(wavPath, audioData.buffer);
       timingLog.push(`save:${Date.now() - startTime}ms`);
       logger.info('Audio saved', { path: wavPath });
 
       // 2. Transcribe
-      const model = getBestAvailableModel(database.getSetting('model') || 'ggml-base.bin');
+      const savedModel = database.getSetting('model');
+      const model = getBestAvailableModel(savedModel || 'ggml-base.bin');
       const language = database.getSetting('language') || 'auto';
       const verbatimMode = database.getSetting('verbatim_mode') !== 'false';
       const processingMode = (database.getSetting('processing_mode') || 'natural') as 'raw' | 'natural' | 'clean';
@@ -133,13 +161,20 @@ export function setupDictationIPC(
         : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
 
       hotkeyManager?.setState('transcribing');
-      logger.info('Starting whisper...', { model, language, verbatimMode, processingMode });
+      logger.info('[processAudio] Starting whisper...', { 
+        savedModel, 
+        selectedModel: model, 
+        modelsPath: transcriber.getModelsPathValue(),
+        language, 
+        verbatimMode, 
+        processingMode 
+      });
 
       // Smart preprocessing: check if audio actually needs it
       let effectivePreprocess = preprocessAudio;
       if (preprocessAudio) {
         try {
-          const needsProc = audioConverter.needsProcessing(buffer);
+          const needsProc = audioConverter.needsProcessing(audioData.buffer);
           if (!needsProc.needed) {
             effectivePreprocess = false;
             logger.info('Audio is clean, skipping preprocessing', { reason: needsProc.reason });
@@ -168,9 +203,17 @@ export function setupDictationIPC(
       // Cleanup temp file
       try { fs.unlinkSync(wavPath); } catch (err) { /* temp file may already be gone */ }
 
+      logger.info('[processAudio] Transcription result:', {
+        success: transcribeResult.success,
+        textLength: transcribeResult.text?.length || 0,
+        error: transcribeResult.error,
+        usedModel: transcribeResult.usedModel,
+        processingMs: transcribeResult.processingMs,
+      });
+
       if (!transcribeResult.success) {
         if (transcribeResult.error === '__NO_SPEECH__') {
-          logger.info('No speech detected - empty or garbage audio');
+          logger.info('[processAudio] No speech detected - empty or garbage audio');
           hotkeyManager?.setState('idle');
           const sendMsg = hotkeyManager
             ? (msg: string) => hotkeyManager.sendToAll('error', msg)
@@ -181,7 +224,7 @@ export function setupDictationIPC(
         throw new Error(transcribeResult.error || 'Transcription failed');
       }
 
-      logger.info('Whisper result', { text: transcribeResult.text });
+      logger.info('[processAudio] Whisper result', { text: transcribeResult.text });
 
       // Clean text
       hotkeyManager?.setState('cleaning');
@@ -207,7 +250,7 @@ export function setupDictationIPC(
         // ── Phase 1a: LLM on RAW Whisper text (grammar + punctuation only) ──
         // LLM receives RAW output, BEFORE TextCleaner strips filler words.
         // This way LLM focuses on grammar/structure, not cleanup.
-        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length >= 100;
+        const shouldUseLLM = llmEnabled && !verbatimMode && finalText.length >= 30;
         if (shouldUseLLM) {
           try {
             hotkeyManager?.setState('cleaning');
@@ -352,6 +395,15 @@ export function setupDictationIPC(
   });
 
   // ═══════════════════════════════════════════════════════════════
+  //  Cancel Transcription
+  // ═══════════════════════════════════════════════════════════════
+
+  ipcMain.handle('cancel-transcription', async () => {
+    transcriber.cancelTranscription();
+    return { success: true };
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   //  Adaptive Learning IPC
   // ═══════════════════════════════════════════════════════════════
 
@@ -416,28 +468,9 @@ export function setupDictationIPC(
   });
 
   function getBestAvailableModel(preferredModel: string): string {
-    // Use Transcriber's models path (which is synced with ModelDownloader)
-    const modelsDir = transcriber.getModelsPathValue();
-
-    // Check preferred model first, then fallback to known models
-    // CRITICAL: skip if preferredModel is empty (default model='' = not downloaded yet)
-    const accuracyOrder = [
-      ...(preferredModel ? [preferredModel] : []),
-      'ggml-large-v3-q5_0.bin',
-      'ggml-large-v3-turbo-q8_0.bin',
-      'ggml-large-v3-turbo-q5_0.bin',
-      'ggml-large-v3-turbo.bin',
-      'ggml-large-v3.bin',
-      'ggml-medium.bin',
-      'ggml-small.bin',
-      'ggml-base.bin',
-      'ggml-base-q5_1.bin',
-      'ggml-tiny.bin',
-    ];
-    for (const model of [...new Set(accuracyOrder)]) {
-      if (fs.existsSync(path.join(modelsDir, model))) return model;
-    }
-    return preferredModel;
+    // Delegate to Transcriber's single source of truth
+    // selectOptimalModel() handles fallback priority with cached fs checks
+    return transcriber.selectOptimalModel(preferredModel);
   }
 
   function getTempDir(): string {

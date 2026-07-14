@@ -250,7 +250,7 @@ export class Transcriber {
   //  Model Selection (with caching)
   // ═══════════════════════════════════════════════════════════════
 
-  private selectOptimalModel(userModel: string): string {
+  selectOptimalModel(userModel: string): string {
     // Respect explicit user choice
     if (userModel && userModel !== 'auto' && this.isModelAvailable(userModel)) {
       return userModel;
@@ -466,12 +466,22 @@ export class Transcriber {
     // CRITICAL: model could be empty string (default after fresh install)
     // fs.existsSync(path.join(dir, '')) returns true (it's the dir itself)
     // This would cause whisper to receive a directory path as model file
+    this.logger.info('[Transcriber] Model selection input:', { model, autoModel, modelsPath: this.modelsPath });
+    
     const selectedModel = autoModel
       ? this.selectOptimalModel(model)
       : (model && this.isModelAvailable(model) ? model : this.selectOptimalModel(model));
 
     const modelPath = path.join(this.modelsPath, selectedModel);
+    this.logger.info('[Transcriber] Model selection result:', { 
+      selectedModel, 
+      modelPath, 
+      modelExists: cachedPathExists(modelPath),
+      selectedModelTruthy: !!selectedModel
+    });
+    
     if (!cachedPathExists(modelPath) || !selectedModel) {
+      this.logger.error('[Transcriber] Model not found:', { selectedModel, modelPath });
       return { success: false, error: 'Model tidak ditemukan. Silakan download model terlebih dahulu.' };
     }
 

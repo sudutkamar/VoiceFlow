@@ -40,10 +40,11 @@ extraResources:
   # App icons — important for tray and window
   - from: resources/icons
     to: icons
-  # NOTE: GPU/CUDA DLL dan AI models TIDAK dibundle.
-  # User download dari dalam app setelah install.
-  # GPU: extract ke whisper/gpu/
-  # Models: download langsung via halaman Models di app
+  # Default AI model (ggml-base-q5_1.bin, ~57 MB) — dibundel supaya app bisa
+  # langsung dipakai tanpa download manual. User bisa upgrade ke model lebih
+  # besar dari dalam app via halaman Models.
+  - from: resources/whisper/models/ggml-base-q5_1.bin
+    to: whisper/models/ggml-base-q5_1.bin
 win:
   executableName: VoiceFlow
   icon: resources/icons/icon.ico

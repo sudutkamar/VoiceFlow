@@ -771,6 +771,42 @@ app.whenReady().then(() => {
     }, 5000);
   }
 
+  // ──────────────────────────────────────────────────────
+  //  First-Run: Copy bundled models to userData if needed
+  //  ──────────────────────────────────────────────────────
+  //  This ensures bundled models survive app updates/uninstall.
+  //  User-downloaded models (in userData) take priority.
+  try {
+    const userDataModelsDir = path.join(app.getPath('userData'), 'whisper', 'models');
+    const resourcesModelsDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'whisper', 'models')
+      : path.join(__dirname, '..', 'resources', 'whisper', 'models');
+
+    const userDataHasModels = fs.existsSync(userDataModelsDir) &&
+      fs.readdirSync(userDataModelsDir).some(f => f.endsWith('.bin'));
+    const resourcesHasModels = fs.existsSync(resourcesModelsDir) &&
+      fs.readdirSync(resourcesModelsDir).some(f => f.endsWith('.bin'));
+
+    if (resourcesHasModels && !userDataHasModels) {
+      logger.info('[FirstRun] Copying bundled models to userData...');
+      if (!fs.existsSync(userDataModelsDir)) {
+        fs.mkdirSync(userDataModelsDir, { recursive: true });
+      }
+      const modelFiles = fs.readdirSync(resourcesModelsDir).filter(f => f.endsWith('.bin'));
+      for (const modelFile of modelFiles) {
+        const src = path.join(resourcesModelsDir, modelFile);
+        const dest = path.join(userDataModelsDir, modelFile);
+        if (!fs.existsSync(dest)) {
+          fs.copyFileSync(src, dest);
+          logger.info(`[FirstRun]  Copied ${modelFile} (${(fs.statSync(src).size / 1024 / 1024).toFixed(1)} MB)`);
+        }
+      }
+      logger.info('[FirstRun] Bundled models copied to userData');
+    }
+  } catch (err) {
+    logger.warn('[FirstRun] Failed to copy bundled models', err);
+  }
+
   // Warm up transcriber model for faster first transcription
   try {
     const dicTranscriber = getTranscriberInstance();

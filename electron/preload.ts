@@ -6,7 +6,8 @@ export interface ElectronAPI {
   stopRecording: () => Promise<{ success: boolean; error?: string }>;
   getTranscript: () => Promise<{ success: boolean; text?: string; error?: string }>;
   toggleDictation: () => Promise<void>;
-  sendAudioData: (data: { buffer: number[]; mimeType: string; duration: number }) => void;
+  sendAudioData: (data: { buffer: ArrayBuffer | number[]; mimeType: string; duration: number }) => void;
+  cancelTranscription: () => Promise<{ success: boolean }>;
   
   // Clipboard
   copyText: (text: string) => Promise<{ success: boolean; error?: string }>;
@@ -147,7 +148,23 @@ const api: ElectronAPI = {
   stopRecording: () => ipcRenderer.invoke('stop-recording'),
   getTranscript: () => ipcRenderer.invoke('get-transcript'),
   toggleDictation: () => ipcRenderer.invoke('toggle-dictation'),
-  sendAudioData: (data) => ipcRenderer.send('audio-recorded', data),
+  sendAudioData: (data: { buffer: ArrayBuffer | number[]; mimeType: string; duration: number }) => {
+    // Ekstrak ArrayBuffer dari berbagai format yang mungkin
+    let buf: ArrayBuffer;
+    if (data.buffer instanceof ArrayBuffer) {
+      buf = data.buffer;
+    } else if (ArrayBuffer.isView(data.buffer)) {
+      buf = (data.buffer as ArrayBufferView).buffer as ArrayBuffer;
+    } else if (Array.isArray(data.buffer)) {
+      buf = new Uint8Array(data.buffer as number[]).buffer;
+    } else {
+      // Fallback: coba konversi via Uint8Array
+      try { buf = new Uint8Array(data.buffer as any).buffer; } catch { buf = new ArrayBuffer(0); }
+    }
+    // NOTE: ArrayBuffer via ipcRenderer.send dikirim sebagai transferable.
+    // Structured clone algorithm di Electron mendukung ArrayBuffer.
+    ipcRenderer.send('audio-recorded', buf, data.mimeType, data.duration);
+  },
   
   copyText: (text) => ipcRenderer.invoke('copy-text', text),
   pasteText: (text) => ipcRenderer.invoke('paste-text', text),
@@ -356,6 +373,8 @@ const api: ElectronAPI = {
     ipcRenderer.on('mini-window-resize', handler);
     return () => ipcRenderer.removeListener('mini-window-resize', handler);
   },
+  cancelTranscription: () => ipcRenderer.invoke('cancel-transcription'),
+
   onUpdateDownloadProgress: (callback) => {
     const handler = (_: any, data: { percent: number; transferred: number; total: number }) => callback(data);
     ipcRenderer.on('update-download-progress', handler);

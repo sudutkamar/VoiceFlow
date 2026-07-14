@@ -18,12 +18,6 @@
  * This file is part of the critical recording pipeline.
  */
 
-export interface VadOptions {
-  enabled: boolean;
-  silenceThreshold: number;  // RMS level below this = silence (0-1, default 0.01)
-  silenceDurationMs: number; // How long silence must last before auto-stop (default 3000ms)
-}
-
 export class WavRecorder {
   private audioContext: AudioContext | null = null;
   private stream: MediaStream | null = null;
@@ -34,17 +28,14 @@ export class WavRecorder {
   private recording: boolean = false;
   private analyser: AnalyserNode | null = null;
 
-  // VAD state
-  private vadOptions: VadOptions = { enabled: false, silenceThreshold: 0.01, silenceDurationMs: 3000 };
-  private onSilenceCallback: (() => void) | null = null;
-
   constructor(options?: { sampleRate?: number; channels?: number }) {
     // Options are accepted for compatibility, sampleRate/channels are set in start()
   }
 
-  async start(deviceId?: string, vadOptions?: Partial<VadOptions>): Promise<void> {
+  async start(deviceId?: string): Promise<void> {
     // CRITICAL FIX: Proper error handling with resource cleanup
     try {
+      console.log('[WavRecorder] Requesting mic:', deviceId || 'default');
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -55,7 +46,10 @@ export class WavRecorder {
           ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         },
       });
+      console.log('[WavRecorder] Mic obtained, tracks:', this.stream.getAudioTracks().length);
+      console.log('[WavRecorder] Track settings:', JSON.stringify(this.stream.getAudioTracks()[0]?.getSettings()));
     } catch (err: any) {
+      console.error('[WavRecorder] getUserMedia failed:', err.name, err.message);
       // Don't leak resources if getUserMedia fails
       this.cleanupResources();
       throw err;
@@ -63,26 +57,38 @@ export class WavRecorder {
 
     try {
       this.audioContext = new AudioContext({ sampleRate: 16000 });
+      console.log('[WavRecorder] AudioContext created, state:', this.audioContext.state);
       this.source = this.audioContext.createMediaStreamSource(this.stream);
+      console.log('[WavRecorder] MediaStreamSource created');
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256; // 128 frequency bins — better resolution for waveform visualization
-      // CRITICAL: analyser MUST be in the signal path, not a dead-end.
-      // Dead-end AnalyserNodes may not process data in some Chromium versions.
-      // Signal: source → analyser → scriptProcessor → destination
-      this.source.connect(this.analyser);
+      this.analyser.fftSize = 256;
 
-      // Save vadOptions
-      if (vadOptions) {
-        this.vadOptions = {
-          enabled: vadOptions.enabled ?? this.vadOptions.enabled,
-          silenceThreshold: vadOptions.silenceThreshold ?? this.vadOptions.silenceThreshold,
-          silenceDurationMs: vadOptions.silenceDurationMs ?? this.vadOptions.silenceDurationMs,
-        };
-      }
+      // ── Audio Graph ──────────────────────────────────────────
+      //  SINGLE SIGNAL PATH:
+      //  source → analyser → scriptProcessor → destination
+      //
+      //  AnalyserNode ada di dalam signal path sehingga Chromium
+      //  tetap memprosesnya (tidak di-optimize-away). VAD hook di
+      //  React membaca data dari AnalyserNode via getFloatTimeDomainData.
+      //
+      //  CRITICAL: Hanya SATU path. Dua path (source → scriptProcessor
+      //  DAN source → analyser → scriptProcessor) akan menyebabkan
+      //  amplitude DOUBLING karena sinyal audio di-mix dua kali.
+      // ─────────────────────────────────────────────────────────
 
       // Resume AudioContext if suspended (e.g., triggered via hotkey without user gesture)
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+      // Retry up to 3 times because Chromium sometimes fails silently
+      if ((this.audioContext as AudioContext).state === 'suspended') {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await (this.audioContext as AudioContext).resume();
+            if ((this.audioContext as AudioContext).state === 'running') break;
+          } catch (e) {
+            console.warn('[WavRecorder] AudioContext resume attempt', attempt + 1, 'failed:', e);
+          }
+          await new Promise(r => setTimeout(r, 100));
+        }
+        console.log('[WavRecorder] AudioContext state after resume:', this.audioContext.state);
       }
 
       // Start recording with ScriptProcessorNode
@@ -90,17 +96,35 @@ export class WavRecorder {
       this.startTime = Date.now();
       this.recording = true;
 
+      let chunkCount = 0;
       const scriptProcessor = this.audioContext.createScriptProcessor(4096, 1, 1);
       scriptProcessor.onaudioprocess = (e) => {
         if (!this.recording) return;
         const channelData = e.inputBuffer.getChannelData(0);
         this.chunks.push(new Float32Array(channelData));
+        
+        // DIAGNOSTIC: log audio level setiap 5 chunk
+        chunkCount++;
+        if (chunkCount % 5 === 0) {
+          let sum = 0;
+          for (let i = 0; i < channelData.length; i++) {
+            sum += Math.abs(channelData[i]);
+          }
+          const avg = sum / channelData.length;
+          if (avg > 0.001) {
+            console.log('[WavRecorder] Audio level:', (avg * 1000).toFixed(1), 'chunks:', chunkCount);
+          }
+        }
       };
 
-      // Route analyser output through scriptProcessor to destination
-      // This keeps analyser in the signal path so it receives audio data
+      // ── Single signal path ──
+      //  source → analyser → scriptProcessor → destination
+      //  Analyser ada di path utama sehingga Chromium tetap memprosesnya.
+      //  VAD hook membaca data dari AnalyserNode via getFloatTimeDomainData.
+      this.source.connect(this.analyser);
       this.analyser.connect(scriptProcessor);
       scriptProcessor.connect(this.audioContext.destination);
+
       this.processor = scriptProcessor;
 
     } catch (err: any) {

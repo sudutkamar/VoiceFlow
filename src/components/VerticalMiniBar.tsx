@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
 import { playSound } from '../utils/soundEffects';
 import { LANGUAGES, getLanguageByCode, getNextLanguage } from '../utils/languages';
+import { findBestMic } from '../utils/micDetector';
 
 function fmt(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -157,11 +158,12 @@ export default function VerticalMiniBar({ settings }: Props) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         stream.getTracks().forEach(t => t.stop());
-        if (!s.selected_mic) {
-          const devs = await navigator.mediaDevices.enumerateDevices();
-          const m = devs.filter(d => d.kind === 'audioinput');
-          if (m.length > 0 && m[0].deviceId) await window.electronAPI.updateSetting('selected_mic', m[0].deviceId).catch(() => {});
-        }
+        // Auto-detect best working mic (filters virtual devices, tests audio level)
+        findBestMic(s.selected_mic).then(best => {
+          if (best.deviceId && best.deviceId !== s.selected_mic) {
+            window.electronAPI.updateSetting('selected_mic', best.deviceId).catch(() => {});
+          }
+        });
       } catch {}
     } catch {}
   }, []);
