@@ -23,7 +23,7 @@
 - [ ] Test model list: buka Models page → bundled models muncul
 - [ ] Test download model baru → download tetap ke userData, tapi fallback ke resources untuk existing
 
-## Session: 2026-07-14 (Session 11 — Audio Pipeline Audit & GPU Detection Fix)
+## Session: 2026-07-14 (Session 11 — CRITICAL FIX: Empty Model String Breaks Whisper Pipeline)
 
 ### Summary
 
@@ -40,45 +40,79 @@ Mic → WavRecorder → useRecorder hook → IPC (audio-recorded) → processAud
 - WavRecorder (ScriptProcessorNode): ✅ logic intact
 - Preload event mappings: ✅ all correct
 
-### Root Cause
+### ⚠️ ROOT CAUSE (CRITICAL)
 
-**GPU detection bug in `detectGpu()`** — Method checked `userData/whisper/gpu/ggml-cuda.dll` for CUDA presence. When CUDA DLLs exist in userData but NOT in the whisper binary directory (`resources/whisper/cpu/`), `hasGpu` was set to `true`, causing whisper to run WITHOUT `-ng` flag. The CPU whisper binary couldn't find CUDA DLLs, resulting in silent fallback or potential failure.
+**Empty default model `''` bypasses model validation via `fs.existsSync`.**
 
-**Fix:** Updated `detectGpu()` to check if `ggml-cuda.dll` exists in the whisper binary's OWN directory (`resources/whisper/cpu/`), not just in userData.
+Commit `82decc1` changed default model setting from `'ggml-large-v3-turbo-q5_0.bin'` to `''` (fresh install = no model downloaded). This caused:
+
+1. `getBestAvailableModel('')` in `dictation.ipc.ts` checks `fs.existsSync(path.join(modelsDir, ''))`
+2. `path.join(dir, '')` returns `dir` itself → `fs.existsSync` returns `true`
+3. `getBestAvailableModel` returns `''` as "valid" model
+4. `transcriber.transcribe()` receives `model=''`, builds `modelPath = path.join(modelsPath, '')` = `modelsPath` (a directory, not a .bin file)
+5. `isModelAvailable('')` → `fs.existsSync(path.join(modelsDir, ''))` → `true` (it's the dir)
+6. Whisper spawned with `-m <directory>` → `failed to initialize whisper context`
+7. `processAudio` catches error → sends error to UI → user sees no transcription
+
+### Fixes Applied
+
+**1. `getBestAvailableModel()`** — Skip `preferredModel` if empty string
+```typescript
+const accuracyOrder = [
+  ...(preferredModel ? [preferredModel] : []),  // skip if empty
+  'ggml-large-v3-q5_0.bin',
+  ...
+];
+```
+
+**2. `transcriber.transcribe()`** — Guard against empty model:
+```typescript
+const selectedModel = model && this.isModelAvailable(model) 
+  ? model 
+  : this.selectOptimalModel(model);
+// Also check selectedModel is truthy:
+if (!cachedPathExists(modelPath) || !selectedModel) { ... }
+```
+
+**3. `transcriber.runWhisper()`** — Validate modelPath is a .bin file:
+```typescript
+if (!modelName || !modelPath.endsWith('.bin')) {
+  return { success: false, error: 'Model tidak valid' };
+}
+```
+
+**4. GPU detection** — `detectGpu()` now checks whisper binary's own dir for `ggml-cuda.dll`:
+```typescript
+const cudaDllInWhisperDir = path.join(this.getWhisperCpuDir(), 'ggml-cuda.dll');
+this.hasGpu = cachedPathExists(cudaDllPath) || cachedPathExists(cudaDllInWhisperDir);
+```
 
 ### Other Issues Found
 
-**1. `nul` file in `resources/whisper/models/`** — 0-byte artifact file confused model scanner. DELETED.
+**1. `nul` file in `resources/whisper/models/`** — 0-byte artifact. DELETED.
 
-**2. `stopRec` catch block swallows errors** — Line 298 of `useRecorder.ts` has bare `catch { setState('idle'); }` — if `wavRecorder.stop()` or `sendAudioData` throws, user sees no error.
+**2. `stopRec` catch block swallows errors** — Line 298 of `useRecorder.ts` has bare `catch { setState('idle'); }`.
 
-**3. Dev script doesn't rebuild electron** — `npm run dev` runs `vite` + `electron .` but does NOT run `tsc -p tsconfig.electron.json`. Any changes to `electron/` files require manual rebuild.
+**3. Dev script doesn't rebuild electron** — `npm run dev` needs `npm run build:electron` first.
 
-### Test Results
-- `whisper-cli.exe` directly tested: transcribes 3s silent WAV → "you" in 1.1s ✅
-- Full recording flow from log (Jul 13): audio captured → transcribed → pasted successfully ✅
-- All CSS modular imports ✅ (no broken styles)
-
-### Decisions
-- **GPU flag now checks whisper binary's own dir**: Prevents `-ng` omission when CUDA DLLs exist in userData but not in the binary directory.
-- **No audio capture code changed**: WavRecorder, useRecorder, VAD all untouched.
-
-### Risks / Technical Debt
-- `catch { setState('idle'); }` in `useRecorder.ts:298` silently swallows errors
-- Dev script DX issue: `npm run dev` doesn't rebuild electron TS files
-- `nul` file in resources/models was cleaned, but model scanner should filter non-.bin files anyway
-- `hasGpu` logic change: now skips GPU if CUDA DLL not in whisper dir, but userData CUDA DLLs are ignored (they'd need to be copied manually)
+### Verification
+- `whisper-cli.exe`: tested with valid model file → transcribes in 1.1s ✅
+- `whisper-cli.exe -m <directory>`: confirmed → `failed to initialize whisper context` ❌ (this was the bug)
+- TypeScript compilation: 0 errors ✅
+- Full build (renderer + electron): 0 errors ✅
+- Pushed to GitHub
 
 ### Files Changed
 | File | Change |
 |------|--------|
-| `electron/modules/transcriber.ts` | **EDIT** — `detectGpu()` now checks whisper binary's own directory for ggml-cuda.dll, not just userData/gpu/ |
-| `resources/whisper/models/nul` | **DELETE** — 0-byte artifact file that confused model scanner |
+| `electron/ipc/dictation.ipc.ts` | **EDIT** — `getBestAvailableModel()` skip empty preferredModel |
+| `electron/modules/transcriber.ts` | **EDIT** — Guard empty model in `transcribe()`, `transcribeStreaming()`, `runWhisper()`; fix `detectGpu()` |
+| `resources/whisper/models/nul` | **DELETE** — 0-byte artifact |
 
 ### Next Actions
-1. [ ] **TEST RECORDING**: Run `npm run build:electron && npm run dev` → click mic → speak → verify text appears
-2. [ ] Test GPU mode: copy CUDA DLLs to `resources/whisper/cpu/` → verify whisper uses GPU
-3. [ ] Test CPU mode: no CUDA DLLs in whisper dir → verify `-ng` is passed in args log
+1. [ ] **PULL & REBUILD**: `git pull && npm run build`
+2. [ ] **TEST**: `npm run build:electron && npm run dev` → click mic → speak → verify text appears
+3. [ ] If still not working, open DevTools (Ctrl+Shift+I) and check Console for errors
 
 ## Session: 2026-07-14 (Session 9 — Smooth Transitions Audit & Implementation)
 

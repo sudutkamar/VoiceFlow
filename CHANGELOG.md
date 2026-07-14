@@ -1,5 +1,22 @@
 # Changelog VoiceFlow
 
+## [1.0.4] - 2026-07-14
+
+### Fixed (CRITICAL - Recording Fix)
+- **Empty default model bypasses model validation** — Commit `82decc1` changed default model from `'ggml-large-v3-turbo-q5_0.bin'` to `''` (fresh install). `getBestAvailableModel('')` called `fs.existsSync(path.join(modelsDir, ''))` which returns `true` because `path.join(dir, '') === dir`. This returned empty string as valid model, causing whisper to receive a directory path instead of `.bin` file → `failed to initialize whisper context` → no transcription.
+
+### Fixed
+- `getBestAvailableModel()` — Skip `preferredModel` if empty string
+- `transcriber.transcribe()` — Guard `model && isModelAvailable()` against empty string
+- `transcriber.runWhisper()` — Validate `modelPath.endsWith('.bin')` before spawning whisper
+- GPU detection in `Transcriber.detectGpu()` — Check CUDA DLL in whisper binary's own directory, not just userData
+
+### Chore
+- Deleted `nul` artifact from `resources/whisper/models/`
+- Full audio pipeline audit
+
+---
+
 ## [1.0.3] - 2026-07-14
 
 ### Fixed
