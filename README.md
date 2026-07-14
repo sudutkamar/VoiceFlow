@@ -216,11 +216,11 @@ Tampilan utama VoiceFlow dengan sidebar navigasi dan halaman recording:
 
 | File | Ukuran | Link Download |
 |------|--------|---------------|
-| **VoiceFlow Setup.exe** | 100.6 MB | [Download Installer](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/VoiceFlow.Setup.1.0.0.exe) |
+| **VoiceFlow Setup.exe** | 100.6 MB | [Download Installer](https://github.com/sudutkamar/VoiceFlow/releases/download/v1.0.0/VoiceFlow.Setup.exe) |
 
 **Langkah install:**
 
-1. Klik link download di atas → file `VoiceFlow.Setup.1.0.0.exe` akan terdownload
+1. Klik link download di atas → file `VoiceFlow.Setup.exe` akan terdownload
 2. Buka file `.exe` yang sudah terdownload
 3. Ikuti petunjuk instalasi (Next → Next → Install)
 4. Buka VoiceFlow dari shortcut desktop atau Start Menu
