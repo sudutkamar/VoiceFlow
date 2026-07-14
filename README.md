@@ -11,7 +11,6 @@ VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara r
 ## Daftar Isi
 
 - [Apa itu VoiceFlow?](#apa-itu-voiceflow)
-- [Untuk Siapa VoiceFlow?](#untuk-siapa-voiceflow)
 - [Cara Kerja VoiceFlow](#cara-kerja-voiceflow)
 - [Fitur Utama](#fitur-utama)
 - [Install](#install)
@@ -39,21 +38,6 @@ VoiceFlow adalah aplikasi **voice-to-text** yang berjalan 100% lokal di komputer
 **Tidak perlu internet. Tidak perlu cloud. Tidak perlu API key.**
 
 Semua proses terjadi di komputer kamu. Suara kamu tidak pernah keluar dari PC.
-
----
-
-## Untuk Siapa VoiceFlow?
-
-| Pengguna | Manfaat |
-|----------|---------|
-| **Programmer / Developer** | Ngetik kode, dokumentasi, commit message, code review pakai suara |
-| **Penulis / Content Creator** | Nulis artikel, script video, caption, konten sosial media |
-| **Mahasiswa / Akademisi** | Nulis makalah, catatan kuliah, transkrip wawancara |
-| **Karyawan Kantoran** | Ngetik laporan, email, meeting notes, proposal |
-| **Pengguna dengan RSI / Cedera Tangan** | Alternatif mengetik tanpa keyboard |
-| **Siapa pun yang ingin multitasking** | Ngetik sambil ngapa-ngapain |
-
-VoiceFlow dirancang khusus untuk **pengguna Indonesia** dengan dukungan penuh bahasa Indonesia, voice commands dalam Bahasa Indonesia, dan dokumentasi berbahasa Indonesia.
 
 ---
 
