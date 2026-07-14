@@ -168,7 +168,10 @@ export class Transcriber {
   private detectGpu(): void {
     try {
       const cudaDllPath = path.join(this.getUserDataDir(), 'gpu', 'ggml-cuda.dll');
-      this.hasGpu = cachedPathExists(cudaDllPath);
+      // Check if ggml-cuda.dll exists in the same dir as whisper binary
+      // whisper loads CUDA backend from its own directory
+      const cudaDllInWhisperDir = path.join(this.getWhisperCpuDir(), 'ggml-cuda.dll');
+      this.hasGpu = cachedPathExists(cudaDllPath) || cachedPathExists(cudaDllInWhisperDir);
       this.logger.info(`GPU: ${this.hasGpu ? 'CUDA ✓' : 'CPU only'}`);
     } catch {
       this.hasGpu = false;
@@ -196,7 +199,23 @@ export class Transcriber {
   }
 
   private getModelsPath(): string {
-    return path.join(this.getUserDataDir(), 'models');
+    // Priority: userData (downloaded) > resources (bundled)
+    const userDataModels = path.join(this.getUserDataDir(), 'models');
+    if (cachedPathExists(userDataModels) && fs.readdirSync(userDataModels).some(f => f.endsWith('.bin'))) {
+      return userDataModels;
+    }
+    // Fallback to bundled resources
+    const resourcesModels = this.getResourcesModelsDir();
+    if (cachedPathExists(resourcesModels)) {
+      this.logger.info('Using bundled models from resources');
+      return resourcesModels;
+    }
+    return userDataModels;
+  }
+
+  private getResourcesModelsDir(): string {
+    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper', 'models');
+    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
   }
 
   setMainWindow(window: BrowserWindow): void { this.mainWindow = window; }

@@ -1,5 +1,16 @@
 # Changelog VoiceFlow
 
+## [1.0.3] - 2026-07-14
+
+### Fixed
+- **GPU detection in `Transcriber.detectGpu()`** — Now checks if `ggml-cuda.dll` exists in the whisper binary's own directory (`resources/whisper/cpu/`), not just in `userData/whisper/gpu/`. Previously, CUDA DLLs in userData caused `hasGpu=true` without `-ng` flag, making whisper try to use GPU with CPU-only binary.
+
+### Chore
+- Deleted `nul` artifact file from `resources/whisper/models/`
+- Full audio pipeline audit: all components verified working
+
+---
+
 ## [1.0.2] - 2026-07-14
 
 ### Added

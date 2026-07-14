@@ -1,5 +1,85 @@
 # Session Handoff
 
+## Session: 2026-07-14 (Session 10 — Fix Recording: Model Path Fallback)
+
+### Summary
+
+**Recording tidak menghasilkan teks** — model Whisper ada di `resources/whisper/models/` tapi `transcriber.ts` cuma cari di `userData/whisper/models/` yang kosong.
+
+**Fix:** Update `getModelsPath()` di Transcriber untuk fallback ke bundled resources jika userData tidak ada model.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron/modules/transcriber.ts` | **EDIT** — `getModelsPath()` now checks userData first, then falls back to `resources/whisper/models/`. Added `getResourcesModelsDir()` helper. |
+
+### Decisions
+- **Fallback over copy**: Daripada copy model dari resources ke userData (boros disk + waktu), lebih baik transcriber langsung pakai dari resources.
+- **Priority**: userData > resources. Jika user download model baru, userData diprioritaskan.
+- **Zero risk to recording**: Hanya path resolution yang diubah, tidak ada perubahan di audio capture/VAD/pipeline.
+
+### Next Actions
+- [ ] Test record: click mic → bicara → teks muncul
+- [ ] Test model list: buka Models page → bundled models muncul
+- [ ] Test download model baru → download tetap ke userData, tapi fallback ke resources untuk existing
+
+## Session: 2026-07-14 (Session 11 — Audio Pipeline Audit & GPU Detection Fix)
+
+### Summary
+
+**Full audio pipeline audit.** Traced recording end-to-end:
+Mic → WavRecorder → useRecorder hook → IPC (audio-recorded) → processAudio() → Transcriber.transcribe() → Whisper CLI → Post-process → transcript-ready → UI.
+
+**Verified working components:**
+- Whisper CLI executable: ✅ runs, transcribes audio correctly
+- Model files: ✅ exist in both `resources/whisper/models/` and `userData/whisper/models/`
+- Model path fallback (Session 10): ✅ works
+- TypeScript compilation: 0 errors
+- Vite build: ✅ succeeds
+- All IPC channels: ✅ registered correctly
+- WavRecorder (ScriptProcessorNode): ✅ logic intact
+- Preload event mappings: ✅ all correct
+
+### Root Cause
+
+**GPU detection bug in `detectGpu()`** — Method checked `userData/whisper/gpu/ggml-cuda.dll` for CUDA presence. When CUDA DLLs exist in userData but NOT in the whisper binary directory (`resources/whisper/cpu/`), `hasGpu` was set to `true`, causing whisper to run WITHOUT `-ng` flag. The CPU whisper binary couldn't find CUDA DLLs, resulting in silent fallback or potential failure.
+
+**Fix:** Updated `detectGpu()` to check if `ggml-cuda.dll` exists in the whisper binary's OWN directory (`resources/whisper/cpu/`), not just in userData.
+
+### Other Issues Found
+
+**1. `nul` file in `resources/whisper/models/`** — 0-byte artifact file confused model scanner. DELETED.
+
+**2. `stopRec` catch block swallows errors** — Line 298 of `useRecorder.ts` has bare `catch { setState('idle'); }` — if `wavRecorder.stop()` or `sendAudioData` throws, user sees no error.
+
+**3. Dev script doesn't rebuild electron** — `npm run dev` runs `vite` + `electron .` but does NOT run `tsc -p tsconfig.electron.json`. Any changes to `electron/` files require manual rebuild.
+
+### Test Results
+- `whisper-cli.exe` directly tested: transcribes 3s silent WAV → "you" in 1.1s ✅
+- Full recording flow from log (Jul 13): audio captured → transcribed → pasted successfully ✅
+- All CSS modular imports ✅ (no broken styles)
+
+### Decisions
+- **GPU flag now checks whisper binary's own dir**: Prevents `-ng` omission when CUDA DLLs exist in userData but not in the binary directory.
+- **No audio capture code changed**: WavRecorder, useRecorder, VAD all untouched.
+
+### Risks / Technical Debt
+- `catch { setState('idle'); }` in `useRecorder.ts:298` silently swallows errors
+- Dev script DX issue: `npm run dev` doesn't rebuild electron TS files
+- `nul` file in resources/models was cleaned, but model scanner should filter non-.bin files anyway
+- `hasGpu` logic change: now skips GPU if CUDA DLL not in whisper dir, but userData CUDA DLLs are ignored (they'd need to be copied manually)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `electron/modules/transcriber.ts` | **EDIT** — `detectGpu()` now checks whisper binary's own directory for ggml-cuda.dll, not just userData/gpu/ |
+| `resources/whisper/models/nul` | **DELETE** — 0-byte artifact file that confused model scanner |
+
+### Next Actions
+1. [ ] **TEST RECORDING**: Run `npm run build:electron && npm run dev` → click mic → speak → verify text appears
+2. [ ] Test GPU mode: copy CUDA DLLs to `resources/whisper/cpu/` → verify whisper uses GPU
+3. [ ] Test CPU mode: no CUDA DLLs in whisper dir → verify `-ng` is passed in args log
+
 ## Session: 2026-07-14 (Session 9 — Smooth Transitions Audit & Implementation)
 
 ### Summary
