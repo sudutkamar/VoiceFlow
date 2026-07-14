@@ -9,6 +9,7 @@ import { Logger } from './logger';
 import { AudioPreprocessor } from './audioPreprocessor';
 import { FuzzyMatcher, DictionaryEntry } from './fuzzyMatcher';
 import { ConfidenceScorer, ConfidenceResult } from './confidenceScorer';
+import { getDefaultModelsDir, getResourcesModelsDir } from '../utils/modelsPath';
 
 export interface TranscribeResult {
   success: boolean;
@@ -198,24 +199,40 @@ export class Transcriber {
     return path.join(app.getPath('userData'), 'whisper');
   }
 
+  /**
+   * Get the models directory.
+   * Priority:
+   *   1. Documents/VoiceFlow/models/  (default for packaged, user-friendly)
+   *   2. resources/whisper/models/    (dev mode or fallback with bundled models)
+   *
+   * Syncs with ModelDownloader via updateModelsPath().
+   */
   private getModelsPath(): string {
-    // Priority: userData (downloaded) > resources (bundled)
-    const userDataModels = path.join(this.getUserDataDir(), 'models');
-    if (cachedPathExists(userDataModels) && fs.readdirSync(userDataModels).some(f => f.endsWith('.bin'))) {
-      return userDataModels;
-    }
-    // Fallback to bundled resources
-    const resourcesModels = this.getResourcesModelsDir();
-    if (cachedPathExists(resourcesModels)) {
-      this.logger.info('Using bundled models from resources');
-      return resourcesModels;
-    }
-    return userDataModels;
-  }
+    const defaultDir = getDefaultModelsDir();
 
-  private getResourcesModelsDir(): string {
-    if (app.isPackaged) return path.join(process.resourcesPath, 'whisper', 'models');
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+    // In dev mode, bundled resources are our primary dir
+    if (!app.isPackaged) {
+      const resourcesDir = getResourcesModelsDir();
+      if (cachedPathExists(resourcesDir)) {
+        return resourcesDir;
+      }
+      return defaultDir;
+    }
+
+    // Packaged: check if default dir has content
+    if (cachedPathExists(defaultDir)) {
+      return defaultDir;
+    }
+
+    // Fallback: try bundled resources
+    const resourcesDir = getResourcesModelsDir();
+    if (cachedPathExists(resourcesDir)) {
+      this.logger.info('[Transcriber] Using bundled models from resources (no user models found)');
+      return resourcesDir;
+    }
+
+    // Last resort: use default (will be created on first download)
+    return defaultDir;
   }
 
   setMainWindow(window: BrowserWindow): void { this.mainWindow = window; }

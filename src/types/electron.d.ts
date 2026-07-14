@@ -45,6 +45,7 @@ interface ElectronAPI {
 
   // Models
   getModelsPath: () => Promise<string>;
+  getModelsBaseDir: () => Promise<string>;
   getCustomModelsPath: () => Promise<string | null>;
   chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetModelsPath: () => Promise<{ success: boolean; path?: string }>;

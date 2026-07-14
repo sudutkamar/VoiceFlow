@@ -9,6 +9,7 @@ import { app } from 'electron';
 import { Logger } from './logger';
 import { VoiceFlowDatabase } from './database';
 import { AVAILABLE_MODELS, MIN_VALID_MODEL_SIZE, type ModelInfo } from './modelDefinitions';
+import { getDefaultModelsDir, getDocumentsVoiceFlowDir, getResourcesModelsDir, getOldModelsDirs, migrateModelsTo, modelsDirHasContent, ensureDir } from '../utils/modelsPath';
 
 export { type ModelInfo, AVAILABLE_MODELS };
 
@@ -97,11 +98,31 @@ export class ModelDownloader {
   constructor(logger: Logger, savedModelsPath?: string | null, database?: VoiceFlowDatabase) {
     this.logger = logger;
     this.database = database || null;
+
+    // Resolve models path with priority: custom > default > migration
     if (savedModelsPath && fs.existsSync(savedModelsPath)) {
       this.customModelsPath = savedModelsPath;
       this.modelsPath = savedModelsPath;
+      this.logger.info(`[ModelDownloader] Using custom path: ${this.modelsPath}`);
     } else {
       this.modelsPath = this.getModelsPath();
+      this.logger.info(`[ModelDownloader] Using default path: ${this.modelsPath}`);
+    }
+
+    // Auto-migrate from old paths once (first time using new path)
+    if (this.database && !this.customModelsPath) {
+      const oldPaths = getOldModelsDirs();
+      const hasOldModels = oldPaths.some(p => modelsDirHasContent(p));
+      if (hasOldModels && !modelsDirHasContent(this.modelsPath)) {
+        const defaultDir = getDefaultModelsDir();
+        if (this.modelsPath === defaultDir) {
+          this.logger.info('[ModelDownloader] Migrating models from old paths...');
+          const result = migrateModelsTo(this.modelsPath);
+          if (result.migrated > 0) {
+            this.logger.info(`[ModelDownloader] Migrated ${result.migrated} model(s) from ${result.from.length} old path(s)`);
+          }
+        }
+      }
     }
 
     // Use userData/temp-downloads instead of OS tmpdir to avoid Windows Defender / cleanup interference
@@ -258,11 +279,17 @@ export class ModelDownloader {
     return this.downloadWithRetry(url, newTempPath, modelName, 0, attempt + 1);
   }
 
+  /**
+   * Get the effective models path.
+   *
+   * Packaged: Documents/VoiceFlow/models/  (user-friendly, survives reinstall)
+   * Dev:      resources/whisper/models/    (bundled resources)
+   *
+   * Note: This is ONLY called in constructor when no custom_models_path is set.
+   * After that, setCustomModelsPath() updates modelsPath directly.
+   */
   private getModelsPath(): string {
-    if (app.isPackaged) {
-      return path.join(app.getPath('userData'), 'models');
-    }
-    return path.join(__dirname, '..', '..', 'resources', 'whisper', 'models');
+    return getDefaultModelsDir();
   }
 
   private cleanupInvalidFiles(skipTempPath?: string | null): void {
@@ -495,17 +522,35 @@ export class ModelDownloader {
 
   setCustomModelsPath(newPath: string): { success: boolean; error?: string } {
     try {
-      if (newPath && !fs.existsSync(newPath)) {
-        fs.mkdirSync(newPath, { recursive: true });
+      const resolvedPath = newPath
+        ? newPath
+        : getDefaultModelsDir();
+      if (resolvedPath && !fs.existsSync(resolvedPath)) {
+        fs.mkdirSync(resolvedPath, { recursive: true });
       }
       this.customModelsPath = newPath || null;
-      this.modelsPath = newPath || this.getModelsPath();
+      this.modelsPath = resolvedPath;
       this.logger.info(`Models path changed to: ${this.modelsPath}`);
       return { success: true };
     } catch (error: any) {
       this.logger.error('Failed to set custom models path', error);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Get the base directory where models live (for UI display).
+   * E.g., Documents\VoiceFlow
+   */
+  getModelsBaseDir(): string {
+    if (this.customModelsPath) {
+      return this.customModelsPath;
+    }
+    // Return the parent of models dir for display
+    if (app.isPackaged) {
+      return getDocumentsVoiceFlowDir();
+    }
+    return path.join(__dirname, '..', '..', 'resources', 'whisper');
   }
 
   /**

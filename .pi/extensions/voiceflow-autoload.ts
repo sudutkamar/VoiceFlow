@@ -24,8 +24,7 @@ export default function (pi: ExtensionAPI) {
    → Whisper integration, VAD, recording pipeline, performance tuning
 
 📖 Baca juga:
-- \`AGENTS.md\` (root) — arsitektur lengkap UI, komponen, data layer, audio pipeline
-- \`.pi/AGENTS.md\` — quick reference & checklist
+- \`.pi/AGENTS.md\` — project guidelines lengkap + HARAM ZONE + arsitektur + checklist
 - \`session-handoff.md\` — status session sebelumnya
 
 Setelah membaca, lanjutkan pekerjaan sesuai instruksi.`,

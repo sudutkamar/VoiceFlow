@@ -172,8 +172,8 @@ function useVad(
  * });
  * ```
  *
- * CRITICAL: Do NOT modify this file without reading AGENTS.md Rule #1.
- * This hook is part of the critical recording pipeline.
+ * CRITICAL: Do NOT modify this file without reading .pi/AGENTS.md HARAM ZONE.
+ * This hook is part of the critical recording pipeline (🔴 RECORDING).
  */
 export function useRecorder(settings: Record<string, string>, options: UseRecorderOptions = {}): UseRecorderReturn {
   const { onTranscript, onPartial, onError, minRecordingMs = MIN_RECORDING_MS } = options;

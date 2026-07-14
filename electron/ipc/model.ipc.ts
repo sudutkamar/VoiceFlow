@@ -3,6 +3,7 @@ import { VoiceFlowDatabase as Database } from '../modules/database';
 import { Logger } from '../modules/logger';
 import { ModelDownloader, AVAILABLE_MODELS } from '../modules/modelDownloader';
 import { Transcriber } from '../modules/transcriber';
+import { getDocumentsVoiceFlowDir } from '../utils/modelsPath';
 
 let modelDownloader: ModelDownloader;
 let transcriberRef: Transcriber | null = null;
@@ -74,6 +75,10 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     return modelDownloader.getModelsPathValue();
   });
 
+  ipcMain.handle('get-models-base-dir', async () => {
+    return modelDownloader.getModelsBaseDir();
+  });
+
   ipcMain.handle('has-any-model', async () => {
     return modelDownloader.getDownloadedModels().length > 0;
   });
@@ -132,8 +137,10 @@ export function setupModelIPC(mainWindow: BrowserWindow, database: Database, log
     database.updateSetting('custom_models_path', '');
     // Sync Transcriber path back to default
     if (transcriberRef) {
-      transcriberRef.updateModelsPath(modelDownloader.getModelsPathValue());
+      const newPath = modelDownloader.getModelsPathValue();
+      transcriberRef.updateModelsPath(newPath);
       transcriberRef.warmup(database.getSetting('model') || '');
+      logger.info(`Models path reset to default: ${newPath}`);
     }
     return { success: true, path: modelDownloader.getModelsPathValue() };
   });

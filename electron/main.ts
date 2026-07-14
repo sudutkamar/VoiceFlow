@@ -11,6 +11,7 @@ import { setupDictationIPC, getTranscriberInstance } from './ipc/dictation.ipc';
 import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC, setTranscriberForModelSync } from './ipc/model.ipc';
 import { setupSnippetIPC } from './ipc/snippet.ipc';
+import { getDefaultModelsDir, getResourcesModelsDir, getOldModelsDirs, migrateModelsTo, modelsDirHasContent, ensureDir } from './utils/modelsPath';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRITICAL FIX #1: Single-Instance Lock
@@ -772,36 +773,47 @@ app.whenReady().then(() => {
   }
 
   // ──────────────────────────────────────────────────────
-  //  First-Run: Copy bundled models to userData if needed
+  //  First-Run: Copy bundled models to user-visible folder
   //  ──────────────────────────────────────────────────────
-  //  This ensures bundled models survive app updates/uninstall.
-  //  User-downloaded models (in userData) take priority.
+  //  Default: Documents/VoiceFlow/models/
+  //  This ensures models survive app reinstall/uninstall.
+  //  User can also find/copy them easily.
   try {
-    const userDataModelsDir = path.join(app.getPath('userData'), 'whisper', 'models');
-    const resourcesModelsDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'whisper', 'models')
-      : path.join(__dirname, '..', 'resources', 'whisper', 'models');
+    const targetDir = getDefaultModelsDir();
+    const resourcesDir = getResourcesModelsDir();
+    const resourcesHasModels = fs.existsSync(resourcesDir) &&
+      fs.readdirSync(resourcesDir).some(f => f.endsWith('.bin'));
+    const targetHasModels = modelsDirHasContent(targetDir);
 
-    const userDataHasModels = fs.existsSync(userDataModelsDir) &&
-      fs.readdirSync(userDataModelsDir).some(f => f.endsWith('.bin'));
-    const resourcesHasModels = fs.existsSync(resourcesModelsDir) &&
-      fs.readdirSync(resourcesModelsDir).some(f => f.endsWith('.bin'));
-
-    if (resourcesHasModels && !userDataHasModels) {
-      logger.info('[FirstRun] Copying bundled models to userData...');
-      if (!fs.existsSync(userDataModelsDir)) {
-        fs.mkdirSync(userDataModelsDir, { recursive: true });
-      }
-      const modelFiles = fs.readdirSync(resourcesModelsDir).filter(f => f.endsWith('.bin'));
-      for (const modelFile of modelFiles) {
-        const src = path.join(resourcesModelsDir, modelFile);
-        const dest = path.join(userDataModelsDir, modelFile);
-        if (!fs.existsSync(dest)) {
-          fs.copyFileSync(src, dest);
-          logger.info(`[FirstRun]  Copied ${modelFile} (${(fs.statSync(src).size / 1024 / 1024).toFixed(1)} MB)`);
+    if (!targetHasModels) {
+      // Step 1: Migrate from old paths first
+      const oldPaths = getOldModelsDirs();
+      const hasOldModels = oldPaths.some(p => modelsDirHasContent(p));
+      if (hasOldModels) {
+        logger.info('[FirstRun] Migrating models from old paths to new location...');
+        const result = migrateModelsTo(targetDir);
+        if (result.migrated > 0) {
+          logger.info(`[FirstRun] Migrated ${result.migrated} model(s) from ${result.from.length} old path(s)`);
         }
       }
-      logger.info('[FirstRun] Bundled models copied to userData');
+
+      // Step 2: Copy bundled models if still empty
+      if (resourcesHasModels && !modelsDirHasContent(targetDir)) {
+        logger.info('[FirstRun] Copying bundled models to Documents/VoiceFlow/models/...');
+        ensureDir(targetDir);
+        const modelFiles = fs.readdirSync(resourcesDir).filter(f => f.endsWith('.bin'));
+        for (const modelFile of modelFiles) {
+          const src = path.join(resourcesDir, modelFile);
+          const dest = path.join(targetDir, modelFile);
+          if (!fs.existsSync(dest)) {
+            fs.copyFileSync(src, dest);
+            logger.info(`[FirstRun]  Copied ${modelFile} (${(fs.statSync(src).size / 1024 / 1024).toFixed(1)} MB)`);
+          }
+        }
+        logger.info('[FirstRun] Bundled models copied to Documents/VoiceFlow/models/');
+      }
+    } else {
+      logger.info(`[FirstRun] Models already exist at ${targetDir}, skipping copy`);
     }
   } catch (err) {
     logger.warn('[FirstRun] Failed to copy bundled models', err);

@@ -14,8 +14,8 @@
  * NOTE: ScriptProcessorNode is deprecated in web standards but fully supported
  * in Electron (Chromium). Migration to AudioWorkletNode deferred to v1.1.
  *
- * CRITICAL: Do NOT modify this file without reading AGENTS.md Rule #1.
- * This file is part of the critical recording pipeline.
+ * CRITICAL: Do NOT modify this file without reading .pi/AGENTS.md HARAM ZONE.
+ * This file is part of the critical recording pipeline (🔴 PRE-HAL).
  */
 
 export class WavRecorder {

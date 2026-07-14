@@ -59,6 +59,7 @@ export interface ElectronAPI {
   getInterruptedDownloadInfo: () => Promise<{ modelName: string; progress: number } | null>;
   isModelDownloaded: (model: string) => Promise<boolean>;
   getModelsPath: () => Promise<string>;
+  getModelsBaseDir: () => Promise<string>;
   getCustomModelsPath: () => Promise<string | null>;
   chooseModelsFolder: () => Promise<{ success: boolean; path?: string; error?: string }>;
   resetModelsPath: () => Promise<{ success: boolean; path?: string }>;
@@ -213,6 +214,7 @@ const api: ElectronAPI = {
   getInterruptedDownloadInfo: () => ipcRenderer.invoke('get-interrupted-download-info'),
   isModelDownloaded: (model) => ipcRenderer.invoke('is-model-downloaded', model),
   getModelsPath: () => ipcRenderer.invoke('get-models-path'),
+  getModelsBaseDir: () => ipcRenderer.invoke('get-models-base-dir'),
   getCustomModelsPath: () => ipcRenderer.invoke('get-custom-models-path'),
   chooseModelsFolder: () => ipcRenderer.invoke('choose-models-folder'),
   resetModelsPath: () => ipcRenderer.invoke('reset-models-path'),

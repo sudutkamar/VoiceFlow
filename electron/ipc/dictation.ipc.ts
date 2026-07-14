@@ -18,6 +18,7 @@ import { HotkeyManager } from '../modules/hotkeyManager';
 import { AdaptiveLearning } from '../modules/adaptiveLearning';
 import { LlmPostProcessor } from '../modules/llmPostProcessor';
 import { setupLlmIPC } from './llm.ipc';
+import { getDefaultModelsDir } from '../utils/modelsPath';
 
 let audioConverter: AudioConverter;
 let transcriber: Transcriber;
@@ -58,6 +59,13 @@ export function setupDictationIPC(
   const savedModelsPath = database.getSetting('custom_models_path');
   if (savedModelsPath) {
     transcriber.updateModelsPath(savedModelsPath);
+  } else {
+    // Ensure Transcriber uses the default path (Documents/VoiceFlow/models/)
+    // in case its internal fallback diverged
+    const defaultDir = getDefaultModelsDir();
+    if (transcriber.getModelsPathValue() !== defaultDir) {
+      transcriber.updateModelsPath(defaultDir);
+    }
   }
 
   textCleaner = new TextCleaner(logger);
