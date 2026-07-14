@@ -402,30 +402,42 @@ function getAppIcon(): string {
 
 // ============ TRAY ============
 function createTrayIcon(): Electron.NativeImage {
-  // Try to load from file first
-  const iconPath = isDev()
+  // Priority: pakai icon.png (62KB, 32x32, kualitas bagus)
+  // Daripada tray-icon.png (1.3KB, 32x32, kualitas rendah)
+  // Windows system tray render paling bagus dari sumber resolution-independent
+  // Dengan sumber minimal 32x32, Windows bisa scale ke 16x16 via DPI sendiri
+  const iconPngPath = isDev()
+    ? path.join(__dirname, '..', 'resources', 'icons', 'icon.png')
+    : path.join(process.resourcesPath, 'icons', 'icon.png');
+
+  if (fs.existsSync(iconPngPath)) {
+    return nativeImage.createFromPath(iconPngPath);
+  }
+
+  // Fallback: tray-icon.png (kualitas rendah, tetap dipake kalo ada)
+  const trayIconPath = isDev()
     ? path.join(__dirname, '..', 'resources', 'icons', 'tray-icon.png')
     : path.join(process.resourcesPath, 'icons', 'tray-icon.png');
 
-  if (fs.existsSync(iconPath)) {
-    return nativeImage.createFromPath(iconPath);
+  if (fs.existsSync(trayIconPath)) {
+    return nativeImage.createFromPath(trayIconPath);
   }
 
-  // Fallback: Use the app icon if tray icon not found
+  // Fallback: app icon (ICO)
   const appIconPath = getAppIcon();
   if (appIconPath && fs.existsSync(appIconPath)) {
     return nativeImage.createFromPath(appIconPath);
   }
 
-  // Last resort: Create a simple colored square as tray icon
-  // Using a 16x16 PNG data URL with a microphone shape
+  // Last resort: SVG 32x32 (bukan 16x16) — resolusi lebih tinggi untuk
+  // high-DPI. Windows system tray bisa scale down lebih baik dari sumber besar
   const svgStr = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-      <rect width="16" height="16" fill="#1a1a2e" rx="2"/>
-      <path d="M8 3a2 2 0 0 0-2 2v3a2 2 0 0 0 4 0V5a2 2 0 0 0-2-2z" fill="#53c0f0"/>
-      <path d="M11 6.5v1a3 3 0 0 1-6 0v-1" stroke="#53c0f0" stroke-width="1.2" fill="none" stroke-linecap="round"/>
-      <line x1="8" y1="10" x2="8" y2="12" stroke="#53c0f0" stroke-width="1.2" stroke-linecap="round"/>
-      <line x1="6" y1="12" x2="10" y2="12" stroke="#53c0f0" stroke-width="1.2" stroke-linecap="round"/>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+      <rect width="32" height="32" fill="#1a1a2e" rx="4"/>
+      <path d="M16 6a4 4 0 0 0-4 4v6a4 4 0 0 0 8 0V10a4 4 0 0 0-4-4z" fill="#53c0f0"/>
+      <path d="M22 13v2a6 6 0 0 1-12 0v-2" stroke="#53c0f0" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <line x1="16" y1="20" x2="16" y2="24" stroke="#53c0f0" stroke-width="2.4" stroke-linecap="round"/>
+      <line x1="12" y1="24" x2="20" y2="24" stroke="#53c0f0" stroke-width="2.4" stroke-linecap="round"/>
     </svg>
   `;
   const dataUrl = 'data:image/svg+xml;base64,' + Buffer.from(svgStr).toString('base64');
@@ -434,7 +446,11 @@ function createTrayIcon(): Electron.NativeImage {
 
 function createTray(): void {
   const trayIcon = createTrayIcon();
-  tray = new Tray(trayIcon.resize({ width: 16, height: 16 }));
+  // HAPUS resize paksa 16x16 — biarkan tray dalam ukuran asli (32x32).
+  // Windows akan handle scaling ke 16x16 via DPI secara otomatis.
+  // Resize paksa dari 32→16 pakai nearest-neighbor bikin icon pecah,
+  // apalagi di monitor high-DPI (150%, 200%).
+  tray = new Tray(trayIcon);
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'VoiceFlow', enabled: false },
