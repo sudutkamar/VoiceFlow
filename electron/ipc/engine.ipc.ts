@@ -5,13 +5,13 @@
  */
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import type { Logger } from '../modules/logger';
-import type { Database } from '../modules/database';
+import type { VoiceFlowDatabase } from '../modules/database';
 import type { CudaDownloader } from '../modules/cudaDownloader';
 import type { Transcriber } from '../modules/transcriber';
 
 interface EngineIpcDeps {
   logger: Logger;
-  database: Database;
+  database: VoiceFlowDatabase;
   cudaDownloader: CudaDownloader;
   transcriberRef: () => Transcriber | null;
   mainWindow: BrowserWindow | null;
