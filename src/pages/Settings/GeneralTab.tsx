@@ -418,7 +418,7 @@ export function GeneralTab({
           <img src={appLogo} alt="VoiceFlow" className="about-logo-img" />
           <div className="about-logo-text">
             <span className="about-logo-name">VoiceFlow</span>
-            <span className="about-logo-desc">Local voice-to-text powered by Whisper AI</span>
+            <span className="about-logo-desc">Local voice-to-text</span>
           </div>
         </div>
         <div className="setting-row">
