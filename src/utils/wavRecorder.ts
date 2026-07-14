@@ -65,7 +65,10 @@ export class WavRecorder {
       this.audioContext = new AudioContext({ sampleRate: 16000 });
       this.source = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 64;
+      this.analyser.fftSize = 256; // 128 frequency bins — better resolution for waveform visualization
+      // CRITICAL: analyser MUST be in the signal path, not a dead-end.
+      // Dead-end AnalyserNodes may not process data in some Chromium versions.
+      // Signal: source → analyser → scriptProcessor → destination
       this.source.connect(this.analyser);
 
       // Save vadOptions
@@ -94,7 +97,9 @@ export class WavRecorder {
         this.chunks.push(new Float32Array(channelData));
       };
 
-      this.source.connect(scriptProcessor);
+      // Route analyser output through scriptProcessor to destination
+      // This keeps analyser in the signal path so it receives audio data
+      this.analyser.connect(scriptProcessor);
       scriptProcessor.connect(this.audioContext.destination);
       this.processor = scriptProcessor;
 

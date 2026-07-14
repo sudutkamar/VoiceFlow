@@ -256,8 +256,8 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
       const freqBucket = Math.max(1, Math.floor(freq.length / POINTS));
       const ampBucket = Math.max(1, Math.floor(amp.length / POINTS));
       const raw = Array.from({ length: POINTS }, (_, i) => {
-        const freqPeak = freq.slice(i * freqBucket, (i + 1) * freqBucket).reduce((m, v) => Math.max(m, v), 0) * 1.55;
-        const ampPeak = amp.slice(i * ampBucket, (i + 1) * ampBucket).reduce((m, v) => Math.max(m, v), 0);
+        const freqPeak = freq.slice(i * freqBucket, (i + 1) * freqBucket).reduce((m, v) => Math.max(m, v), 0) * 1.8;
+        const ampPeak = amp.slice(i * ampBucket, (i + 1) * ampBucket).reduce((m, v) => Math.max(m, v), 0) * 2.0;
         return Math.min(100, Math.max(4, freqPeak, ampPeak));
       });
       const ease = 0.18;

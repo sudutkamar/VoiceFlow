@@ -84,7 +84,7 @@ export default function HomePage({ settings, onSuccess, onError }: HomePageProps
       if (!analyserRef.current || !wavRecorderRef.current?.isRecording()) return;
       const data = new Uint8Array(analyserRef.current.frequencyBinCount);
       analyserRef.current.getByteFrequencyData(data);
-      setLevels(Array.from(data).slice(0, 30).map((v) => Math.min(100, v * 1.8)));
+      setLevels(Array.from(data).slice(0, 30).map((v) => Math.min(100, v * 2.2)));
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
       setMicLevel(Math.min(100, avg * 2));
       setClipPeak(prev => Math.max(prev, avg > 80 ? 2 : avg > 60 ? 1 : 0));

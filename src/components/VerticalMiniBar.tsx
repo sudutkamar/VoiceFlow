@@ -131,8 +131,8 @@ export default function VerticalMiniBar({ settings }: Props) {
       const fb = Math.max(1, Math.floor(freq.length / N));
       const ab = Math.max(1, Math.floor(amp.length / N));
       const raw = Array.from({ length: N }, (_, i) => {
-        const f = freq.slice(i * fb, (i + 1) * fb).reduce((m, v) => Math.max(m, v), 0) * 1.55;
-        const a = amp.slice(i * ab, (i + 1) * ab).reduce((m, v) => Math.max(m, v), 0);
+        const f = freq.slice(i * fb, (i + 1) * fb).reduce((m, v) => Math.max(m, v), 0) * 1.8;
+        const a = amp.slice(i * ab, (i + 1) * ab).reduce((m, v) => Math.max(m, v), 0) * 2.0;
         return Math.min(100, Math.max(4, f, a));
       });
       for (let i = 0; i < N; i++) smoothLevels.current[i] += (raw[i] - smoothLevels.current[i]) * 0.2;
