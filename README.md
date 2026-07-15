@@ -139,11 +139,9 @@ Semua proses terjadi di komputer kamu. Suara kamu tidak pernah keluar dari PC.
 Saat merekam, VoiceFlow menampilkan **floating toolbar** transparan di bagian bawah layar:
 
 <div align="center">
-  <img src="resources/icons/preview/floating-ui.png" alt="Floating UI Preview" width="400" />
   <h1>Floating UI Preview</h1>
+  <img src="resources/icons/preview/floating-ui.png" alt="Floating UI Preview" width="500" />
 </div>
-
-![Floating UI Preview](resources/icons/preview/floating-ui.png)
 
 | Tombol | Fungsi |
 |--------|--------|
