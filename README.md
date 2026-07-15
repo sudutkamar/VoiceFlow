@@ -1,7 +1,7 @@
 <div align="center">
   <img src="src/assets/logo.png" alt="VoiceFlow Logo" width="120" />
   <h1>VoiceFlow v1.0.0</h1>
-  <p><strong>Aplikasi Voice-to-Text lokal untuk Windows — 100% gratis, 100% privat, tanpa internet.</strong></p>
+  <p><strong>Aplikasi Voice-to-Text lokal untuk Windows.</strong></p>
 </div>
 
 VoiceFlow adalah aplikasi desktop yang mengubah suara kamu menjadi teks secara real-time menggunakan AI (OpenAI Whisper) yang berjalan **sepenuhnya di komputer kamu**. Cocok untuk menulis dokumen, coding, content creation, dan kebutuhan mengetik lainnya tanpa harus menyentuh keyboard.
