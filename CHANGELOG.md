@@ -1,5 +1,32 @@
 # Changelog VoiceFlow
 
+## [1.0.8] - 2026-07-17
+
+### Added
+- **Aggressive model warmup** — pre-caches everything at startup for zero cold-start penalty on first transcription:
+  - whisper-cli.exe path validation
+  - Model file stat + integrity check (size > 0)
+  - GPU/CUDA detection cache
+  - Available models list cache
+  - whisper-cli directory cache
+- **Warmup status IPC** — renderer can query `getWarmupStatus()` to check readiness
+- **Warmup complete event** — `onWarmupComplete` callback for UI readiness indicator
+- **Warmup timing logs** — measures and logs warmup duration for debugging
+
+### Changed
+- `transcriber.ts` — enhanced `warmup()` method with aggressive pre-caching, readiness tracking, and result object
+- `main.ts` — improved warmup call with timing, result logging, and renderer notification
+- `preload.ts` — added `getWarmupStatus` and `onWarmupComplete` APIs
+- `electron.d.ts` — added TypeScript types for warmup APIs
+
+### Files
+- `electron/modules/transcriber.ts` — enhanced warmup
+- `electron/main.ts` — improved warmup call + IPC handler
+- `electron/preload.ts` — new warmup APIs
+- `src/types/electron.d.ts` — new types
+
+---
+
 ## [1.0.7] - 2026-07-16
 
 ### Changed

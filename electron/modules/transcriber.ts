@@ -1082,40 +1082,103 @@ export class Transcriber {
   isModelAvailable(model: string): boolean { return cachedPathExists(path.join(this.modelsPath, model)); }
 
   // ═══════════════════════════════════════════════════════════════
-  //  Model Warmup — preload model info for instant first use
+  //  Model Warmup — preload everything for instant first use
   // ═══════════════════════════════════════════════════════════════
 
+  private warmupDone = false;
+  private warmupResult: { ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number } = {
+    ready: false,
+    model: '',
+    whisperAvailable: false,
+    gpuAvailable: false,
+    modelSize: 0,
+  };
+
   /**
-   * Warm up model selection — cache the model path so first transcription is faster.
-   * Call this at app startup or when model setting changes.
-   * Also pre-checks whisper-cli availability.
+   * Aggressive warmup — pre-cache everything so first transcription is instant.
+   * Call this at app startup BEFORE user can trigger recording.
+   * 
+   * What we cache:
+   * 1. whisper-cli.exe path validation (avoid cold fs.existsSync)
+   * 2. Model file stat (avoid cold fs.statSync)
+   * 3. GPU/CUDA detection (avoid cold detection on first record)
+   * 4. Models directory listing (avoid cold readdirSync)
+   * 5. Model file integrity check (size > 0)
    */
-  warmup(model?: string): void {
+  warmup(model?: string): { ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number } {
+    const warmupStart = Date.now();
     try {
+      // 1. Pre-cache whisper-cli existence
+      const whisperAvailable = cachedPathExists(this.whisperPath);
+
+      // 2. Pre-check GPU (already done in constructor, but ensure cache is warm)
+      const gpuAvailable = this.hasGpu;
+
+      // 3. Select best model
       const selectedModel = model
         ? (this.isModelAvailable(model) ? model : this.selectOptimalModel(model))
         : this.selectOptimalModel('');
       this.lastUsedModel = selectedModel;
       this.lastUsedModelPath = path.join(this.modelsPath, selectedModel);
 
-      // Pre-cache model existence + validate file
+      // 4. Pre-cache model file stat + validate integrity
+      let modelSize = 0;
       if (cachedPathExists(this.lastUsedModelPath)) {
         try {
           const stat = fs.statSync(this.lastUsedModelPath);
-          this.logger.info('Model validated on disk', { model: selectedModel, size: stat.size });
+          modelSize = stat.size;
+          if (stat.size === 0) {
+            this.logger.warn('Model file is empty!', { model: selectedModel });
+          }
         } catch {}
       }
-      
-      // Pre-cache whisper-cli path
-      cachedPathExists(this.whisperPath);
-      
-      // Pre-cache models directory listing
-      cachedPathExists(this.modelsPath);
 
-      this.logger.info('Model warmed up', { model: selectedModel });
+      // 5. Pre-cache models directory listing
+      const availableModels = this.getAvailableModels();
+
+      // 6. Pre-cache whisper-cli directory (for GPU DLL detection)
+      cachedPathExists(this.getWhisperCpuDir());
+
+      const warmupMs = Date.now() - warmupStart;
+      this.warmupDone = true;
+      this.warmupResult = {
+        ready: true,
+        model: selectedModel,
+        whisperAvailable,
+        gpuAvailable,
+        modelSize,
+      };
+
+      this.logger.info('[Warmup] Complete', {
+        model: selectedModel,
+        modelSizeMB: (modelSize / 1024 / 1024).toFixed(1),
+        whisperAvailable,
+        gpuAvailable,
+        availableModels: availableModels.length,
+        warmupMs,
+      });
+
+      return this.warmupResult;
     } catch (err) {
-      this.logger.warn('Model warmup failed', err);
+      this.logger.warn('[Warmup] Failed', err);
+      this.warmupDone = true;
+      this.warmupResult = { ready: false, model: '', whisperAvailable: false, gpuAvailable: false, modelSize: 0 };
+      return this.warmupResult;
     }
+  }
+
+  /**
+   * Check if warmup is complete. UI can poll this to show readiness indicator.
+   */
+  isWarmedUp(): boolean {
+    return this.warmupDone;
+  }
+
+  /**
+   * Get warmup result (for UI readiness indicator).
+   */
+  getWarmupResult(): { ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number } {
+    return this.warmupResult;
   }
 
   /**

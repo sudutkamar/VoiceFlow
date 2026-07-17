@@ -580,6 +580,15 @@ function setupIPC(): void {
       miniWindow.webContents.send('target-app-changed', hotkeyManager.getTargetAppName());
     }
   });
+  // Warmup status query — renderer can check if warmup is complete
+  ipcMain.handle('get-warmup-status', () => {
+    const dicTranscriber = getTranscriberInstance();
+    if (dicTranscriber && dicTranscriber.isWarmedUp()) {
+      return dicTranscriber.getWarmupResult();
+    }
+    return { ready: false, model: '', whisperAvailable: false, gpuAvailable: false, modelSize: 0 };
+  });
+
   ipcMain.handle('is-autostart', () => app.getLoginItemSettings().openAtLogin);
   ipcMain.handle('set-autostart', (_, enable: boolean) => {
     app.setLoginItemSettings({ openAtLogin: enable, path: app.getPath('exe') });
@@ -856,14 +865,31 @@ app.whenReady().then(() => {
     logger.warn('[FirstRun] Failed to copy bundled models', err);
   }
 
-  // Warm up transcriber model for faster first transcription
+  // ═══════════════════════════════════════════════════════════════
+  //  AGGRESSIVE WARMUP — pre-cache everything for instant first use
+  //  This runs BEFORE user can trigger recording, so first transcription
+  //  has zero cold-start penalty.
+  // ═══════════════════════════════════════════════════════════════
+  const warmupStart = Date.now();
   try {
     const dicTranscriber = getTranscriberInstance();
     if (dicTranscriber) {
       const savedModel = database.getSetting('model') || '';
-      dicTranscriber.warmup(savedModel);
+      const warmupResult = dicTranscriber.warmup(savedModel);
+      const warmupMs = Date.now() - warmupStart;
+      logger.info(`[Warmup] Completed in ${warmupMs}ms`, warmupResult);
+      
+      // Notify renderer that warmup is complete
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('warmup-complete', warmupResult);
+      }
+      if (miniWindow && !miniWindow.isDestroyed()) {
+        miniWindow.webContents.send('warmup-complete', warmupResult);
+      }
     }
-  } catch {}
+  } catch (err) {
+    logger.warn('[Warmup] Failed', err);
+  }
 
   logger.info('VoiceFlow ready');
 });

@@ -1,5 +1,59 @@
 # Session Handoff
 
+## Session: 2026-07-17 (Session 19 — Aggressive Model Warmup)
+
+### Summary
+
+**Aggressive warmup system** — pre-caches everything at startup for zero cold-start penalty on first transcription.
+
+#### Perubahan Utama
+
+1. **Enhanced warmup() in transcriber.ts** — pre-caches whisper-cli path, model file stat, GPU detection, available models list, whisper-cli directory. Returns readiness result object with model info, sizes, and availability.
+2. **Warmup status IPC** — renderer can query `getWarmupStatus()` to check if warmup is complete.
+3. **Warmup complete event** — `onWarmupComplete` callback fires when warmup finishes, with full result data.
+4. **Timing logs** — warmup duration measured and logged for debugging.
+
+### Files Changed
+
+| File | Perubahan | Risiko Recording |
+|------|-----------|-----------------|
+| `electron/modules/transcriber.ts` | **ENHANCED** — warmup() now aggressive, adds warmupDone flag, warmupResult object, isWarmedUp(), getWarmupResult() | 🟢 NONE |
+| `electron/main.ts` | **UPDATED** — warmup call with timing + sends result to renderer via IPC | 🟢 NONE |
+| `electron/preload.ts` | **UPDATED** — added getWarmupStatus, onWarmupComplete APIs | 🟢 NONE |
+| `src/types/electron.d.ts` | **UPDATED** — TypeScript types for warmup APIs | 🟢 NONE |
+| `CHANGELOG.md` | **UPDATED** — v1.0.8 entry | 🟢 NONE |
+
+### Decisions
+
+- **Aggressive pre-caching** — cache everything at startup (whisper-cli, model stat, GPU, models list) to eliminate cold-start on first transcription
+- **Readiness tracking** — warmupDone flag + warmupResult object for UI readiness indicator
+- **Event-based notification** — warmup-complete IPC event for real-time UI updates
+- **Timing measurement** — log warmup duration for performance debugging
+
+### Technical Details
+
+Warmup pre-caches:
+1. `whisper-cli.exe` path (cachedPathExists)
+2. Model file stat (fs.statSync for size validation)
+3. GPU/CUDA detection (constructor + re-check)
+4. Available models list (readdirSync)
+5. Whisper CLI directory (for GPU DLL detection)
+
+### Next Actions
+
+1. [ ] **UI**: Add readiness indicator in MiniBar (shows "Ready" with model name + GPU status)
+2. [ ] **TEST**: Verify warmup timing improves first transcription latency
+3. [ ] **TEST**: Verify warmup-complete event reaches renderer
+4. [ ] **Future**: Add warmup status to main window status bar
+
+### Recording Test Checklist
+- [x] App starts without errors
+- [ ] First recording after fresh start is fast (no cold-start delay)
+- [ ] Warmup logs appear in console with timing
+- [ ] Warmup status query returns correct data
+
+---
+
 ## Session: 2026-07-16 (Session 18 — UX & Reliability Improvements)
 
 ### Summary

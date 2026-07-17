@@ -158,6 +158,10 @@ interface ElectronAPI {
   onLlmBinaryDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
+  
+  // Warmup
+  getWarmupStatus: () => Promise<{ ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }>;
+  onWarmupComplete: (callback: (data: { ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }) => void) => () => void;
 }
 
 interface Window {

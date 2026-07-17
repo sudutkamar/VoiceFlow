@@ -146,6 +146,10 @@ export interface ElectronAPI {
   onLlmBinaryDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
+  
+  // Warmup
+  getWarmupStatus: () => Promise<{ ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }>;
+  onWarmupComplete: (callback: (data: { ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -383,6 +387,15 @@ const api: ElectronAPI = {
     ipcRenderer.on('mini-window-resize', handler);
     return () => ipcRenderer.removeListener('mini-window-resize', handler);
   },
+  
+  // Warmup
+  getWarmupStatus: () => ipcRenderer.invoke('get-warmup-status'),
+  onWarmupComplete: (callback) => {
+    const handler = (_: any, data: { ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }) => callback(data);
+    ipcRenderer.on('warmup-complete', handler);
+    return () => ipcRenderer.removeListener('warmup-complete', handler);
+  },
+  
   cancelTranscription: () => ipcRenderer.invoke('cancel-transcription'),
 
   onUpdateDownloadProgress: (callback) => {
