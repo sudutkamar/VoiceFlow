@@ -5,6 +5,7 @@ import React, { useState, useCallback } from 'react';
 import { Iconify } from '../../utils/icons';
 import appLogo from '../../assets/logo.png';
 import { LANGUAGES } from '../../utils/languages';
+import { logError, logWarning } from '../../utils/errorHandler';
 import type { SettingsData, GpuStatus, CudaDownloadState } from './types';
 
 interface Props {
@@ -58,7 +59,7 @@ export function GeneralTab({
   // Load GPU path on mount
   React.useEffect(() => {
     window.electronAPI.getVersion?.().then((v: string) => setAppVersion(v || '1.0.0')).catch(() => setAppVersion('1.0.0'));
-    window.electronAPI.getGpuPath?.().then((p: string) => setGpuPath(p || '')).catch(() => {});
+    window.electronAPI.getGpuPath?.().then((p: string) => setGpuPath(p || '')).catch((err) => logWarning('GeneralTab', 'Failed to get GPU path', err));
   }, []);
 
   const handleHotkey = useCallback(async (e: React.KeyboardEvent) => {
@@ -93,20 +94,26 @@ export function GeneralTab({
   const handleCudaPause = async () => {
     try {
       await window.electronAPI.pauseCudaDownload();
-    } catch {}
+    } catch (err) {
+      logError('GeneralTab', err);
+    }
   };
 
   const handleCudaResume = async () => {
     try {
       await window.electronAPI.resumeCudaDownload();
-    } catch {}
+    } catch (err) {
+      logError('GeneralTab', err);
+    }
   };
 
   const handleCudaCancel = async () => {
     try {
       await window.electronAPI.cancelCudaDownload();
       setCudaDownload(null);
-    } catch {}
+    } catch (err) {
+      logError('GeneralTab', err);
+    }
   };
 
   // GPU folder management

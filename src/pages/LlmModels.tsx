@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNotification } from '../components/Notification';
 import { Iconify } from '../utils/icons';
+import { logError, logWarning } from '../utils/errorHandler';
 
 interface LlmModelsProps {
   onSuccess: (message: string) => void;
@@ -116,7 +117,7 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
         });
       }
     } catch (err: any) {
-      console.error('[LlmModels] loadData error:', err?.message || err);
+      logError('LlmModels', err);
       if (!silent) setModelsPath('Gagal memuat');
     } finally {
       if (!silent) setLoading(false);
@@ -240,7 +241,9 @@ function LlmModels({ onSuccess, onError }: LlmModelsProps) {
   const handleCancelBinary = async () => {
     try {
       await window.electronAPI.llmCancelBinaryDownload();
-    } catch {}
+    } catch (err) {
+      logError('LlmModels', err);
+    }
     setDl({ type: null, modelName: '', progress: 0, state: 'idle', downloadedBytes: 0, totalBytes: 0 });
     notif.info('Download binary dibatalkan');
   };

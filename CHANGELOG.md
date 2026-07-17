@@ -1,5 +1,34 @@
 # Changelog VoiceFlow
 
+## [1.0.7] - 2026-07-16
+
+### Changed
+- **ErrorBoundary** — full rewrite: actionable error UI dengan Reload, Go Home, Copy Error Report, collapsible Technical Details
+- **Centralized error handler** — `src/utils/errorHandler.ts`: logError, logWarning, getErrorMessage, safeAsync, safeSync
+- **Silent catch blocks replaced** — semua `catch(() => {})` di MiniBar, VerticalMiniBar, Settings, Models, Benchmark, LlmModels sekarang log ke console dengan context
+
+### Files
+- `src/components/ErrorBoundary.tsx` — rewrite
+- `src/utils/errorHandler.ts` — new
+- `src/components/MiniBar/MiniBar.tsx` — update (5 catches)
+- `src/components/VerticalMiniBar.tsx` — update (3 catches)
+- `src/pages/History.tsx` — update (6 catches)
+- `src/pages/Models.tsx` — update (5 catches)
+- `src/pages/Benchmark.tsx` — update (1 catch)
+- `src/pages/LlmModels.tsx` — update (2 catches)
+- `src/pages/Settings/GeneralTab.tsx` — update (4 catches)
+- `src/pages/Settings/useSettings.ts` — update (6 catches)
+
+---
+
+## [1.0.6] - 2026-07-16
+
+### Analysis
+- **HuggingFace Model Scan** — Complete review of HF for better ASR models than current whisper.cpp large-v3-turbo.
+- Found 3 candidates: distil-large-v3.5 (drop-in, 3% better WER, 1.46x faster, EN only), Fun-ASR-MLT-Nano-2512 (GGUF, 31 languages incl. ID, needs transcribe.cpp), Fun-ASR-Nano-2512 (GGUF, CN/EN/JP only).
+- **distil-large-v3.5-ggml** is the only drop-in replacement compatible with existing whisper-cli.exe v1.9.1
+- **Fun-ASR-MLT-Nano** supports Indonesian but requires separate transcribe.cpp binary integration — major effort.
+
 ## [1.0.5] - 2026-07-14
 
 ### Changed

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { WavRecorder } from '../utils/wavRecorder';
 import { Iconify, getModelIcon, getModelSizeColor } from '../utils/icons';
+import { logError } from '../utils/errorHandler';
 
 interface BenchResult {
   model: string;
@@ -95,7 +96,7 @@ export default function Benchmark() {
     try {
       await window.electronAPI.runBenchmark(audioBuffer, selectedModels);
     } catch (err: any) {
-      console.error('Benchmark error:', err);
+      logError('Benchmark', err);
     }
     setRunning(false);
   };

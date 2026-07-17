@@ -10,6 +10,7 @@ import { playSound } from '../../utils/soundEffects';
 import { getLanguageByCode, getNextLanguage } from '../../utils/languages';
 import { MINI_BAR_BASE_HEIGHT, MINI_BAR_BASE_WIDTH, MINI_BAR_MIN_HEIGHT, MINI_BAR_MAX_HEIGHT, WAVEFORM_POINTS } from '../../utils/constants';
 import { findBestMic, filterRealMics } from '../../utils/micDetector';
+import { logError, logWarning } from '../../utils/errorHandler';
 import VerticalMiniBar from '../VerticalMiniBar';
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
@@ -112,7 +113,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
       }),
       window.electronAPI.onReloadSettings?.(() => { loadSettings(); }),
     ];
-    window.electronAPI.getTargetApp().then(setTargetApp).catch(() => {});
+    window.electronAPI.getTargetApp().then(setTargetApp).catch((err) => logWarning('MiniBar', 'Failed to get target app', err));
 
     // Close lang dropdown on outside click
     const handleOutsideClick = (e: MouseEvent) => {
@@ -130,7 +131,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     window.electronAPI.getGpuStatus().then((s) => {
       if (s.hasGpu && !s.cudaDllsPresent) setGpuStatus('GPU');
       else setGpuStatus(null);
-    }).catch(() => {});
+    }).catch((err) => logWarning('MiniBar', 'Failed to get GPU status', err));
 
     return () => {
       unsubs.forEach((u) => u());
@@ -165,18 +166,20 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
           // Verify current selection still works
           findBestMic(s.selected_mic).then(best => {
             if (best.deviceId && best.deviceId !== s.selected_mic) {
-              window.electronAPI.updateSetting('selected_mic', best.deviceId).catch(() => {});
+              window.electronAPI.updateSetting('selected_mic', best.deviceId)
+                .catch((err) => logWarning('MiniBar', 'Failed to save mic selection', err));
               setSettings(prev => ({ ...prev, selected_mic: best.deviceId }));
             }
-          });
+          }).catch((err) => logWarning('MiniBar', 'Failed to verify mic', err));
         } else {
           // No mic selected — auto-detect best one
           findBestMic().then(best => {
             if (best.deviceId) {
-              window.electronAPI.updateSetting('selected_mic', best.deviceId).catch(() => {});
+              window.electronAPI.updateSetting('selected_mic', best.deviceId)
+                .catch((err) => logWarning('MiniBar', 'Failed to save mic selection', err));
               setSettings(prev => ({ ...prev, selected_mic: best.deviceId }));
             }
-          });
+          }).catch((err) => logWarning('MiniBar', 'Failed to auto-detect mic', err));
         }
       } catch (err) {
         console.warn('[MiniBar] Mic preflight failed:', err);
@@ -187,7 +190,8 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
   // Save zoom to settings when it changes
   useEffect(() => {
     if (windowHeight !== 64) {
-      window.electronAPI.updateSetting('mini_bar_scale', String(miniZoom)).catch(() => {});
+      window.electronAPI.updateSetting('mini_bar_scale', String(miniZoom))
+        .catch((err) => logWarning('MiniBar', 'Failed to save zoom scale', err));
     }
   }, [miniZoom]);
 

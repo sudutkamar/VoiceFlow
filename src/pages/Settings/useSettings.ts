@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SettingsData, DictEntry, SnippetEntry, GpuStatus, CudaDownloadState, LearnedCorrection, AdaptiveStats } from './types';
 import { filterRealMics } from '../../utils/micDetector';
+import { logError, logWarning } from '../../utils/errorHandler';
 
 export function useSettings(onSuccess: (msg: string) => void, onError: (msg: string) => void) {
   const [settings, setSettings] = useState<SettingsData>({});
@@ -50,7 +51,7 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
       const sn = await window.electronAPI.getSnippets();
       setSnippets(sn);
     } catch (err) {
-      console.warn('[Settings] Failed to load data:', err);
+      logWarning('useSettings', 'Failed to load data', err);
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
       // Store ALL mics (components will filter as needed)
       setMics(allMics);
     } catch (err) {
-      console.warn('[Settings] Failed to load mics:', err);
+      logWarning('useSettings', 'Failed to load mics', err);
     }
   };
 
@@ -72,7 +73,7 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
       const status = await window.electronAPI.getGpuStatus();
       setGpuStatus(status);
     } catch (err) {
-      console.warn('[Settings] Failed to load GPU status:', err);
+      logWarning('useSettings', 'Failed to load GPU status', err);
     }
   };
 
@@ -81,7 +82,7 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
       const models = await window.electronAPI.getAvailableModels();
       setAvailableModels(models);
     } catch (err) {
-      console.warn('[Settings] Failed to load models:', err);
+      logWarning('useSettings', 'Failed to load models', err);
     }
   };
 
@@ -90,6 +91,7 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
       const v = await window.electronAPI.getVersion?.();
       setAppVersion(v || '1.0.0');
     } catch (err) {
+      logWarning('useSettings', 'Failed to load version', err);
       setAppVersion('1.0.0');
     }
   };
@@ -101,7 +103,7 @@ export function useSettings(onSuccess: (msg: string) => void, onError: (msg: str
       const stats = await window.electronAPI.getAdaptiveStats();
       setAdaptiveStats(stats);
     } catch (err) {
-      console.warn('[Settings] Failed to load learned corrections:', err);
+      logWarning('useSettings', 'Failed to load learned corrections', err);
     }
   };
 

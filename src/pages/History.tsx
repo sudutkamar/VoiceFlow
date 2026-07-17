@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Iconify } from '../utils/icons';
+import { logError } from '../utils/errorHandler';
 
 interface HistoryProps {
   onSuccess: (message: string) => void;
@@ -66,7 +67,7 @@ function History({ onSuccess }: HistoryProps) {
       const items = await window.electronAPI.getHistory(200);
       setHistory(items);
     } catch (error) {
-      console.error('Failed to load history:', error);
+      logError('History', error);
     } finally {
       setLoading(false);
     }
@@ -78,7 +79,7 @@ function History({ onSuccess }: HistoryProps) {
       setHistory(history.filter(item => item.id !== id));
       onSuccess('Deleted');
     } catch (error) {
-      console.error('Failed to delete:', error);
+      logError('History', error);
     }
   };
 
@@ -89,7 +90,7 @@ function History({ onSuccess }: HistoryProps) {
       setHistory([]);
       onSuccess('History cleared');
     } catch (error) {
-      console.error('Failed to clear:', error);
+      logError('History', error);
     }
   };
 
@@ -100,7 +101,7 @@ function History({ onSuccess }: HistoryProps) {
       onSuccess('Copied!');
       setTimeout(() => setCopiedId(null), 1500);
     } catch (error) {
-      console.error('Failed to copy:', error);
+      logError('History', error);
     }
   };
 
@@ -113,7 +114,7 @@ function History({ onSuccess }: HistoryProps) {
         alert(result.error);
       }
     } catch (error) {
-      console.error('Failed to export:', error);
+      logError('History', error);
     }
   };
 

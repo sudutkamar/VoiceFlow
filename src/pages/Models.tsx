@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNotification } from '../components/Notification';
 import { Iconify, getModelIcon, getModelSizeColor } from '../utils/icons';
+import { logError, logWarning } from '../utils/errorHandler';
 
 interface ModelsProps {
   onSuccess: (message: string) => void;
@@ -48,7 +49,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
       const available = await window.electronAPI.getAvailableModels();
       setModels(available);
     } catch (error) {
-      console.error('Failed to load models:', error);
+      logError('Models', error);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -74,7 +75,7 @@ function Models({ onSuccess, onError }: ModelsProps) {
         notif.warning('Tidak ada model ditemukan di folder ini');
       }
     } catch (error) {
-      console.error('Failed to scan models folder:', error);
+      logError('Models', error);
       notif.error('Gagal scan folder models');
     } finally {
       setScanning(false);
@@ -85,14 +86,18 @@ function Models({ onSuccess, onError }: ModelsProps) {
     try {
       const settings = await window.electronAPI.getSettings();
       setSelectedModel(settings.model || 'ggml-base.bin');
-    } catch {}
+    } catch (err) {
+      logWarning('Models', 'Failed to load settings', err);
+    }
   }, []);
 
   const loadModelsPath = useCallback(async () => {
     try {
       const path = await window.electronAPI.getModelsPath();
       setModelsPath(path);
-    } catch {}
+    } catch (err) {
+      logWarning('Models', 'Failed to load models path', err);
+    }
   }, []);
 
   useEffect(() => {
@@ -126,7 +131,9 @@ function Models({ onSuccess, onError }: ModelsProps) {
         if (interrupted && !data.modelName) {
           setInterruptedDownload(interrupted);
         }
-      } catch {}
+      } catch (err) {
+        logWarning('Models', 'Failed to sync download state', err);
+      }
     })();
 
     // Listen for download progress updates — LIVE handler with notification/auto-select
