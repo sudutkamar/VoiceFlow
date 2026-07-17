@@ -273,6 +273,31 @@ body.mini-mode, html.mini-mode { background: transparent; }
   line-height: 1;
 }
 
+/* Warmup status indicator */
+.m-warmup-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 40px;
+  flex: 0 0 auto;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.m-warmup-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #666;
+  transition: background 0.3s ease;
+}
+
+.m-warmup-dot.ready {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+}
+
 .m-lang-arrow {
   width: 9px;
   height: 9px;

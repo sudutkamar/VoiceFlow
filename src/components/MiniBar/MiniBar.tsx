@@ -29,6 +29,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
   const [gpuStatus, setGpuStatus] = useState<string | null>(null);
   const [windowHeight, setWindowHeight] = useState(64);
   const [windowWidth, setWindowWidth] = useState(460);
+  const [warmupStatus, setWarmupStatus] = useState<{ ready: boolean; model: string; gpuAvailable: boolean }>({ ready: false, model: '', gpuAvailable: false });
   const langRef = useRef<HTMLDivElement>(null);
 
   const recorder = useRecorder(settings, {
@@ -132,6 +133,12 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
       if (s.hasGpu && !s.cudaDllsPresent) setGpuStatus('GPU');
       else setGpuStatus(null);
     }).catch((err) => logWarning('MiniBar', 'Failed to get GPU status', err));
+    
+    // Check warmup status (query existing state)
+    window.electronAPI.getWarmupStatus().then(setWarmupStatus).catch(() => {});
+    // Subscribe to warmup-complete event (for real-time updates)
+    const unsubWarmup = window.electronAPI.onWarmupComplete?.(setWarmupStatus);
+    unsubs.push(unsubWarmup || (() => {}));
 
     return () => {
       unsubs.forEach((u) => u());
@@ -339,6 +346,13 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
             <span className="m-lang-current">{currentLang.short}</span>
           </button>
         </div>
+
+        {/* Warmup status indicator */}
+        {warmupStatus.ready && (
+          <div className="m-warmup-status" title={`Model: ${warmupStatus.model}${warmupStatus.gpuAvailable ? ' (GPU)' : ''}`}>
+            <span className="m-warmup-dot ready" />
+          </div>
+        )}
 
         {/* Mic / Record */}
         <button
