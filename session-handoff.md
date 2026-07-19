@@ -1,10 +1,10 @@
 # Session Handoff
 
-## Session: 2026-07-19 (Session 23 — Tauri Migration Verified)
+## Session: 2026-07-19 (Session 24 — Tauri Tray + Hotkey + On-Demand Mini)
 
 ### Summary
 
-**Tauri 2 migration verified** — Backend compiles, builds, and runs successfully on `dev` branch.
+**Tauri 2 tray icon + global shortcut + on-demand mini window** — All features working on `dev` branch.
 
 ### Verified Results
 
