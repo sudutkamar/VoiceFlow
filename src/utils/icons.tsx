@@ -99,31 +99,35 @@ export function Iconify({ icon, size = 18, className = '' }: { icon: IconName; s
   return <Icon icon={iconId} width={size} height={size} className={className} />;
 }
 
-export function getModelIcon(name: string): IconName {
-  if (name.includes('tiny')) return 'modelTiny';
-  if (name.includes('base-q5_1')) return 'modelBase';
-  if (name.includes('base')) return 'modelBase';
-  if (name.includes('small')) return 'modelSmall';
-  if (name.includes('medium')) return 'modelMedium';
-  if (name.includes('large-v3-q5_0')) return 'modelLargeV3';
-  if (name.includes('large-v3-turbo-q8_0')) return 'modelLargeV3Turbo';
-  if (name.includes('large-v3-turbo-q5_0')) return 'modelLargeV3Turbo';
-  if (name.includes('large-v3-turbo')) return 'modelLargeV3Turbo';
-  if (name.includes('large-v3')) return 'modelLargeV3';
-  if (name.includes('large')) return 'modelLarge';
+export function getModelIcon(name: string | undefined | null): IconName {
+  if (!name) return 'modelCustom';
+  const lower = name.toLowerCase();
+  if (lower.includes('tiny')) return 'modelTiny';
+  if (lower.includes('base-q5_1')) return 'modelBase';
+  if (lower.includes('base')) return 'modelBase';
+  if (lower.includes('small')) return 'modelSmall';
+  if (lower.includes('medium')) return 'modelMedium';
+  if (lower.includes('large-v3-q5_0')) return 'modelLargeV3';
+  if (lower.includes('large-v3-turbo-q8_0')) return 'modelLargeV3Turbo';
+  if (lower.includes('large-v3-turbo-q5_0')) return 'modelLargeV3Turbo';
+  if (lower.includes('large-v3-turbo')) return 'modelLargeV3Turbo';
+  if (lower.includes('large-v3')) return 'modelLargeV3';
+  if (lower.includes('large')) return 'modelLarge';
   return 'modelCustom';
 }
 
-export function getModelSizeColor(name: string): string {
-  if (name.includes('tiny')) return '#94a3b8';
-  if (name.includes('base')) return '#60a5fa';
-  if (name.includes('small')) return '#34d399';
-  if (name.includes('medium')) return '#fbbf24';
-  if (name.includes('large-v3-q5_0')) return '#8b5cf6';
-  if (name.includes('large-v3-turbo-q8_0')) return '#f97316';
-  if (name.includes('large-v3-turbo-q5_0')) return '#f97316';
-  if (name.includes('large-v3-turbo')) return '#f97316';
-  if (name.includes('large-v3')) return '#ec4899';
-  if (name.includes('large')) return '#a78bfa';
+export function getModelSizeColor(name: string | undefined | null): string {
+  if (!name) return '#6b7280';
+  const lower = name.toLowerCase();
+  if (lower.includes('tiny')) return '#94a3b8';
+  if (lower.includes('base')) return '#60a5fa';
+  if (lower.includes('small')) return '#34d399';
+  if (lower.includes('medium')) return '#fbbf24';
+  if (lower.includes('large-v3-q5_0')) return '#8b5cf6';
+  if (lower.includes('large-v3-turbo-q8_0')) return '#f97316';
+  if (lower.includes('large-v3-turbo-q5_0')) return '#f97316';
+  if (lower.includes('large-v3-turbo')) return '#f97316';
+  if (lower.includes('large-v3')) return '#ec4899';
+  if (lower.includes('large')) return '#a78bfa';
   return '#6b7280';
 }
