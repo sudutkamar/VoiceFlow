@@ -286,14 +286,22 @@ export default function VerticalMiniBar({ settings }: Props) {
           {/* Recording — dot + timer inside button */}
           {isRec && (
             <div className="vmb-recording-core">
-              <span className="vmb-live-dot" />
+              <span 
+                className="vmb-live-dot"
+                style={{
+                  transform: `scale(${0.8 + (micLevel / 100) * 0.6})`,
+                  boxShadow: `0 0 ${8 + (micLevel / 100) * 16}px rgba(239, 68, 68, ${0.6 + (micLevel / 100) * 0.4}), 0 0 ${16 + (micLevel / 100) * 24}px rgba(239, 68, 68, ${0.3 + (micLevel / 100) * 0.3})`
+                } as React.CSSProperties}
+              />
               <span className="vmb-time">{fmt(time)}</span>
             </div>
           )}
 
-          {/* Processing — spinner */}
+          {/* Processing — spinner only (vertical has limited space) */}
           {isProc && (
-            <div className="vmb-spinner" />
+            <div className="vmb-processing-core">
+              <div className="vmb-spinner" />
+            </div>
           )}
 
           {/* Done — checkmark */}

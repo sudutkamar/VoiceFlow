@@ -26,6 +26,15 @@ export const DEFAULT_VAD_SILENCE_MS = 3000;
 /** Default RMS threshold for silence detection (0-1) */
 export const DEFAULT_SILENCE_THRESHOLD = 0.01;
 
+/** VAD: RMS threshold for speech detection (0-1). Above this = speech, below = silence. */
+export const VAD_SPEECH_THRESHOLD = 0.020;
+
+/** VAD: Hangover time after last speech before silence timer starts (ms). Prevents false stops during natural pauses. */
+export const VAD_HANGOVER_MS = 500;
+
+/** VAD: Exponential moving average alpha for RMS smoothing (0-1). Higher = less smoothing. */
+export const VAD_SMOOTHING_ALPHA = 0.3;
+
 // ═══════════════════════════════════════════════════════════════
 //  UI — Mini Bar
 // ═══════════════════════════════════════════════════════════════

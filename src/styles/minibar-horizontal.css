@@ -846,6 +846,7 @@ body.mini-mode, html.mini-mode { background: transparent; }
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.6);
+  transition: width 0.2s ease, background 0.3s ease, border-color 0.3s ease;
 }
 
 .m-voice-btn::before {
@@ -901,7 +902,12 @@ body.mini-mode, html.mini-mode { background: transparent; }
   animation: micPulse 2s ease-in-out infinite;
 }
 
-.m-voice-btn.processing,
+.m-voice-btn.processing {
+  width: 120px;
+  background: linear-gradient(135deg, rgba(99, 182, 255, 0.15), rgba(99, 182, 255, 0.08));
+  border-color: rgba(99, 182, 255, 0.3);
+}
+
 .m-voice-btn.done {
   width: 90px;
 }
@@ -933,14 +939,8 @@ body.mini-mode, html.mini-mode { background: transparent; }
   height: 8px;
   border-radius: 50%;
   background: #ef4444;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.8), 0 0 24px rgba(239, 68, 68, 0.4);
-  animation: livePulse 1s ease-in-out infinite;
   flex-shrink: 0;
-}
-
-@keyframes livePulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.8), 0 0 24px rgba(239, 68, 68, 0.4); transform: scale(1); }
-  50% { box-shadow: 0 0 18px rgba(239, 68, 68, 1), 0 0 36px rgba(239, 68, 68, 0.6); transform: scale(1.15); }
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out;
 }
 
 .m-recording-core .m-canvas {
@@ -961,10 +961,22 @@ body.mini-mode, html.mini-mode { background: transparent; }
   color: rgba(255, 255, 255, 0.82);
 }
 
+.m-processing-core {
+  gap: 10px;
+}
+
 .m-processing-core .m-spinner {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-width: 2px;
+}
+
+.m-processing-core .m-processing-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .m-done-core span:last-child {

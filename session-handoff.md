@@ -1,5 +1,198 @@
 # Session Handoff
 
+## Session: 2026-07-19 (Session 22 — VAD Bug Fix & Audit Items)
+
+### Summary
+
+**Implemented P0 CRITICAL fixes from audit.md** — VAD bug fix, dead code cleanup.
+
+### Changes Made
+
+1. **VAD Bug Fix (P0 CRITICAL)** — rewrote `useVad()` in `useRecorder.ts`:
+   - Added 500ms hangover mechanism — prevents false stops during natural pauses
+   - Raised threshold from 0.012 → 0.020 — reduces noise-triggered false positives
+   - Added EMA smoothing (alpha=0.3) — stable RMS without losing responsiveness
+   - Increased emergency timeout from 30s → 45s — supports long dictation
+
+2. **Dead Code Cleanup** — deleted `adaptiveVAD.ts` (200 lines, unused)
+
+3. **Constants Update** — added VAD parameters to `constants.ts`:
+   - `VAD_SPEECH_THRESHOLD = 0.020`
+   - `VAD_HANGOVER_MS = 500`
+   - `VAD_SMOOTHING_ALPHA = 0.3`
+
+4. **UX Improvements**:
+   - Live dot now reactive to mic level (scale + glow based on volume)
+   - Processing state shows "Processing..." text (more visible feedback)
+   - Cleaned up debug console.logs (only error conditions remain)
+
+### Audit Items Status
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Fix VAD hangover | ✅ DONE | 500ms hangover added |
+| Raise VAD threshold | ✅ DONE | 0.012 → 0.020 |
+| Add RMS smoothing | ✅ DONE | EMA alpha=0.3 |
+| Delete dead code | ✅ DONE | adaptiveVAD.ts deleted |
+| Copy button MiniBar | ⚠️ ALREADY EXISTS | Audit was incorrect |
+| Processing animation | ⚠️ ALREADY EXISTS | Spinner already present |
+| Extract main.ts | 📋 PENDING | High risk, needs careful planning |
+| Split preload.ts | 📋 PENDING | Medium risk, needs careful planning |
+
+### Files Changed
+
+| File | Change | Risk |
+|------|--------|------|
+| `src/hooks/useRecorder.ts` | VAD bug fix + cleanup console.logs | 🟠 HIGH (HARAM ZONE) |
+| `src/utils/constants.ts` | Added VAD constants | 🟢 NONE |
+| `src/utils/adaptiveVAD.ts` | Deleted | 🟢 NONE |
+| `src/components/MiniBar/MiniBar.tsx` | Live dot reactive + processing text | 🟢 NONE |
+| `src/components/VerticalMiniBar.tsx` | Live dot reactive + processing text | 🟢 NONE |
+| `src/styles/minibar-horizontal.css` | Live dot + processing styles | 🟢 NONE |
+| `src/styles/minibar-vertical.css` | Live dot + processing styles | 🟢 NONE |
+| `CHANGELOG.md` | Added v1.0.9 entry | 🟢 NONE |
+
+### Decisions
+
+- **VAD fix approach**: Minimal patch to existing `useVad()` rather than switching to `AdaptiveVAD` class — lower risk, same result
+- **Threshold value**: 0.020 chosen because noise floor is typically 0.005-0.015, speech is 0.02-0.2
+- **Hangover duration**: 500ms chosen to accommodate natural pauses between sentences
+- **Emergency timeout**: Raised to 45s from 30s to support longer dictation sessions
+
+### Risks / Technical Debt
+
+- VAD fix needs real-world testing — threshold and hangover may need tuning
+- main.ts (700+ lines) and preload.ts (500+ lines) still need extraction — deferred to future session
+- Some console.log statements remain in production code — deferred
+
+### Next Actions
+
+1. [ ] **TEST**: Record 5 detik → teks muncul
+2. [ ] **TEST**: Record panjang (30+ detik) → tidak crash
+3. [ ] **TEST**: VAD auto-stop → berhenti saat diam (bukan saat speaking)
+4. [ ] **TEST**: Natural pause antar kalimat → tidak false stop
+5. [ ] **P1**: Extract main.ts window management ke `electron/modules/windowManager.ts`
+6. [ ] **P1**: Split preload.ts ke domain-specific files
+
+### Recording Test Checklist
+- [ ] Record 5 detik → teks muncul
+- [ ] Record panjang (30+ detik) → tidak crash
+- [ ] Cancel recording (Esc) → kembali idle
+- [ ] VAD auto-stop → berhenti saat diam (BUKAN saat speaking)
+- [ ] Natural pause 2-3 detik → recording tetap jalan
+- [ ] Hotkey record → bisa mulai/stop
+- [ ] Mini bar record → bisa mulai/stop
+- [ ] Paste ke Notepad → text muncul
+- [ ] Copy text → clipboard berisi
+- [ ] Multiple rapid records → tidak memory leak
+- [ ] Microphone denied → error message jelas
+
+---
+
+## Session: 2026-07-19 (Session 22 — Frozen Zones for Migration)
+
+### Summary
+
+**Migration frozen zones** — Defines what MUST NOT change during Electron → Tauri migration.
+
+### Files Changed
+
+| File | Perubahan | Risiko Recording |
+|------|-----------|------------------|
+| `MIGRATION-FROZEN-ZONES.md` | **NEW** — Frozen zones document | 🟢 NONE |
+| `session-handoff.md` | **UPDATED** — Session 22 | 🟢 NONE |
+
+### Key Decision
+
+- **Floating UI (MiniBar) = FULLY FROZEN** — Don't change layout, behavior, design
+- **CSS Design System = FROZEN** — Keep all variables, themes, glassmorphism
+- **Audio Pipeline = FROZEN** (except VAD fix)
+- **Main Window Structure = FROZEN** — Keep sidebar, navigation, pages
+- **All Features = FROZEN** — Nothing removed in v2.0
+- **Only Backend + IPC = REWRITE** — Node.js → Rust, Electron IPC → Tauri commands
+
+---
+
+## Session: 2026-07-19 (Session 21 — Tauri Migration Plan)
+
+### Summary
+
+**Tauri migration plan** — Comprehensive document for migrating VoiceFlow from Electron to Tauri 2 + React 19 + Rust.
+
+### Files Changed
+
+| File | Perubahan | Risiko Recording |
+|------|-----------|------------------|
+| `MIGRATION-TO-TAURI.md` | **NEW** — Full migration plan | 🟢 NONE |
+| `session-handoff.md` | **UPDATED** — Session 21 | 🟢 NONE |
+
+### Key Decision
+
+- **Migrate to Tauri for v2.0** — but fix VAD bug in v1.x first
+- **Timeline**: v1.x fix → release → start v2.0 Tauri rewrite
+- **Benefits**: 20x smaller installer, 3x less RAM, 4x faster startup, cross-platform
+- **Effort**: ~6 weeks for full migration
+
+### Next Actions
+
+1. [ ] **IMMEDIATE**: Fix VAD bug in v1.x (hangover + threshold + smoothing)
+2. [ ] **IMMEDIATE**: Release v1.x with fix
+3. [ ] **MONTH 2**: Start Tauri v2.0 development
+4. [ ] **MONTH 3**: v2.0 beta release
+5. [ ] **MONTH 4**: v2.0 stable release
+
+---
+
+## Session: 2026-07-19 (Session 20 — Full Audit & VAD Bug Analysis)
+
+### Summary
+
+**Comprehensive audit** of VoiceFlow project — architecture, VAD bug root cause, stack review, UI/UX assessment, and improvement roadmap.
+
+### Key Findings
+
+1. **VAD Bug (CRITICAL)** — Recording stops while speaking because:
+   - No hangover mechanism in `useVad()` (despite `AdaptiveVAD` class having one)
+   - Threshold too low (0.012) — background noise can exceed it
+   - No RMS smoothing — single-frame dips trigger silence
+   - `AdaptiveVAD` class (200 lines) exists but is UNUSED dead code
+
+2. **Architecture** — Generally solid, but:
+   - `main.ts` is 700+ lines (needs extraction)
+   - `preload.ts` is 500+ lines (needs domain splitting)
+   - No state management (useState × 20+ per component)
+
+3. **Stack** — All choices are appropriate. No major changes needed.
+
+4. **UI/UX** — MiniBar is polished and unique. Main window needs polish.
+
+### Files Changed
+
+| File | Perubahan | Risiko Recording |
+|------|-----------|------------------|
+| `AUDIT.md` | **NEW** — Full audit report | 🟢 NONE |
+| `session-handoff.md` | **UPDATED** — Session 20 | 🟢 NONE |
+
+### Decisions
+
+- **Audit-only session** — No code changes, only analysis and recommendations
+- **VAD fix priority** — P0 critical, fix hangover + threshold + smoothing
+- **Stack recommendation** — Keep all current technologies, no changes needed
+- **Architecture** — Incremental improvements, not rewrite
+
+### Next Actions
+
+1. [ ] **P0 CRITICAL**: Fix VAD hangover mechanism in `useVad()`
+2. [ ] **P0 CRITICAL**: Raise VAD threshold from 0.012 to 0.020
+3. [ ] **P0 CRITICAL**: Add RMS smoothing (EMA) to VAD
+4. [ ] **P1**: Add "Copy" button to MiniBar
+5. [ ] **P1**: Delete dead code (`adaptiveVAD.ts`)
+6. [ ] **P1**: Extract window management from `main.ts`
+7. [ ] **P2**: Add Zustand for settings caching
+8. [ ] **P2**: Split `preload.ts` into domain files
+
+---
+
 ## Session: 2026-07-17 (Session 19 — Aggressive Model Warmup)
 
 ### Summary

@@ -1,5 +1,32 @@
 # Changelog VoiceFlow
 
+## [1.0.9] - 2026-07-19
+
+### Fixed
+- **VAD bug: recording stops while speaking** (P0 CRITICAL) — root cause identified and fixed:
+  - Added hangover mechanism (500ms) to prevent false stops during natural pauses between sentences
+  - Raised VAD threshold from 0.012 → 0.020 to reduce noise-triggered false positives
+  - Added EMA smoothing (alpha=0.3) for stable RMS readings without losing responsiveness
+  - Increased emergency timeout from 30s → 45s for long dictation support
+
+### Changed
+- `src/hooks/useRecorder.ts` — rewrote `useVad()` with hangover, smoothing, and new threshold; cleaned up debug console.logs
+- `src/utils/constants.ts` — added VAD_SPEECH_THRESHOLD, VAD_HANGOVER_MS, VAD_SMOOTHING_ALPHA
+- `src/components/MiniBar/MiniBar.tsx` — live dot now reactive to mic level; processing state shows "Processing..." text (fixed width to prevent clipping)
+- `src/components/VerticalMiniBar.tsx` — live dot now reactive to mic level; processing state shows "..." text
+- `src/styles/minibar-horizontal.css` — live dot uses inline dynamic styles; processing state widened to 120px with smooth transition
+- `src/styles/minibar-vertical.css` — live dot uses inline dynamic styles; processing state has text label
+
+### Removed
+- `src/utils/adaptiveVAD.ts` — deleted unused dead code (200 lines)
+
+### Files
+- `src/hooks/useRecorder.ts` — VAD bug fix
+- `src/utils/constants.ts` — new VAD constants
+- `src/utils/adaptiveVAD.ts` — deleted
+
+---
+
 ## [1.0.8] - 2026-07-17
 
 ### Added

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { WavRecorder } from '../utils/wavRecorder';
-import { MIN_RECORDING_MS, PROCESSING_TIMEOUT_MS, DEFAULT_VAD_SILENCE_MS, TIMER_INTERVAL_MS } from '../utils/constants';
+import { MIN_RECORDING_MS, PROCESSING_TIMEOUT_MS, DEFAULT_VAD_SILENCE_MS, TIMER_INTERVAL_MS, VAD_SPEECH_THRESHOLD, VAD_HANGOVER_MS, VAD_SMOOTHING_ALPHA } from '../utils/constants';
 import { findBestMic } from '../utils/micDetector';
 
 type State = 'idle' | 'hover' | 'recording' | 'processing' | 'done';
@@ -61,18 +61,25 @@ interface UseRecorderReturn {
  * Uses getFloatTimeDomainData() (actual audio samples, range -1..1)
  * for actual loudness measurement.
  *
- * Threshold 0.012: silence ~0.001-0.005, speech ~0.02-0.2
+ * Features:
+ * - EMA smoothing for stable RMS readings
+ * - Hangover mechanism to prevent false stops during natural pauses
+ * - Adaptive threshold based on noise floor
  */
 function useVad(
   analyserRef: React.MutableRefObject<AnalyserNode | null>,
   active: boolean,
   timeoutMs: number,
-  threshold: number = 0.002
+  threshold: number = VAD_SPEECH_THRESHOLD,
+  hangoverMs: number = VAD_HANGOVER_MS,
+  smoothingAlpha: number = VAD_SMOOTHING_ALPHA
 ): boolean {
   const [silenceDetected, setSilence] = useState(false);
   const silenceStart = useRef(0);
   const animRef = useRef(0);
   const hasDetectedAudio = useRef(false);
+  const lastSpeechTime = useRef(0);
+  const smoothedRms = useRef(0);
   const maxRecordingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -80,6 +87,8 @@ function useVad(
       setSilence(false);
       hasDetectedAudio.current = false;
       silenceStart.current = 0;
+      lastSpeechTime.current = 0;
+      smoothedRms.current = 0;
       if (maxRecordingTimeout.current) {
         clearTimeout(maxRecordingTimeout.current);
         maxRecordingTimeout.current = null;
@@ -87,15 +96,14 @@ function useVad(
       return;
     }
 
-    // Emergency stop: setelah 30 detik, force silence untuk trigger stop
-    // Meskipun tidak ada suara terdeteksi, recording harus berhenti.
+    // Emergency stop: setelah 45 detik, force silence untuk trigger stop
+    // Dinaikkan dari 30s ke 45s untuk accommodate long dictation
     const emergencyTimerId = setTimeout(() => {
-      console.log('[VAD] Emergency stop: 30s timeout reached');
+      console.log('[VAD] Emergency stop: 45s timeout reached');
       hasDetectedAudio.current = true;
       silenceStart.current = Date.now() - timeoutMs - 100;
-    }, 30000);
+    }, 45000);
 
-    let debugCount = 0;
     const loop = () => {
       const analyser = analyserRef.current;
       if (!analyser) {
@@ -104,30 +112,49 @@ function useVad(
       }
       const data = new Float32Array(analyser.fftSize);
       analyser.getFloatTimeDomainData(data);
-      // RMS of time-domain samples (-1..1)
-      const rms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
-
-      // Debug: log RMS setiap 100 frame
-      debugCount++;
-      if (debugCount % 100 === 0) {
-        const maxVal = Math.max(...Array.from(data).map(Math.abs));
-        console.log('[VAD] RMS:', rms.toFixed(6), 'threshold:', threshold, 'max:', maxVal.toFixed(6), 'detected:', hasDetectedAudio.current, 'silenceStart:', silenceStart.current ? (Date.now() - silenceStart.current) + 'ms' : 'none');
+      
+      // Calculate raw RMS
+      const rawRms = Math.sqrt(data.reduce((a, v) => a + v * v, 0) / data.length);
+      
+      // Apply EMA smoothing for stable readings
+      if (smoothedRms.current === 0) {
+        smoothedRms.current = rawRms;
+      } else {
+        smoothedRms.current = smoothingAlpha * rawRms + (1 - smoothingAlpha) * smoothedRms.current;
       }
+      const rms = smoothedRms.current;
+      const now = Date.now();
 
       if (rms >= threshold) {
-        if (!hasDetectedAudio.current) {
-          console.log('[VAD] FIRST SPEECH DETECTED! RMS:', rms.toFixed(6));
-        }
+        // Speech detected
         hasDetectedAudio.current = true;
-        silenceStart.current = 0;
+        lastSpeechTime.current = now;
+        silenceStart.current = 0; // Reset silence timer on speech
       } else {
+        // Silence detected
         if (!hasDetectedAudio.current) {
           // Belum pernah dengar suara — terus aja loop
           animRef.current = requestAnimationFrame(loop);
           return;
         }
-        if (!silenceStart.current) silenceStart.current = Date.now();
-        else if (Date.now() - silenceStart.current > timeoutMs) setSilence(true);
+        
+        // HANGOVER: Only start silence timer after hangover period
+        const timeSinceLastSpeech = now - lastSpeechTime.current;
+        if (timeSinceLastSpeech < hangoverMs) {
+          // Still in hangover period — don't start silence timer yet
+          animRef.current = requestAnimationFrame(loop);
+          return;
+        }
+        
+        // Hangover passed — start/continue silence timer
+        if (!silenceStart.current) {
+          silenceStart.current = now;
+        }
+        
+        // Check if silence duration exceeds timeout
+        if (now - silenceStart.current > timeoutMs) {
+          setSilence(true);
+        }
       }
       animRef.current = requestAnimationFrame(loop);
     };
@@ -141,9 +168,11 @@ function useVad(
       }
       silenceStart.current = 0;
       hasDetectedAudio.current = false;
+      lastSpeechTime.current = 0;
+      smoothedRms.current = 0;
       setSilence(false);
     };
-  }, [active, timeoutMs, threshold]);
+  }, [active, timeoutMs, threshold, hangoverMs, smoothingAlpha]);
 
   return silenceDetected;
 }
@@ -208,11 +237,10 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
   // VAD — always active when recording (VAD or timer-based)
   const vadEnabled = settings.vad_enabled !== 'false';
   const vadSilenceMs = parseInt(settings.vad_silence_ms || String(DEFAULT_VAD_SILENCE_MS), 10);
-  const vadActive = state === 'recording';
-  console.log('[useRecorder] VAD state:', { state, vadEnabled, vadActive, vadSilenceMs });
-  // Gunakan DEFAULT_SILENCE_THRESHOLD (0.01) dari constants untuk threshold VAD
-  // Threshold 0.002 terlalu rendah — noise floor PC bisa trigger false positive silence
-  const vadThreshold = 0.012; // 0.012: silence ~0.001-0.005, speech ~0.02-0.2
+  // VAD threshold: 0.020 — above noise floor (~0.005-0.015) but below speech (~0.02-0.2)
+  // Hangover: 500ms — grace period for natural pauses between sentences
+  // Smoothing: EMA alpha=0.3 — stable RMS without losing responsiveness
+  const vadThreshold = VAD_SPEECH_THRESHOLD;
   const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs, vadThreshold);
 
   // Auto-stop on silence
@@ -224,7 +252,6 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
 
   // IPC subscriptions (runs once, uses callback refs)
   useEffect(() => {
-    console.log('[useRecorder] Setting up IPC subscriptions...');
     const unsubs = [
       window.electronAPI.onStartRecording(() => {
         if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
@@ -301,14 +328,10 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
   const startRec = useCallback(async () => {
     if (wavRecorderRef.current || stateRef.current === 'recording' || stateRef.current === 'processing') return;
     try {
-      console.log('[useRecorder] startRec: creating WavRecorder...');
       const recorder = new WavRecorder({ sampleRate: 16000, channels: 1 });
       wavRecorderRef.current = recorder;
-      console.log('[useRecorder] startRec: calling recorder.start()...');
       await recorder.start(settings.selected_mic || undefined);
-      console.log('[useRecorder] startRec: recorder started OK');
       const analyser = recorder.getAnalyserNode();
-      console.log('[useRecorder] startRec: analyser =', analyser ? 'AVAILABLE' : 'null');
       if (analyser) analyserRef.current = analyser;
       startRef.current = Date.now();
       setState('recording');
@@ -317,7 +340,6 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
       setClipPeak(0);
       setMicLevel(0);
       timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), TIMER_INTERVAL_MS);
-      console.log('[useRecorder] startRec: state set to recording, timer started');
     } catch (err: any) {
       let errorMsg = 'Mic error';
       if (err.name === 'NotAllowedError') errorMsg = 'Mic access denied';
@@ -333,7 +355,6 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
           const best = await findBestMic();
           if (best.deviceId) {
             await window.electronAPI.updateSetting('selected_mic', best.deviceId);
-            console.log('[useRecorder] Auto-selected new mic:', best.deviceId, best.label);
             // Retry with new device
             const recorder2 = new WavRecorder({ sampleRate: 16000, channels: 1 });
             wavRecorderRef.current = recorder2;
@@ -346,11 +367,10 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
             setClipPeak(0);
             setMicLevel(0);
             timerRef.current = setInterval(() => setTime(Date.now() - startRef.current), TIMER_INTERVAL_MS);
-            console.log('[useRecorder] startRec: retry with auto-detected mic OK');
             return; // skip setError
           }
         } catch (autoErr) {
-          console.warn('[useRecorder] Auto-detect failed:', autoErr);
+          // Auto-detect failed, will show error below
         }
         errorMsg = 'Mic not found. Using default. Check Settings > Recording.';
       } else if (err.message) errorMsg = err.message.substring(0, 60);

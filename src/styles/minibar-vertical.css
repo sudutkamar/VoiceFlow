@@ -326,14 +326,8 @@
   height: 10px;
   border-radius: 50%;
   background: #ef4444;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.8), 0 0 24px rgba(239, 68, 68, 0.4);
-  animation: vmbLivePulse 1s ease-in-out infinite;
   flex-shrink: 0;
-}
-
-@keyframes vmbLivePulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(239,68,68,0.8), 0 0 24px rgba(239,68,68,0.4); transform: scale(1); }
-  50% { box-shadow: 0 0 18px rgba(239,68,68,1), 0 0 36px rgba(239,68,68,0.6); transform: scale(1.15); }
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out;
 }
 
 .vmb-time {
@@ -345,13 +339,28 @@
 }
 
 /* ── Spinner ── */
+.vmb-processing-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .vmb-spinner {
   width: 20px;
   height: 20px;
   border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: white;
+  border-top-color: var(--accent, #63b6ff);
   border-radius: 50%;
   animation: vmbSpin 0.8s linear infinite;
+}
+
+.vmb-processing-text {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent, #63b6ff);
+  letter-spacing: 0.02em;
 }
 
 @keyframes vmbSpin {
