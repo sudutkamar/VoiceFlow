@@ -6,7 +6,10 @@ pub mod paste;
 pub mod utils;
 
 use tokio::sync::Mutex;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
+use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri_plugin_global_shortcut::{ShortcutState, GlobalShortcutExt};
 
 use db::Database;
 use utils::Logger;
@@ -52,11 +55,75 @@ pub fn run() {
                 logger,
             });
 
-            // Show main window on startup
+            // ── Create main window ──
             if let Some(window) = app.get_webview_window("main") {
                 window.show().ok();
                 window.set_focus().ok();
             }
+
+            // ── Create tray icon ──
+            let show_main = MenuItemBuilder::new("Show VoiceFlow").id("show_main").build(app)?;
+            let toggle_rec = MenuItemBuilder::new("Toggle Recording").id("toggle_rec").build(app)?;
+            let quit_item = MenuItemBuilder::new("Quit").id("quit").build(app)?;
+            let menu = MenuBuilder::new(app)
+                .item(&show_main)
+                .item(&toggle_rec)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .tooltip("VoiceFlow — Click to show")
+                .on_menu_event(move |app, event| {
+                    match event.id().as_ref() {
+                        "show_main" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                win.show().ok();
+                                win.set_focus().ok();
+                            }
+                        }
+                        "toggle_rec" => {
+                            let _ = app.emit("toggle-dictation", ());
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(win) = app.get_webview_window("main") {
+                            if win.is_visible().unwrap_or(false) {
+                                win.hide().ok();
+                            } else {
+                                win.show().ok();
+                                win.set_focus().ok();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // ── Register global shortcut (Ctrl+Shift+V) ──
+            app.global_shortcut().on_shortcut(
+                "CmdOrCtrl+Shift+V",
+                move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let _ = _app.emit("toggle-dictation", ());
+                    }
+                },
+            )?;
+
+            Logger::new().info("VoiceFlow started — tray icon + global shortcut registered");
 
             Ok(())
         })
@@ -135,6 +202,7 @@ pub fn run() {
             commands::app::resize_mini_window,
             commands::app::set_mini_window_focusable,
             commands::app::clear_cache,
+            commands::app::mini_window_ready,
             // Warmup
             commands::warmup::get_warmup_status,
             // Log

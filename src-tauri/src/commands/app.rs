@@ -1,4 +1,5 @@
 use tauri::{Manager, AppHandle, Emitter};
+use tauri::webview::WebviewWindowBuilder;
 
 #[tauri::command]
 pub fn get_app_state() -> Result<String, String> {
@@ -59,7 +60,26 @@ pub fn minimize_to_bar(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn show_mini_window(app: AppHandle) -> Result<(), String> {
-    if let Some(mini) = app.get_webview_window("mini") {
+    // Create mini window on-demand if it doesn't exist
+    if app.get_webview_window("mini").is_none() {
+        let _mini = WebviewWindowBuilder::new(
+            &app,
+            "mini",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title("VoiceFlow Mini")
+        .inner_size(380.0, 52.0)
+        .min_inner_size(200.0, 28.0)
+        .max_inner_size(800.0, 120.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    } else if let Some(mini) = app.get_webview_window("mini") {
         mini.show().map_err(|e| e.to_string())?;
         mini.set_always_on_top(true).map_err(|e| e.to_string())?;
     }
@@ -101,6 +121,11 @@ pub fn set_mini_window_focusable(
     if let Some(mini) = app.get_webview_window("mini") {
         mini.set_focusable(focusable).map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mini_window_ready() -> Result<(), String> {
     Ok(())
 }
 
