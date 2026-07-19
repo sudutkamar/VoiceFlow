@@ -113,15 +113,18 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // ── Register global shortcut (Ctrl+Shift+V) ──
-            app.global_shortcut().on_shortcut(
+            // ── Register global shortcut (Ctrl+Shift+V) — optional, skip if already registered ──
+            match app.global_shortcut().on_shortcut(
                 "CmdOrCtrl+Shift+V",
                 move |_app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         let _ = _app.emit("toggle-dictation", ());
                     }
                 },
-            )?;
+            ) {
+                Ok(()) => Logger::new().info("Global shortcut Ctrl+Shift+V registered"),
+                Err(e) => Logger::new().warn(&format!("Global shortcut failed ({}): {}", "Ctrl+Shift+V", e)),
+            }
 
             Logger::new().info("VoiceFlow started — tray icon + global shortcut registered");
 
