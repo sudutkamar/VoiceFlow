@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "VoiceFlow",
+  "version": "2.0.0",
+  "identifier": "com.voiceflow.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev:vite",
+    "beforeBuildCommand": "npm run build:renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "VoiceFlow",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 400,
+        "minHeight": 500,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "center": true,
+        "visible": false
+      },
+      {
+        "label": "mini",
+        "title": "VoiceFlow Mini",
+        "width": 380,
+        "height": 52,
+        "minWidth": 200,
+        "minHeight": 28,
+        "maxWidth": 800,
+        "maxHeight": 120,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://api.iconify.design; img-src 'self' data: https://api.iconify.design; font-src 'self' data:; media-src 'self' ipc: http://ipc.localhost blob:; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true,
+      "scope": [
+        {
+          "name": "whisper-cli",
+          "cmd": "whisper-cli.exe",
+          "args": true
+        }
+      ]
+    },
+    "fs": {
+      "scope": {
+        "allow": [
+          { "path": "$APPDATA/**" },
+          { "path": "$DOCUMENT/**" },
+          { "path": "$DOWNLOAD/**" },
+          { "path": "$TEMP/**" }
+        ]
+      }
+    },
+    "global-shortcut": {
+      "enabled": true
+    },
+    "updater": {
+      "active": false
+    }
+  }
+}

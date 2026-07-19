@@ -69,3 +69,9 @@ resources/llm/*.dll
 resources/llm/*.exe
 resources/llm/*.pdb
 resources/llm/models/*.gguf
+
+# Rust/Tauri
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/Release/
+src-tauri/Debug/

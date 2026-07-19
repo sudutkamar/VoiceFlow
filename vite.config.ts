@@ -8,14 +8,25 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    target: 'esnext',
+    minify: 'esbuild',
+    sourcemap: false,
   },
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  // Tauri uses system WebView, not Chromium
+  // Ensure compatibility
+  esbuild: {
+    target: 'esnext',
   },
 });

@@ -1,0 +1,13 @@
+pub mod settings;
+pub mod dictation;
+pub mod clipboard;
+pub mod history;
+pub mod dictionary;
+pub mod snippet;
+pub mod model;
+pub mod gpu;
+pub mod learning;
+pub mod llm;
+pub mod app;
+pub mod warmup;
+pub mod log;
