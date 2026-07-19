@@ -1,5 +1,37 @@
 # Session Handoff
 
+## Session: 2026-07-19 (Session 23 — Tauri Migration Started)
+
+### Summary
+
+**Tauri 2 migration started** — Backend skeleton complete, Rust compiles successfully on `dev` branch.
+
+### Key Achievement
+
+- ✅ `cargo check` passes — Rust backend compiles
+- ✅ 13 command modules registered (settings, dictation, clipboard, history, dictionary, snippet, model, gpu, learning, llm, app, warmup, log)
+- ✅ Database layer with SQLite via rusqlite
+- ✅ Whisper transcriber with model selection + fallback
+- ✅ Compatibility shim: window.electronAPI → Tauri invoke()
+- ✅ TypeScript types for all Tauri commands
+- ✅ MiniBar, CSS, audio pipeline FROZEN (unchanged)
+
+### Branch: `dev` (NOT master)
+
+Commit: `feat(tauri): initial Tauri 2 migration skeleton`
+
+### Next Actions
+
+1. [ ] Test `tauri dev` — verify app launches
+2. [ ] Fix VAD bug (hangover + threshold + smoothing)
+3. [ ] Test transparent mini window
+4. [ ] Implement tray icon + global hotkey
+5. [ ] Implement model download (reqwest)
+6. [ ] Implement clipboard paste engine
+7. [ ] Migrate frontend IPC calls (remove shim)
+
+---
+
 ## Session: 2026-07-19 (Session 22 — VAD Bug Fix & Audit Items)
 
 ### Summary
