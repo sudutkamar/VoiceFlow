@@ -2,7 +2,7 @@ use tauri::State;
 use crate::AppState;
 
 #[tauri::command]
-pub fn get_gpu_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub fn get_gpu_status(_state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let whisper_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))

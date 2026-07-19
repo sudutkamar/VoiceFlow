@@ -1,5 +1,3 @@
-use tauri::State;
-use crate::AppState;
 
 #[tauri::command]
 pub fn copy_text(text: String) -> Result<(), String> {

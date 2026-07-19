@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use tauri::State;
-use crate::{AppState, db::Database};
+use crate::AppState;
 
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {

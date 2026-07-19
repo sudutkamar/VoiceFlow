@@ -1,6 +1,5 @@
-use std::path::PathBuf;
 use std::fs;
-use tauri::{State, Emitter, Manager};
+use tauri::{State, Emitter};
 use uuid::Uuid;
 use crate::{AppState, whisper::Transcriber};
 

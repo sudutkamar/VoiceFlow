@@ -23,7 +23,7 @@ pub async fn learn_correction(
     Ok(())
 }
 
-fn find_correction_id(db: &crate::db::Database, original: &str) -> Option<String> {
+fn find_correction_id(_db: &crate::db::Database, _original: &str) -> Option<String> {
     // Use a direct query to find the ID
     // For now, return None to always insert new
     None

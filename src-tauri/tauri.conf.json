@@ -63,30 +63,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "scope": [
-        {
-          "name": "whisper-cli",
-          "cmd": "whisper-cli.exe",
-          "args": true
-        }
-      ]
-    },
-    "fs": {
-      "scope": {
-        "allow": [
-          { "path": "$APPDATA/**" },
-          { "path": "$DOCUMENT/**" },
-          { "path": "$DOWNLOAD/**" },
-          { "path": "$TEMP/**" }
-        ]
-      }
-    },
-    "global-shortcut": {
-      "enabled": true
-    },
-    "updater": {
-      "active": false
+      "open": true
     }
   }
 }

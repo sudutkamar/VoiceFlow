@@ -1,5 +1,4 @@
-use tauri::{State, Manager, AppHandle, Emitter};
-use crate::AppState;
+use tauri::{Manager, AppHandle, Emitter};
 
 #[tauri::command]
 pub fn get_app_state() -> Result<String, String> {

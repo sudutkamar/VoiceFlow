@@ -1,5 +1,3 @@
-use tauri::State;
-use crate::AppState;
 
 #[tauri::command]
 pub fn llm_check_availability() -> Result<serde_json::Value, String> {
