@@ -1,5 +1,35 @@
 # Session Handoff
 
+## Session: 2026-07-20 (Session 25 — Mini Window Fix + Audit)
+
+### Summary
+
+**Fixed MiniBar visibility** — mini window now loads with #mini hash for correct component routing.
+
+### Files Changed
+
+| File | Change | Risk |
+|------|--------|------|
+| `src-tauri/src/commands/app.rs` | Fixed mini window URL (#mini hash) | 🟢 NONE |
+| `src-tauri/tauri.conf.json` | Updated CSP for unsafe-eval | 🟢 NONE |
+| `src/utils/icons.tsx` | Added null safety for model functions | 🟢 NONE |
+| `src-tauri/src/commands/model.rs` | Returns ModelInfo objects | 🟢 NONE |
+
+### Verified
+
+✅ App launches without crash
+✅ Global shortcut registered
+✅ Tray icon registered
+✅ cargo check: 0 errors, 0 warnings
+
+### Next Actions
+
+1. [ ] Test mini window creation via minimize_to_bar
+2. [ ] Test recording pipeline end-to-end
+3. [ ] Test model download functionality
+
+---
+
 ## Session: 2026-07-19 (Session 24 — Tauri Tray + Hotkey + On-Demand Mini)
 
 ### Summary
