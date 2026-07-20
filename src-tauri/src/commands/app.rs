@@ -65,7 +65,7 @@ pub fn show_mini_window(app: AppHandle) -> Result<(), String> {
         let _mini = WebviewWindowBuilder::new(
             &app,
             "mini",
-            tauri::WebviewUrl::App("index.html".into()),
+            tauri::WebviewUrl::App("index.html#mini".into()),
         )
         .title("VoiceFlow Mini")
         .inner_size(380.0, 52.0)
@@ -78,7 +78,7 @@ pub fn show_mini_window(app: AppHandle) -> Result<(), String> {
         .skip_taskbar(true)
         .visible(true)
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e: tauri::Error| e.to_string())?;
     } else if let Some(mini) = app.get_webview_window("mini") {
         mini.show().map_err(|e| e.to_string())?;
         mini.set_always_on_top(true).map_err(|e| e.to_string())?;
