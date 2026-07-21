@@ -1,5 +1,127 @@
 # Session Handoff
 
+## Session: 2026-07-21 (Session 24 — Codebase Architecture Cleanup)
+
+### Summary
+
+**Executed 6 priority items** — window manager extraction, preload split, FuzzyMatcher cache, audio GC, TS error fixes, console.log cleanup.
+
+### Changes Made
+
+#### 1. Window Manager Extraction (`electron/modules/windowManager.ts` NEW + `electron/main.ts` REWRITE)
+- Extracted ALL window management: `createMainWindow`, `createMiniWindow`, `showMiniWindow`, `hideMiniWindow`, `hideAllForPaste`, `showAfterPaste`, `showMainWindow`, `getAppIcon`, `destroyWindows`, and state vars
+- `main.ts` reduced from 980 lines → ~430 lines. IPC handlers and app lifecycle stay in main.ts
+- `WindowManager` class with constructor(database, logger, hotkeyManager) for clean DI
+
+#### 2. Preload Split (`electron/preload/` NEW — 10 files)
+- Split 423-line `electron/preload.ts` into domain files:
+  - `audio.ts` — recording, transcription IPC
+  - `clipboard.ts` — copy/paste
+  - `miniWindow.ts` — mini window control
+  - `settings.ts` — settings, history, dictionary, snippets
+  - `models.ts` — model download/management
+  - `app.ts` — GPU, cache, version, hotkey, updates
+  - `llm.ts` — LLM post-processing
+  - `learning.ts` — adaptive learning, suggestions
+  - `events.ts` — ALL ipcRenderer.on event listeners
+  - `types.ts` — shared ElectronAPISection type
+- Main `preload.ts` now just imports + merges all domain APIs
+- **NEW**: `onMiniWindowBlur` event listener exposed (was hidden in main.ts but never exposed to renderer)
+
+#### 3. FuzzyMatcher Caching (`electron/ipc/dictation.ipc.ts`)
+- `get-suggestions` IPC no longer `require('../modules/fuzzyMatcher')` on every call
+- Top-level import + module-level `fuzzyMatcherInstance` singleton
+- Still calls `loadDictionary()` each time to get fresh entries
+
+#### 4. Audio File GC (`electron/modules/database.ts`)
+- `cleanupOldAudioFiles()` method in VoiceFlowDatabase class
+- Deletes audio files older than 30 days (based on `mtime`)
+- Also cleans up orphaned settings keys (audio_path_*) where file is missing
+- Called automatically at end of `initialize()`
+
+#### 5. TypeScript Error Fix (`src/utils/icons.tsx`)
+- Added `style` (React.CSSProperties) and `color` (string) optional props to Iconify component
+- Renders wrapper `<span style={style}>` with `<Icon color={color}>` inside
+- Fixes TS2322 errors in Models.tsx (3) and GeneralTab.tsx (3)
+- Zero TS errors across both tsconfigs after change
+
+#### 6. Console.log Cleanup (`src/utils/wavRecorder.ts`)
+- Commented out 3 remaining active debug logs: mic request, track count, track settings
+- Error paths (getUserMedia failed, AudioContext resume failure) kept active
+
+#### 7. Light Theme Floating UI Fix (`src/styles/minibar-horizontal.css` + `src/styles/minibar-vertical.css`)
+- Added comprehensive light theme overrides for ALL mini bar elements:
+  - Background — light glass (white gradient) instead of dark glass
+  - Model button — dark text on light bg, blue accent on hover
+  - Language selector — same pattern
+  - Mic button + orb buttons — light bg with dark text
+  - Tooltips (warning/error/info) — pastel backgrounds with matching borders
+  - Result text — white card with shadow
+  - Dropdowns — light bg with visible border
+  - Recording timer — red text visible
+  - Ready buttons — blue accent visible
+- Both horizontal (`.mini-bar`) and vertical (`.vmb-bar`) variants covered
+
+### Files Changed
+
+| File | Change | Risk |
+|------|--------|------|
+| `electron/modules/windowManager.ts` | **NEW** — 320 lines, all window management | 🟡 MEDIUM (replaces inline code in main.ts) |
+| `electron/main.ts` | **REWRITE** — 430 lines, uses WindowManager | 🟡 MEDIUM (regression possible if WindowManager init timing wrong) |
+| `electron/preload.ts` | **REWRITE** — imports from prefork/domain files | 🟢 NONE (same API surface) |
+| `electron/preload/audio.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/clipboard.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/miniWindow.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/settings.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/models.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/app.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/llm.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/learning.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/events.ts` | **NEW** | 🟢 NONE |
+| `electron/preload/types.ts` | **NEW** | 🟢 NONE |
+| `electron/ipc/dictation.ipc.ts` | **EDIT** — cached FuzzyMatcher instance | 🟢 NONE |
+| `electron/modules/database.ts` | **EDIT** — added cleanupOldAudioFiles() | 🟢 NONE |
+| `src/utils/icons.tsx` | **EDIT** — added style + color props | 🟢 NONE |
+| `src/utils/wavRecorder.ts` | **EDIT** — commented debug logs | 🟢 NONE |
+| `CHANGELOG.md` | **UPDATED** — v1.0.11 | 🟢 NONE |
+
+### Decisions
+
+- **WindowManager as class** (not module functions) — allows clean DI of database/logger/hotkeyManager, easier to test
+- **Preload split by domain** — each file exports a factory function returning `ElectronAPISection` (Record<string, Function>), merged into one object. No need to type the merge, works with existing `window.electronAPI` types
+- **Audio GC at startup only** — not a background timer. Simpler, sufficient for now. Heavy users who record daily may still accumulate files within 30-day window
+- **FuzzyMatcher singleton** — cached across calls but dictionary reloaded each time. Good balance: saves CPU from constructing the class but keeps dictionary fresh
+- **Style on wrapper span** — Iconify's `<Icon>` component doesn't accept style prop. Wrapping in `<span>` is clean, preserves Iconify semantics
+
+### Risks / Technical Debt
+
+- WindowManager extraction changes init order subtly: `windowManager` is now created BEFORE `hotkeyManager`. If hotkeyManager constructor needs windowManager reference, that path must pass through setMiniWindow (already handled)
+- `onMiniWindowBlur` event now exposed but no renderer component consumes it yet. Harmless, future-proof
+- Preload domain split means new IPC channels must be added in the correct domain file. Might be easy to forget
+
+### Next Actions
+
+1. [ ] **TEST**: App startup — verify both main window and mini window create correctly
+2. [ ] **TEST**: Recording flow — start/stop/VAD/paste must still work
+3. [ ] **TEST**: MiniBar — show/hide/resize must work
+4. [ ] **TEST**: Preload — all IPC channels still reachable from renderer
+5. [ ] **TEST**: Audio GC — verify old audio files are cleaned up
+6. [ ] **TEST**: TypeScript — `npx tsc --noEmit` must pass in both configs
+7. [ ] **P1**: Extract remaining IPC handler registrations from main.ts into domain files (settings.ipc.ts pattern is good, but dictation.ipc handlers are inlined in setupIPC)
+8. [ ] **P1**: Add auto-import linter rule so new IPC channels don't get added to wrong preload file
+
+### Recording Test Checklist
+- [ ] Record 5 detik → teks muncul
+- [ ] Record panjang (30+ detik) → tidak crash
+- [ ] Cancel recording (Esc) → kembali idle
+- [ ] VAD auto-stop → berhenti saat diam
+- [ ] Hotkey record → bisa mulai/stop
+- [ ] Mini bar record → bisa mulai/stop
+- [ ] Multiple rapid records → tidak memory leak
+- [ ] Paste ke Notepad → text muncul
+
+---
+
 ## Session: 2026-07-20 (Session 23 — Major Feature Drop)
 
 ### Summary

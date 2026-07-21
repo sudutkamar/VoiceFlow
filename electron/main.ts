@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, screen, session } from 'electron';
+import { app, ipcMain, globalShortcut, Tray, Menu, nativeImage, screen, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { VoiceFlowDatabase as Database } from './modules/database';
@@ -7,6 +7,7 @@ import { HotkeyManager } from './modules/hotkeyManager';
 import { CudaDownloader } from './modules/cudaDownloader';
 import { AutoUpdater } from './modules/autoUpdater';
 import { CrashReporter } from './modules/crashReporter';
+import { WindowManager } from './modules/windowManager';
 import { setupDictationIPC, getTranscriberInstance } from './ipc/dictation.ipc';
 import { setupSettingsIPC } from './ipc/settings.ipc';
 import { setupModelIPC, setTranscriberForModelSync } from './ipc/model.ipc';
@@ -22,18 +23,15 @@ import { getDefaultModelsDir, getResourcesModelsDir, getOldModelsDirs, migrateMo
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
-  // Another instance is already running — quit this one
   app.quit();
 } else {
-  // We are the only instance — continue initialization
   app.on('second-instance', () => {
-    // When a second instance tries to launch, show our main window instead
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
+    if (windowManager?.mainWindow) {
+      if (windowManager.mainWindow.isMinimized()) windowManager.mainWindow.restore();
+      windowManager.mainWindow.focus();
     }
-    if (miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.showInactive();
+    if (windowManager?.miniWindow && !windowManager.miniWindow.isDestroyed()) {
+      windowManager.miniWindow.showInactive();
     }
   });
 
@@ -46,367 +44,22 @@ if (!gotTheLock) {
   app.commandLine.appendSwitch('disk-cache-dir', cacheDir);
   app.commandLine.appendSwitch('gpu-cache-dir', path.join(cacheDir, 'gpu'));
 
-let mainWindow: BrowserWindow | null = null;
-let miniWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let database: Database;
 let logger: Logger;
 let hotkeyManager: HotkeyManager;
+let windowManager: WindowManager;
 let cudaDownloader: CudaDownloader;
 let autoUpdater: AutoUpdater;
 let crashReporter: CrashReporter;
 let isQuitting = false;
-let isPasting = false;
-let miniWindowReady = false;
-let deferredShowMiniWindow = false;
 
 function isDev(): boolean {
   return process.env.NODE_ENV === 'development';
 }
 
-function getPreloadPath(): string {
-  return path.join(__dirname, 'preload.js');
-}
-
-// ============ MAIN WINDOW (Full UI) ============
-function createMainWindow(showInitially: boolean = true): void {
-  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-
-  mainWindow = new BrowserWindow({
-    width: sw,
-    height: sh,
-    minWidth: 400,
-    minHeight: 500,
-    webPreferences: {
-      preload: getPreloadPath(),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false,
-    },
-    title: 'VoiceFlow',
-    icon: (() => {
-      const iconPath = getAppIcon();
-      if (iconPath) {
-        return nativeImage.createFromPath(iconPath);
-      }
-      return undefined;
-    })(),
-    show: false,
-    backgroundColor: '#0a0a0f',
-    frame: false,
-    resizable: true,
-    x: 0,
-    y: 0,
-  });
-
-  mainWindow.on('ready-to-show', () => {
-    if (showInitially) {
-      mainWindow?.setBounds({ x: 0, y: 0, width: sw, height: sh });
-      mainWindow?.show();
-      mainWindow?.focus();
-    }
-  });
-
-  console.log('[MainWindow] created, loading URL...');
-  
-  // When minimized -> minimize to taskbar (stay in taskbar)
-  // Don't hide window, just minimize normally
-
-  // When closed -> show mini bar instead of quitting
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow?.hide();
-      if (database?.getSetting('show_mini_window') !== 'false') {
-        showMiniWindow();
-      }
-    }
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-
-  if (isDev()) {
-    console.log('[MainWindow] Loading dev URL: http://localhost:5173#main');
-    mainWindow.loadURL('http://localhost:5173#main').catch((err) => {
-      console.error('[MainWindow] Dev load failed, falling back to dist:', err.message);
-      mainWindow?.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'main' });
-    });
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'main' });
-  }
-}
-
-// ============ MINI WINDOW (Floating Bar) ============
-function createMiniWindow(): void {
-  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-  
-  // Load saved size or use defaults
-  const savedWidth = parseInt(database?.getSetting('mini_window_width') || '0', 10);
-  const savedHeight = parseInt(database?.getSetting('mini_window_height') || '0', 10);
-  const orientation = database?.getSetting('mini_bar_orientation') || 'horizontal';
-  
-  // Set dimensions based on orientation
-  let miniWidth: number, miniHeight: number;
-  let minWidth: number, minHeight: number, maxWidth: number, maxHeight: number;
-  
-  if (orientation === 'vertical') {
-    // Vertical mode: compact pill shape
-    miniWidth = savedWidth > 0 ? Math.max(64, Math.min(savedWidth, 72)) : 64;
-    miniHeight = savedHeight > 0 ? Math.max(190, Math.min(savedHeight, 300)) : 220;
-    minWidth = 64;
-    minHeight = 190;
-    maxWidth = 72;
-    maxHeight = 300;
-  } else {
-    // Horizontal mode: wide and short
-    miniWidth = savedWidth > 0 ? Math.min(savedWidth, sw - 40) : Math.min(380, sw - 40);
-    miniHeight = savedHeight > 0 ? Math.max(28, Math.min(savedHeight, 100)) : 52;
-    minWidth = 200;
-    minHeight = 28;
-    maxWidth = Math.min(800, sw - 40);
-    maxHeight = 100;
-  }
-  
-  const taskbarHeight = sh; // workArea already excludes taskbar
-
-  // Use saved position if available, else center on primary display
-  const savedX = parseInt(database?.getSetting('mini_window_x') || '0', 10);
-  const savedY = parseInt(database?.getSetting('mini_window_y') || '0', 10);
-  const hasSavedPos = savedX > 0 && savedY > 0;
-
-  miniWindow = new BrowserWindow({
-    width: miniWidth,
-    height: miniHeight,
-    x: hasSavedPos ? savedX : Math.round((sw - miniWidth) / 2),
-    y: hasSavedPos ? savedY : Math.max(0, sh - miniHeight - 10),
-    minWidth,
-    minHeight,
-    maxWidth,
-    maxHeight,
-    webPreferences: {
-      preload: getPreloadPath(),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false,
-    },
-    title: 'VoiceFlow Mini',
-    icon: (() => {
-      const iconPath = getAppIcon();
-      if (iconPath) {
-        return nativeImage.createFromPath(iconPath);
-      }
-      return undefined;
-    })(),
-    show: false,
-    backgroundColor: '#00000000',
-    frame: false,
-    transparent: true,
-    resizable: true,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    focusable: true,
-  });
-
-  // Set always on top with highest level to prevent other windows from covering it
-  miniWindow.setAlwaysOnTop(true, 'screen-saver');
-
-  miniWindow.on('blur', () => {
-    // Notify renderer to close dropdown when clicking outside
-    if (miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.webContents.send('mini-window-blur');
-    }
-  });
-
-  // Save window size AND position on resize/move
-  miniWindow.on('resize', () => {
-    if (miniWindow && !miniWindow.isDestroyed() && database) {
-      const bounds = miniWindow.getBounds();
-      database.updateSetting('mini_window_width', String(bounds.width));
-      database.updateSetting('mini_window_height', String(Math.max(28, Math.min(350, bounds.height))));
-      database.updateSetting('mini_window_x', String(bounds.x));
-      database.updateSetting('mini_window_y', String(bounds.y));
-      // Notify renderer of new size
-      miniWindow.webContents.send('mini-window-resize', { width: bounds.width, height: bounds.height });
-    }
-  });
-
-  // Save position on move
-  miniWindow.on('move', () => {
-    if (miniWindow && !miniWindow.isDestroyed() && database) {
-      const bounds = miniWindow.getBounds();
-      database.updateSetting('mini_window_x', String(bounds.x));
-      database.updateSetting('mini_window_y', String(bounds.y));
-    }
-  });
-
-  // Minimalkan race: hanya re-show jika hide bukan dari paste/quit/resize
-  miniWindow.on('hide', () => {
-    const floatingEnabled = database?.getSetting('show_mini_window') !== 'false';
-    if (!isQuitting && !isPasting && floatingEnabled && miniWindow && !miniWindow.isDestroyed()) {
-      const mw = miniWindow;
-      setTimeout(() => {
-        if (mw && !mw.isDestroyed() && !mw.isVisible() && !isQuitting && !isPasting) {
-          mw.showInactive();
-        }
-      }, 100);
-    }
-  });
-
-  miniWindow.webContents.on('did-finish-load', () => {
-    logger?.info('Mini window loaded');
-    // Set miniWindow reference in hotkeyManager after load
-    if (hotkeyManager && miniWindow) {
-      hotkeyManager.setMiniWindow(miniWindow);
-    }
-    // Show if showMiniWindow was called while window was still loading
-    if (deferredShowMiniWindow && miniWindow && !miniWindow.isDestroyed() && !miniWindow.isVisible()) {
-      deferredShowMiniWindow = false;
-      const floatingEnabled = database?.getSetting('show_mini_window') !== 'false';
-      if (floatingEnabled) {
-        miniWindow.showInactive();
-        miniWindow.setAlwaysOnTop(true, 'screen-saver');
-        miniWindow.webContents.send('reload-settings');
-        logger?.info('Deferred mini window shown');
-      }
-    }
-  });
-
-  miniWindow.on('ready-to-show', () => {
-    if (miniWindow && !miniWindow.isDestroyed()) {
-      // Force position to bottom-center on first show (fixes multi-monitor / DPI issues)
-      const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-      const bounds = miniWindow.getBounds();
-      const savedX = parseInt(database?.getSetting('mini_window_x') || '0', 10);
-      const savedY = parseInt(database?.getSetting('mini_window_y') || '0', 10);
-      const hasSavedPos = savedX > 0 && savedY > 0;
-      const targetX = hasSavedPos ? savedX : Math.round((sw - bounds.width) / 2);
-      const targetY = hasSavedPos ? savedY : Math.max(0, sh - bounds.height - 10);
-      if (bounds.x !== targetX || bounds.y !== targetY) {
-        miniWindow.setBounds({ x: targetX, y: targetY, width: bounds.width, height: bounds.height });
-      }
-      
-      miniWindowReady = true;
-      // Jika ada deferred show, tampilkan sekarang
-      if (deferredShowMiniWindow) {
-        deferredShowMiniWindow = false;
-        miniWindow.showInactive();
-        miniWindow.setAlwaysOnTop(true, 'screen-saver');
-        miniWindow.webContents.send('reload-settings');
-      }
-    }
-  });
-
-  if (isDev()) {
-    console.log('[MiniWindow] Loading dev URL: http://localhost:5173#mini');
-    miniWindow.loadURL('http://localhost:5173#mini').catch((err) => {
-      console.error('[MiniWindow] Dev load failed, falling back to dist:', err.message);
-      miniWindow?.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mini' });
-    });
-  } else {
-    miniWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'mini' });
-  }
-}
-
-function showMiniWindow(): void {
-  logger?.info('showMiniWindow called, miniWindow exists: ' + !!miniWindow);
-  if (!miniWindow || miniWindow.isDestroyed()) {
-    miniWindow = null;
-    miniWindowReady = false;
-    createMiniWindow();
-    logger?.info('Created new miniWindow');
-  }
-  // Update hotkeyManager with miniWindow reference
-  if (hotkeyManager && miniWindow) {
-    hotkeyManager.setMiniWindow(miniWindow);
-  }
-  // Only show after content is fully loaded to prevent flash
-  if (!miniWindowReady) {
-    deferredShowMiniWindow = true;
-    logger?.info('Mini window not ready, deferring show');
-    return;
-  }
-  // Show without stealing focus, so user's cursor stays in the target app.
-  miniWindow?.showInactive();
-  // Ensure always on top after showing
-  miniWindow?.setAlwaysOnTop(true, 'screen-saver');
-  // Notify mini window to reload settings (handles orientation changes)
-  miniWindow?.webContents.send('reload-settings');
-  logger?.info('Mini window shown inactive');
-}
-
-function hideMiniWindow(): void {
-  deferredShowMiniWindow = false;
-  if (miniWindow && !miniWindow.isDestroyed()) {
-    miniWindow.hide();
-  }
-}
-
-function hideAllForPaste(): void {
-  isPasting = true;
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-    mainWindow.hide();
-  }
-  if (miniWindow && !miniWindow.isDestroyed()) {
-    miniWindow.hide();
-  }
-}
-
-function showAfterPaste(): void {
-  isPasting = false;
-  if (database?.getSetting('show_mini_window') === 'false') return;
-  if (miniWindow && !miniWindow.isDestroyed()) {
-    miniWindow.showInactive();
-  }
-}
-
-function showMainWindow(page?: string): void {
-  if (!mainWindow) {
-    createMainWindow();
-  }
-  const navigate = () => {
-    if (page && mainWindow && !mainWindow.isDestroyed()) {
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('navigate', page);
-        }
-      }, 80);
-    }
-  };
-  if (mainWindow?.webContents.isLoading()) {
-    mainWindow.webContents.once('did-finish-load', navigate);
-  } else {
-    navigate();
-  }
-  mainWindow?.show();
-  mainWindow?.focus();
-  hideMiniWindow();
-}
-
-function getAppIcon(): string {
-  // Try .ico first (best for Windows), then .png
-  const iconNames = ['icon.ico', 'icon.png'];
-  for (const iconName of iconNames) {
-    const iconPath = isDev()
-      ? path.join(__dirname, '..', 'resources', 'icons', iconName)
-      : path.join(process.resourcesPath, 'icons', iconName);
-    if (fs.existsSync(iconPath)) {
-      console.log('[Icon] Found:', iconPath);
-      return iconPath;
-    }
-  }
-  console.warn('[Icon] No icon found!');
-  return '';
-}
-
 // ============ TRAY ============
 function createTrayIcon(): Electron.NativeImage {
-  // Priority: pakai icon.png (62KB, 32x32, kualitas bagus)
-  // Daripada tray-icon.png (1.3KB, 32x32, kualitas rendah)
-  // Windows system tray render paling bagus dari sumber resolution-independent
-  // Dengan sumber minimal 32x32, Windows bisa scale ke 16x16 via DPI sendiri
   const iconPngPath = isDev()
     ? path.join(__dirname, '..', 'resources', 'icons', 'icon.png')
     : path.join(process.resourcesPath, 'icons', 'icon.png');
@@ -415,7 +68,6 @@ function createTrayIcon(): Electron.NativeImage {
     return nativeImage.createFromPath(iconPngPath);
   }
 
-  // Fallback: tray-icon.png (kualitas rendah, tetap dipake kalo ada)
   const trayIconPath = isDev()
     ? path.join(__dirname, '..', 'resources', 'icons', 'tray-icon.png')
     : path.join(process.resourcesPath, 'icons', 'tray-icon.png');
@@ -424,14 +76,11 @@ function createTrayIcon(): Electron.NativeImage {
     return nativeImage.createFromPath(trayIconPath);
   }
 
-  // Fallback: app icon (ICO)
-  const appIconPath = getAppIcon();
+  const appIconPath = windowManager?.getAppIcon() || '';
   if (appIconPath && fs.existsSync(appIconPath)) {
     return nativeImage.createFromPath(appIconPath);
   }
 
-  // Last resort: SVG 32x32 (bukan 16x16) — resolusi lebih tinggi untuk
-  // high-DPI. Windows system tray bisa scale down lebih baik dari sumber besar
   const svgStr = `
     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
       <rect width="32" height="32" fill="#1a1a2e" rx="4"/>
@@ -447,10 +96,6 @@ function createTrayIcon(): Electron.NativeImage {
 
 function createTray(): void {
   const trayIcon = createTrayIcon();
-  // HAPUS resize paksa 16x16 — biarkan tray dalam ukuran asli (32x32).
-  // Windows akan handle scaling ke 16x16 via DPI secara otomatis.
-  // Resize paksa dari 32→16 pakai nearest-neighbor bikin icon pecah,
-  // apalagi di monitor high-DPI (150%, 200%).
   tray = new Tray(trayIcon);
 
   const contextMenu = Menu.buildFromTemplate([
@@ -458,11 +103,11 @@ function createTray(): void {
     { type: 'separator' },
     {
       label: 'Open VoiceFlow',
-      click: () => showMainWindow(),
+      click: () => windowManager?.showMainWindow(),
     },
     {
       label: 'Record',
-      click: () => hotkeyManager.simulateHotkey(),
+      click: () => hotkeyManager?.simulateHotkey(),
     },
     { type: 'separator' },
     {
@@ -476,18 +121,16 @@ function createTray(): void {
 
   tray.setToolTip('VoiceFlow');
   tray.setContextMenu(contextMenu);
-  tray.on('double-click', () => showMainWindow());
+  tray.on('double-click', () => windowManager?.showMainWindow());
 }
 
 // ============ IPC ============
 function setupIPC(): void {
-  if (!mainWindow || !database || !logger) return;
+  if (!windowManager?.mainWindow || !database || !logger) return;
 
-  // Initialize CUDA downloader
   cudaDownloader = new CudaDownloader(logger);
   cudaDownloader.checkStatus().then(status => {
     logger.info('CUDA status', status);
-    // If GPU exists but CUDA DLLs not in resources, try copy from bundled
     if (status.needsDownload) {
       const copied = cudaDownloader.copyFromResources();
       if (copied) {
@@ -496,67 +139,70 @@ function setupIPC(): void {
     }
   }).catch(err => logger.warn('CUDA check failed', err));
 
-  setupDictationIPC(mainWindow, database, logger, hotkeyManager, hideAllForPaste, showAfterPaste);
-  
-  // Wire transcriber BEFORE model IPC so path sync works immediately
+  setupDictationIPC(
+    windowManager.mainWindow,
+    database,
+    logger,
+    hotkeyManager,
+    () => windowManager?.hideAllForPaste(),
+    () => windowManager?.showAfterPaste()
+  );
+
   const dicTranscriber = getTranscriberInstance();
   if (dicTranscriber) {
     setTranscriberForModelSync(dicTranscriber);
     logger.info('Transcriber synced with ModelDownloader');
   }
-  
-  setupSettingsIPC(mainWindow, database, logger, hotkeyManager);
-  setupModelIPC(mainWindow, database, logger);
-  setupSnippetIPC(mainWindow, database, logger);
 
-  // GPU/CUDA folder management IPC
+  setupSettingsIPC(windowManager.mainWindow, database, logger, hotkeyManager);
+  setupModelIPC(windowManager.mainWindow, database, logger);
+  setupSnippetIPC(windowManager.mainWindow, database, logger);
+
   registerEngineIpc({
     logger,
     database,
     cudaDownloader,
     transcriberRef: getTranscriberInstance,
-    mainWindow,
+    mainWindow: windowManager.mainWindow,
   });
 
-  // Load custom GPU path from settings
   const customGpuPath = database.getSetting('custom_gpu_path');
   if (customGpuPath) {
     cudaDownloader.setCudaPath(customGpuPath);
     logger.info(`Custom GPU path loaded: ${customGpuPath}`);
   }
 
-  ipcMain.handle('get-app-state', () => hotkeyManager.getState());
-  ipcMain.handle('get-target-app', () => hotkeyManager.getTargetAppName());
+  ipcMain.handle('get-app-state', () => hotkeyManager?.getState());
+  ipcMain.handle('get-target-app', () => hotkeyManager?.getTargetAppName());
   ipcMain.handle('get-version', () => app.getVersion());
   ipcMain.handle('quit-app', () => { isQuitting = true; app.quit(); });
-  ipcMain.handle('show-main', (_, page?: string) => showMainWindow(page));
+  ipcMain.handle('show-main', (_, page?: string) => windowManager?.showMainWindow(page));
   ipcMain.handle('minimize-to-bar', () => {
-    mainWindow?.hide();
-    if (database?.getSetting('show_mini_window') !== 'false') showMiniWindow();
+    windowManager?.mainWindow?.hide();
+    if (database?.getSetting('show_mini_window') !== 'false') windowManager?.showMiniWindow();
   });
   ipcMain.handle('minimize-window', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.minimize();
+    if (windowManager?.mainWindow && !windowManager.mainWindow.isDestroyed()) {
+      windowManager.mainWindow.minimize();
     }
   });
   ipcMain.handle('maximize-window', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMaximized()) {
-        mainWindow.unmaximize();
+    if (windowManager?.mainWindow && !windowManager.mainWindow.isDestroyed()) {
+      if (windowManager.mainWindow.isMaximized()) {
+        windowManager.mainWindow.unmaximize();
       } else {
-        mainWindow.maximize();
+        windowManager.mainWindow.maximize();
       }
     }
   });
-  ipcMain.handle('show-mini-window', () => showMiniWindow());
-  ipcMain.handle('hide-mini-window', () => hideMiniWindow());
+  ipcMain.handle('show-mini-window', () => windowManager?.showMiniWindow());
+  ipcMain.handle('hide-mini-window', () => windowManager?.hideMiniWindow());
   ipcMain.handle('resize-mini-window', (_, height: number, width?: number) => {
-    if (miniWindow && !miniWindow.isDestroyed()) {
-      // Resize upward/downward while preserving the user's dragged X position and bottom anchor.
-      const bounds = miniWindow.getBounds();
+    if (windowManager?.miniWindow && !windowManager.miniWindow.isDestroyed()) {
+      const bounds = windowManager.miniWindow.getBounds();
       const nextHeight = Math.max(28, Math.round(height));
       const nextWidth = width ? Math.round(width) : bounds.width;
-      miniWindow.setBounds({
+      windowManager.miniWindow.setBounds({
         x: bounds.x,
         y: bounds.y + bounds.height - nextHeight,
         width: nextWidth,
@@ -565,22 +211,21 @@ function setupIPC(): void {
     }
   });
   ipcMain.handle('set-mini-window-focusable', (_, focusable: boolean) => {
-    if (miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.setFocusable(focusable);
+    if (windowManager?.miniWindow && !windowManager.miniWindow.isDestroyed()) {
+      windowManager.miniWindow.setFocusable(focusable);
     }
   });
-  
+
   ipcMain.on('mini-window-ready', () => {
     logger?.info('Mini window reported ready');
-    if (hotkeyManager?.getState() === 'recording' && miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.webContents.send('start-recording-request');
+    if (hotkeyManager?.getState() === 'recording' && windowManager?.miniWindow && !windowManager.miniWindow.isDestroyed()) {
+      windowManager.miniWindow.webContents.send('start-recording-request');
     }
-    // Send current target app name
-    if (miniWindow && !miniWindow.isDestroyed() && hotkeyManager) {
-      miniWindow.webContents.send('target-app-changed', hotkeyManager.getTargetAppName());
+    if (windowManager?.miniWindow && !windowManager.miniWindow.isDestroyed() && hotkeyManager) {
+      windowManager.miniWindow.webContents.send('target-app-changed', hotkeyManager.getTargetAppName());
     }
   });
-  // Warmup status query — renderer can check if warmup is complete
+
   ipcMain.handle('get-warmup-status', () => {
     const dicTranscriber = getTranscriberInstance();
     if (dicTranscriber && dicTranscriber.isWarmedUp()) {
@@ -594,24 +239,23 @@ function setupIPC(): void {
     app.setLoginItemSettings({ openAtLogin: enable, path: app.getPath('exe') });
     return { success: true };
   });
-  
+
   ipcMain.handle('get-startup-mode', () => {
     return database?.getSetting('startup_mode') || 'full';
   });
-  
+
   ipcMain.handle('set-startup-mode', (_, mode: string) => {
     database?.updateSetting('startup_mode', mode);
     logger?.info(`Startup mode set to: ${mode}`);
     return { success: true };
   });
+
   ipcMain.handle('get-gpu-status', async () => {
     try {
       const status = await cudaDownloader.checkStatus();
-      // CPU engine — bundled di resources/whisper/cpu/
       const cpuDir = app.isPackaged
         ? path.join(process.resourcesPath, 'whisper', 'cpu')
         : path.join(__dirname, '..', 'resources', 'whisper', 'cpu');
-      // GPU/CUDA — downloaded user ke userData/whisper/gpu/
       const whisperDir = path.join(app.getPath('userData'), 'whisper');
       const gpuDir = path.join(whisperDir, 'gpu');
       return {
@@ -632,40 +276,24 @@ function setupIPC(): void {
 
   ipcMain.handle('download-cuda', async () => {
     try {
-      if (mainWindow) cudaDownloader.setMainWindow(mainWindow);
+      if (windowManager?.mainWindow) cudaDownloader.setMainWindow(windowManager.mainWindow);
       return await cudaDownloader.download();
     } catch (err) {
       return { success: false, error: String(err) };
     }
   });
 
-  ipcMain.handle('pause-cuda-download', async () => {
-    cudaDownloader.pause();
-  });
+  ipcMain.handle('pause-cuda-download', async () => { cudaDownloader.pause(); });
+  ipcMain.handle('resume-cuda-download', async () => { cudaDownloader.resume(); });
+  ipcMain.handle('cancel-cuda-download', async () => { cudaDownloader.cancel(); });
+  ipcMain.handle('get-cuda-download-progress', async () => cudaDownloader.getProgress());
+  ipcMain.handle('delete-whisper-engine', async (event, type: 'cpu' | 'gpu') => cudaDownloader.deleteEngineFiles(type));
 
-  ipcMain.handle('resume-cuda-download', async () => {
-    cudaDownloader.resume();
-  });
-
-  ipcMain.handle('cancel-cuda-download', async () => {
-    cudaDownloader.cancel();
-  });
-
-  ipcMain.handle('get-cuda-download-progress', async () => {
-    return cudaDownloader.getProgress();
-  });
-
-  ipcMain.handle('delete-whisper-engine', async (event, type: 'cpu' | 'gpu') => {
-    return cudaDownloader.deleteEngineFiles(type);
-  });
-  
   ipcMain.handle('clear-cache', async () => {
     try {
       const cacheDir = path.join(app.getPath('userData'), 'cache');
       const tempDir = path.join(app.getPath('userData'), 'temp');
       let cleared = 0;
-      
-      // Clear GPU/cache directory
       if (fs.existsSync(cacheDir)) {
         const deleteDir = (dirPath: string) => {
           try {
@@ -683,25 +311,17 @@ function setupIPC(): void {
         };
         deleteDir(cacheDir);
       }
-      
-      // Clear temp directory
       if (fs.existsSync(tempDir)) {
         try {
           const entries = fs.readdirSync(tempDir);
           for (const entry of entries) {
-            try {
-              fs.unlinkSync(path.join(tempDir, entry));
-              cleared++;
-            } catch {}
+            try { fs.unlinkSync(path.join(tempDir, entry)); cleared++; } catch {}
           }
         } catch {}
       }
-      
-      // Recreate directories
       [cacheDir, path.join(cacheDir, 'gpu'), path.join(cacheDir, 'code-cache'), tempDir].forEach(dir => {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       });
-      
       logger.info(`Cache cleared: ${cleared} files removed`);
       return { success: true, filesCleared: cleared };
     } catch (error: any) {
@@ -712,7 +332,6 @@ function setupIPC(): void {
 }
 
 // ============ APP LIFECYCLE ============
-// Ensure cache directories exist before app is ready
 const ensureCacheDirs = () => {
   const dirs = [
     path.join(app.getPath('userData'), 'cache'),
@@ -727,10 +346,6 @@ const ensureCacheDirs = () => {
 };
 ensureCacheDirs();
 
-// ═══════════════════════════════════════════════════════════════
-//  CRITICAL FIX #5: Temp File Cleanup on Exit
-//  Cleans up orphaned temp files from interrupted downloads.
-// ═══════════════════════════════════════════════════════════════
 function cleanupTempFiles(): void {
   try {
     const tempDirs = [
@@ -741,7 +356,6 @@ function cleanupTempFiles(): void {
       if (!fs.existsSync(dir)) continue;
       const files = fs.readdirSync(dir);
       for (const file of files) {
-        // Only clean temp files (.tmp, .download, recording_*.wav)
         if (file.includes('.tmp') || file.includes('.download') || file.startsWith('recording_')) {
           try {
             const fp = path.join(dir, file);
@@ -755,8 +369,6 @@ function cleanupTempFiles(): void {
 }
 
 app.whenReady().then(() => {
-  // Auto-grant microphone & media permissions so the floating UI
-  // can start recording without showing a blocking permission dialog.
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     if (permission === 'media') {
       callback(true);
@@ -765,7 +377,6 @@ app.whenReady().then(() => {
     }
   });
 
-  // Allow loading icons from Iconify CDN
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -780,77 +391,71 @@ app.whenReady().then(() => {
   logger = new Logger();
   logger.info('VoiceFlow starting...');
 
-  // Initialize crash reporter early
   crashReporter = new CrashReporter(logger);
   crashReporter.start();
 
   database = new Database(logger);
   database.initialize();
 
-  // Initialize log level from settings
   const savedLogLevel = database.getSetting('log_level') as any;
   if (savedLogLevel && ['debug', 'info', 'warn', 'error'].includes(savedLogLevel)) {
     logger.setLogLevel(savedLogLevel);
   }
 
-  // Check before creating the window, so first install can start directly in floating mode.
-  // Use VOICEFLOW_FIRST_RUN=1 env var to simulate first run in development
   const forceFirstRun = process.env.VOICEFLOW_FIRST_RUN === '1';
   const isFirstRun = forceFirstRun || !database.getSetting('has_run_before');
 
-  // Startup mode: 'full' (default), 'mini' (MiniBar only), 'tray' (tray only)
+  // Initialize WindowManager after database is ready
+  windowManager = new WindowManager(database, logger);
+
   const startupMode = database.getSetting('startup_mode') || 'full';
   logger.info(`[Startup] Mode: ${startupMode}`);
-  
+
   const showMainInitially = startupMode === 'full';
-  createMainWindow(showMainInitially);
+  windowManager.createMainWindow(showMainInitially);
   createTray();
 
-  if (mainWindow) {
-    hotkeyManager = new HotkeyManager(mainWindow, database, logger, showMiniWindow, hideMiniWindow);
+  if (windowManager.mainWindow) {
+    hotkeyManager = new HotkeyManager(
+      windowManager.mainWindow,
+      database,
+      logger,
+      () => windowManager?.showMiniWindow(),
+      () => windowManager?.hideMiniWindow()
+    );
     hotkeyManager.register();
-    
+
     if (isFirstRun) {
       database.updateSetting('has_run_before', 'true');
-      // First install: show floating UI after main window is ready
-      mainWindow.once('ready-to-show', () => {
+      windowManager.mainWindow.once('ready-to-show', () => {
         setTimeout(() => {
-          showMiniWindow();
+          windowManager?.showMiniWindow();
         }, 800);
       });
     } else if (startupMode === 'mini') {
-      // MiniBar only mode: hide main window, show mini
-      mainWindow.once('ready-to-show', () => {
-        mainWindow?.hide();
+      windowManager.mainWindow.once('ready-to-show', () => {
+        windowManager?.mainWindow?.hide();
         setTimeout(() => {
-          showMiniWindow();
+          windowManager?.showMiniWindow();
         }, 600);
       });
     } else if (startupMode === 'tray') {
-      // Tray only mode: hide everything, let user activate via tray
-      mainWindow.once('ready-to-show', () => {
-        mainWindow?.hide();
+      windowManager.mainWindow.once('ready-to-show', () => {
+        windowManager?.mainWindow?.hide();
       });
     }
   }
 
   setupIPC();
 
-  // Initialize auto-updater
-  if (mainWindow) {
-    autoUpdater = new AutoUpdater(mainWindow, logger);
-    // Check for updates on startup (after 5 seconds to avoid blocking)
+  if (windowManager.mainWindow) {
+    autoUpdater = new AutoUpdater(windowManager.mainWindow, logger);
     setTimeout(() => {
       autoUpdater.checkOnStartup();
     }, 5000);
   }
 
-  // ──────────────────────────────────────────────────────
-  //  First-Run: Copy bundled models to user-visible folder
-  //  ──────────────────────────────────────────────────────
-  //  Default: Documents/VoiceFlow/models/
-  //  This ensures models survive app reinstall/uninstall.
-  //  User can also find/copy them easily.
+  // First-run: Copy bundled models to user-visible folder
   try {
     const targetDir = getDefaultModelsDir();
     const resourcesDir = getResourcesModelsDir();
@@ -859,7 +464,6 @@ app.whenReady().then(() => {
     const targetHasModels = modelsDirHasContent(targetDir);
 
     if (!targetHasModels) {
-      // Step 1: Migrate from old paths first
       const oldPaths = getOldModelsDirs();
       const hasOldModels = oldPaths.some(p => modelsDirHasContent(p));
       if (hasOldModels) {
@@ -870,7 +474,6 @@ app.whenReady().then(() => {
         }
       }
 
-      // Step 2: Copy bundled models if still empty
       if (resourcesHasModels && !modelsDirHasContent(targetDir)) {
         logger.info('[FirstRun] Copying bundled models to Documents/VoiceFlow/models/...');
         ensureDir(targetDir);
@@ -892,11 +495,7 @@ app.whenReady().then(() => {
     logger.warn('[FirstRun] Failed to copy bundled models', err);
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  //  AGGRESSIVE WARMUP — pre-cache everything for instant first use
-  //  This runs BEFORE user can trigger recording, so first transcription
-  //  has zero cold-start penalty.
-  // ═══════════════════════════════════════════════════════════════
+  // Aggressive warmup
   const warmupStart = Date.now();
   try {
     const dicTranscriber = getTranscriberInstance();
@@ -905,13 +504,12 @@ app.whenReady().then(() => {
       const warmupResult = dicTranscriber.warmup(savedModel);
       const warmupMs = Date.now() - warmupStart;
       logger.info(`[Warmup] Completed in ${warmupMs}ms`, warmupResult);
-      
-      // Notify renderer that warmup is complete
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('warmup-complete', warmupResult);
+
+      if (windowManager?.mainWindow && !windowManager.mainWindow.isDestroyed()) {
+        windowManager.mainWindow.webContents.send('warmup-complete', warmupResult);
       }
-      if (miniWindow && !miniWindow.isDestroyed()) {
-        miniWindow.webContents.send('warmup-complete', warmupResult);
+      if (windowManager?.miniWindow && !windowManager.miniWindow.isDestroyed()) {
+        windowManager.miniWindow.webContents.send('warmup-complete', warmupResult);
       }
     }
   } catch (err) {
@@ -923,57 +521,41 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (!isQuitting) return;
-  // Cleanup is done in before-quit; don't call app.quit() again here
-  // (redundant quit can trigger fail-fast exception on Windows)
   hotkeyManager?.unregister();
   database?.close();
   logger?.info('VoiceFlow closed');
 });
 
-app.on('activate', () => showMainWindow());
+app.on('activate', () => windowManager?.showMainWindow());
 
 app.on('before-quit', () => {
-  if (isQuitting) return; // Prevent re-entry
+  if (isQuitting) return;
   isQuitting = true;
   globalShortcut.unregisterAll();
-  
-  // CRITICAL: Destroy tray and windows explicitly to ensure clean shutdown
+
   try {
     if (tray) {
       tray.destroy();
       tray = null;
     }
   } catch {}
-  try {
-    if (miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.destroy();
-      miniWindow = null;
-    }
-  } catch {}
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.destroy();
-      mainWindow = null;
-    }
-  } catch {}
-  
-  // CRITICAL: Kill any running whisper-cli process to prevent ghost processes
+
+  windowManager?.destroyWindows();
+  windowManager?.setQuitting(true);
+
   try {
     const transcriber = getTranscriberInstance();
     if (transcriber) {
       transcriber.cancelTranscription();
     }
   } catch {}
-  
-  // CRITICAL: Force-stop uIOhook to prevent native crash on exit
+
   try {
     hotkeyManager?.forceStopUiohook();
     hotkeyManager?.clearWindowReferences();
   } catch {}
-  
-  // CRITICAL: Cleanup temp files from interrupted downloads
+
   cleanupTempFiles();
-  
   logger?.info('VoiceFlow shutting down — cleanup complete');
 });
 

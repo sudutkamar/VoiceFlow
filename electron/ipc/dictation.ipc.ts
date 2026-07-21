@@ -17,6 +17,7 @@ import { PasteEngine } from '../modules/pasteEngine';
 import { HotkeyManager } from '../modules/hotkeyManager';
 import { AdaptiveLearning } from '../modules/adaptiveLearning';
 import { LlmPostProcessor } from '../modules/llmPostProcessor';
+import { FuzzyMatcher } from '../modules/fuzzyMatcher';
 import { setupLlmIPC } from './llm.ipc';
 import { getDefaultModelsDir } from '../utils/modelsPath';
 
@@ -29,6 +30,7 @@ let isProcessing = false;
 let processingQueue: Array<{ buffer: Buffer; mimeType: string; duration: number }> = [];
 let lastTranscript = '';
 let lastCleanedText = '';
+let fuzzyMatcherInstance: FuzzyMatcher | null = null;
 
 // CRITICAL FIX: Max queue size to prevent memory overflow from rapid recording
 const MAX_QUEUE_SIZE = 5;
@@ -438,13 +440,13 @@ export function setupDictationIPC(
   ipcMain.handle('get-suggestions', async (_event, text: string) => {
     try {
       if (!text || text.trim().length < 3) return { success: true, suggestions: [] };
-      // Use FuzzyMatcher from dictation's internal modules
-      // Re-instanstiate for standalone suggestion calls
-      const { FuzzyMatcher } = require('../modules/fuzzyMatcher');
-      const matcher = new FuzzyMatcher(logger);
+      // Use cached FuzzyMatcher instance (reuses dictionary + error sets)
+      if (!fuzzyMatcherInstance) {
+        fuzzyMatcherInstance = new FuzzyMatcher(logger);
+      }
       const dictEntries = database.getDictionaryMap ? database.getDictionaryMap() : {};
-      matcher.loadDictionary(Object.entries(dictEntries).map(([k, v]) => ({ phrase: k, replacement: v as string })));
-      const suggestions = matcher.suggestAll(text);
+      fuzzyMatcherInstance.loadDictionary(Object.entries(dictEntries).map(([k, v]) => ({ phrase: k, replacement: v as string })));
+      const suggestions = fuzzyMatcherInstance.suggestAll(text);
       return { success: true, suggestions };
     } catch (err: any) {
       logger.warn('Failed to get suggestions', err);

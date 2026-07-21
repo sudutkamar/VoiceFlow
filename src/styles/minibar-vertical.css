@@ -583,4 +583,102 @@
   background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.2), transparent);
 }
 
+/* ============ LIGHT THEME OVERRIDES ============ */
+:root.light-theme .vmb-bar {
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.95) 0%, rgba(241, 243, 247, 0.95) 50%, rgba(248, 250, 252, 0.95) 100%),
+    radial-gradient(ellipse at 50% 20%, rgba(37, 99, 235, 0.05), transparent 60%),
+    radial-gradient(ellipse at 50% 80%, rgba(124, 58, 237, 0.03), transparent 60%);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.06),
+    0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+:root.light-theme .vmb-bar::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, transparent 40%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.02) 0%, transparent 30%);
+}
+
+:root.light-theme .vmb-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.7);
+}
+
+:root.light-theme .vmb-btn:hover {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.3);
+  color: #2563eb;
+  transform: translateY(-1px);
+}
+
+:root.light-theme .vmb-model-btn {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.75);
+}
+
+:root.light-theme .vmb-model-btn:hover {
+  background: #eef2ff;
+  border-color: rgba(37, 99, 235, 0.2);
+  color: #2563eb;
+  transform: translateY(-1px);
+}
+
+:root.light-theme .vmb-mic-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.65);
+}
+
+:root.light-theme .vmb-mic-btn:hover {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.3);
+  color: #2563eb;
+}
+
+:root.light-theme .vmb-mic-btn.recording {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+}
+
+:root.light-theme .vmb-tooltip {
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #475569;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+:root.light-theme .vmb-tooltip.vmb-tooltip-warning {
+  background: rgba(255, 243, 215, 0.97);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #92400e;
+}
+
+:root.light-theme .vmb-tooltip.vmb-tooltip-error {
+  background: rgba(254, 226, 226, 0.97);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: #991b1b;
+}
+
+:root.light-theme .vmb-tooltip.vmb-tooltip-gpu {
+  background: rgba(219, 234, 254, 0.97);
+  border-color: rgba(37, 99, 235, 0.2);
+  color: #1e40af;
+}
+
+:root.light-theme .vmb-result-text {
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+:root.light-theme .vmb-live-dot {
+  --dot-bg: #dc2626;
+}
+
 

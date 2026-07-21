@@ -1,5 +1,26 @@
 # Changelog VoiceFlow
 
+## [1.0.11] - 2026-07-21
+
+### Infrastructure
+- **Extracted Window Manager** — moved all window management (create/show/hide mainWindow + miniWindow) from `electron/main.ts` (980 lines → 430 lines) to dedicated `electron/modules/windowManager.ts`
+- **Split Preload API** — split `electron/preload.ts` (423 lines) into 10 domain-specific files under `electron/preload/`: audio, clipboard, miniWindow, settings, models, app, llm, learning, events, types. Main preload.ts now imports + merges all domain modules
+
+### Optimized
+- **FuzzyMatcher caching** — `get-suggestions` IPC in `dictation.ipc.ts` no longer re-instantiates FuzzyMatcher on every call. Now cached as module-level singleton, only reloads dictionary data
+- **Audio file GC** — `database.ts` now auto-deletes audio recording files older than 30 days at startup. Prevents unbounded disk growth. Runs once during `initialize()`
+
+### Fixed
+- **TypeScript errors** — `src/utils/icons.tsx` Iconify component now accepts `style` prop (wrapper span) and `color` prop (Iconify color). Fixes TS errors in Models.tsx and GeneralTab.tsx
+- **Light theme floating UI** — mini bar (horizontal + vertical) now has full light theme overrides. Model button, language selector, mic button, tooltips, result text, and dropdowns all get proper light theme colors. Previously invisible in light mode
+- **Commented remaining debug console.logs** — `wavRecorder.ts` startup logs now commented, only error paths remain active
+
+### Changelog
+- Added CHANGELOG.md entry for v1.0.11
+- Updated session-handoff.md
+
+---
+
 ## [1.0.10] - 2026-07-20
 
 ### Added

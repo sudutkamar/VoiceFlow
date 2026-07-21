@@ -35,7 +35,7 @@ export class WavRecorder {
   async start(deviceId?: string): Promise<void> {
     // CRITICAL FIX: Proper error handling with resource cleanup
     try {
-      console.log('[WavRecorder] Requesting mic:', deviceId || 'default');
+      // console.log('[WavRecorder] Requesting mic:', deviceId || 'default');
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -46,8 +46,8 @@ export class WavRecorder {
           ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         },
       });
-      console.log('[WavRecorder] Mic obtained, tracks:', this.stream.getAudioTracks().length);
-      console.log('[WavRecorder] Track settings:', JSON.stringify(this.stream.getAudioTracks()[0]?.getSettings()));
+      // console.log('[WavRecorder] Mic obtained, tracks:', this.stream.getAudioTracks().length);
+      // console.log('[WavRecorder] Track settings:', JSON.stringify(this.stream.getAudioTracks()[0]?.getSettings()));
     } catch (err: any) {
       console.error('[WavRecorder] getUserMedia failed:', err.name, err.message);
       // Don't leak resources if getUserMedia fails

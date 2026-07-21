@@ -306,6 +306,42 @@ App.tsx
 --glass-bg, --glass-border, --glass-shadow
 ```
 
+### Dark/Light Theme — WAJIB Konsisten
+
+**Setiap elemen UI WAJIB punya style baik di dark theme maupun light theme.** Jangan hanya nambah style untuk dark mode lalu lupa light mode.
+
+Aturan:
+1. **CSS variables** — pake `--*` variable yang di-root untuk dark dan `.light-theme` override. Jangan hardcode value langsung di selector kecuali terpaksa
+2. **Override lengkap** — setiap kali nambah elemen baru di floating UI (MiniBar / VerticalMiniBar), pastikan ada padanan `.light-theme`-nya
+3. **Konsistensi visual** — elemen yang sama secara fungsi (contoh: language button & model button) harus punya styling IDENTIK di kedua mode, tidak boleh beda bg/warna/hover effect
+4. **Light theme override file**:
+   - `minibar-horizontal.css` — light theme overrides di bagian akhir file
+   - `minibar-vertical.css` — light theme overrides di bagian akhir file
+   - `app.css`, `pages.css`, `components.css` — pakai `:root.light-theme` + selector
+
+Contoh benar — satu source of truth via CSS variables:
+```css
+/* Di root mini-bar */
+.mini-bar {
+  --btn-bg: rgba(255, 255, 255, 0.08);
+  --btn-border: rgba(255, 255, 255, 0.1);
+  --btn-color: rgba(255, 255, 255, 0.7);
+}
+.m-lang, .m-model-btn {
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  color: var(--btn-color);
+}
+
+/* Light theme — cukup ganti variable */
+:root.light-theme .mini-bar {
+  --btn-bg: rgba(0, 0, 0, 0.05);
+  --btn-border: rgba(0, 0, 0, 0.08);
+  --btn-color: rgba(0, 0, 0, 0.7);
+}
+/* .m-lang dan .m-model-btn otomatis pake nilai baru */
+```
+
 ### Glassmorphism Design
 - `backdrop-filter: blur(20px)` untuk efek glass
 - Gradient accents (`--accent-gradient`)

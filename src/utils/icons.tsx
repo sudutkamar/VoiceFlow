@@ -90,13 +90,23 @@ export const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
-export function Iconify({ icon, size = 18, className = '' }: { icon: IconName; size?: number; className?: string }) {
+export function Iconify({ icon, size = 18, className = '', style, color }: {
+  icon: IconName;
+  size?: number;
+  className?: string;
+  style?: React.CSSProperties;
+  color?: string;
+}) {
   const iconId = ICONS[icon];
   if (!iconId) {
     console.warn(`[Iconify] Unknown icon: ${icon}`);
     return null;
   }
-  return <Icon icon={iconId} width={size} height={size} className={className} />;
+  return (
+    <span style={style}>
+      <Icon icon={iconId} width={size} height={size} className={className} color={color} />
+    </span>
+  );
 }
 
 export function getModelIcon(name: string): IconName {

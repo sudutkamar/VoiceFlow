@@ -55,6 +55,7 @@ export class VoiceFlowDatabase {
       this.migrateSchema();
       this.insertDefaultSettings();
       this.fixInvalidHotkey();
+      this.cleanupOldAudioFiles();
       this.logger.info('Database initialized');
     } catch (error) {
       this.logger.error('Failed to initialize database', error);
@@ -311,6 +312,47 @@ export class VoiceFlowDatabase {
   removeAudioPath(id: string): void {
     if (!this.db) return;
     this.db.prepare('DELETE FROM settings WHERE key = ?').run(`audio_path_${id}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Auto-cleanup: delete audio files older than 30 days.
+   * Runs once at database initialization to prevent unbounded disk growth.
+   */
+  private cleanupOldAudioFiles(): void {
+    if (!this.db) return;
+    const maxAgeMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const now = Date.now();
+    try {
+      // Get all audio path entries
+      const rows = this.db.prepare("SELECT key, value FROM settings WHERE key LIKE 'audio_path_%'").all() as any[];
+      let cleaned = 0;
+      for (const row of rows) {
+        const audioPath = row.value as string;
+        if (!audioPath || !fs.existsSync(audioPath)) {
+          // Orphaned path — remove the setting entry
+          this.db!.prepare('DELETE FROM settings WHERE key = ?').run(row.key);
+          continue;
+        }
+        try {
+          const stat = fs.statSync(audioPath);
+          if (now - stat.mtimeMs > maxAgeMs) {
+            try { fs.unlinkSync(audioPath); } catch {}
+            this.db!.prepare('DELETE FROM settings WHERE key = ?').run(row.key);
+            cleaned++;
+          }
+        } catch {
+          // Can't stat — remove reference
+          this.db!.prepare('DELETE FROM settings WHERE key = ?').run(row.key);
+        }
+      }
+      if (cleaned > 0) {
+        this.logger.info(`[AudioGC] Cleaned up ${cleaned} old audio files`);
+      }
+    } catch (err) {
+      this.logger.warn('[AudioGC] Cleanup failed', err);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
