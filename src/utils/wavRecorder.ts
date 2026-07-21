@@ -57,9 +57,7 @@ export class WavRecorder {
 
     try {
       this.audioContext = new AudioContext({ sampleRate: 16000 });
-      console.log('[WavRecorder] AudioContext created, state:', this.audioContext.state);
       this.source = this.audioContext.createMediaStreamSource(this.stream);
-      console.log('[WavRecorder] MediaStreamSource created');
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
 
@@ -88,7 +86,7 @@ export class WavRecorder {
           }
           await new Promise(r => setTimeout(r, 100));
         }
-        console.log('[WavRecorder] AudioContext state after resume:', this.audioContext.state);
+        // console.log('[WavRecorder] AudioContext state after resume:', this.audioContext.state);
       }
 
       // Start recording with ScriptProcessorNode
@@ -112,7 +110,7 @@ export class WavRecorder {
           }
           const avg = sum / channelData.length;
           if (avg > 0.001) {
-            console.log('[WavRecorder] Audio level:', (avg * 1000).toFixed(1), 'chunks:', chunkCount);
+            // console.log('[WavRecorder] Audio level:', (avg * 1000).toFixed(1), 'chunks:', chunkCount);
           }
         }
       };

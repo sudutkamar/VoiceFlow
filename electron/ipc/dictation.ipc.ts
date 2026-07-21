@@ -148,8 +148,9 @@ export function setupDictationIPC(
         duration: audioData.duration 
       });
       
-      const tempDir = getTempDir();
-      const wavPath = path.join(tempDir, `recording_${Date.now()}.wav`);
+      const recordingsDir = getRecordingsDir();
+      const recordingId = uuidv4();
+      const wavPath = path.join(recordingsDir, `recording_${recordingId}.wav`);
       fs.writeFileSync(wavPath, audioData.buffer);
       timingLog.push(`save:${Date.now() - startTime}ms`);
       logger.info('Audio saved', { path: wavPath });
@@ -207,9 +208,6 @@ export function setupDictationIPC(
         formalMode,
       });
       timingLog.push(`transcribe:${Date.now() - transcribeStart}ms`);
-
-      // Cleanup temp file
-      try { fs.unlinkSync(wavPath); } catch (err) { /* temp file may already be gone */ }
 
       logger.info('[processAudio] Transcription result:', {
         success: transcribeResult.success,
@@ -357,10 +355,9 @@ export function setupDictationIPC(
       // Record transcription for auto-learning
       adaptiveLearning.recordTranscription(transcribeResult.text || '');
 
-      // Save to history
-      const id = uuidv4();
+      // Save to history (with audio file path for persistent playback)
       const durationMs = Date.now() - startTime;
-      database.addHistory(id, transcribeResult.text || '', finalText, durationMs, audioData.duration);
+      database.addHistory(recordingId, transcribeResult.text || '', finalText, durationMs, audioData.duration, transcribeResult.usedModel || '', 0, 0, wavPath);
 
       hotkeyManager?.setState('done');
       timingLog.push(`paste:${pasteResult.ms || 0}ms`);
@@ -412,6 +409,50 @@ export function setupDictationIPC(
   });
 
   // ═══════════════════════════════════════════════════════════════
+  //  Audio Playback IPC
+  // ═══════════════════════════════════════════════════════════════
+
+  // Play audio from a history item using main process playback
+  // (renderer can't use file:// protocol due to security restrictions)
+  ipcMain.handle('play-audio', async (_event, historyId: string) => {
+    try {
+      const audioPath = database.getAudioPath(historyId);
+      if (!audioPath || !fs.existsSync(audioPath)) {
+        return { success: false, error: 'Audio file not found' };
+      }
+      // Read file as buffer, return base64
+      const buffer = fs.readFileSync(audioPath);
+      const base64 = buffer.toString('base64');
+      return { success: true, data: base64, mimeType: 'audio/wav' };
+    } catch (err: any) {
+      logger.warn('Failed to play audio', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Smart Suggestions IPC — "Did You Mean?"
+  // ═══════════════════════════════════════════════════════════════
+
+  // Get suggestions for words that could be improved
+  ipcMain.handle('get-suggestions', async (_event, text: string) => {
+    try {
+      if (!text || text.trim().length < 3) return { success: true, suggestions: [] };
+      // Use FuzzyMatcher from dictation's internal modules
+      // Re-instanstiate for standalone suggestion calls
+      const { FuzzyMatcher } = require('../modules/fuzzyMatcher');
+      const matcher = new FuzzyMatcher(logger);
+      const dictEntries = database.getDictionaryMap ? database.getDictionaryMap() : {};
+      matcher.loadDictionary(Object.entries(dictEntries).map(([k, v]) => ({ phrase: k, replacement: v as string })));
+      const suggestions = matcher.suggestAll(text);
+      return { success: true, suggestions };
+    } catch (err: any) {
+      logger.warn('Failed to get suggestions', err);
+      return { success: true, suggestions: [] };
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   //  Adaptive Learning IPC
   // ═══════════════════════════════════════════════════════════════
 
@@ -457,8 +498,8 @@ export function setupDictationIPC(
       ? (ch: string, data: any) => hotkeyManager.sendToAll(ch, data)
       : (ch: string, data: any) => mainWindow.webContents.send(ch, data);
     try {
-      const tempDir = getTempDir();
-      const wavPath = path.join(tempDir, `benchmark_${Date.now()}.wav`);
+      const benchTempDir = getTempDir();
+      const wavPath = path.join(benchTempDir, `benchmark_${Date.now()}.wav`);
       fs.writeFileSync(wavPath, Buffer.from(audioBuffer));
       const language = database.getSetting('language') || 'auto';
       const initialPrompt = database.getSetting('initial_prompt') || '';
@@ -488,5 +529,14 @@ export function setupDictationIPC(
       fs.mkdirSync(tempDir, { recursive: true });
     }
     return tempDir;
+  }
+
+  function getRecordingsDir(): string {
+    const userDataPath = app.getPath('userData');
+    const recordingsDir = path.join(userDataPath, 'recordings');
+    if (!fs.existsSync(recordingsDir)) {
+      fs.mkdirSync(recordingsDir, { recursive: true });
+    }
+    return recordingsDir;
   }
 }

@@ -16,8 +16,8 @@ declare global {
 }
 
 // Log startup
-console.log('[VoiceFlow] App initializing, hash:', window.location.hash);
-console.log('[VoiceFlow] electronAPI available:', !!window.electronAPI);
+// console.log('[VoiceFlow] App initializing, hash:', window.location.hash);
+// console.log('[VoiceFlow] electronAPI available:', !!window.electronAPI);
 
 export default function App() {
   return (

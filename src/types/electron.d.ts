@@ -65,6 +65,10 @@ interface ElectronAPI {
   setSpeedLimit: (bytesPerSecond: number) => Promise<{ success: boolean }>;
   getSpeedLimit: () => Promise<{ bytesPerSecond: number }>;
 
+  // Suggestions
+  getSuggestions: (text: string) => Promise<{ success: boolean; suggestions: Array<{ word: string; suggestion: string; confidence: number; position: number }> }>;
+  playAudio: (historyId: string) => Promise<{ success: boolean; data?: string; mimeType?: string; error?: string }>;
+  
   // Adaptive Learning
   learnCorrection: (original: string, corrected: string) => Promise<{ success: boolean; error?: string }>;
   getLearnedCorrections: () => Promise<any[]>;
@@ -158,6 +162,9 @@ interface ElectronAPI {
   onLlmBinaryDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
+  onModelChanged: (callback: (modelName: string) => void) => () => void;
+  getStartupMode: () => Promise<string>;
+  setStartupMode: (mode: string) => Promise<{ success: boolean }>;
   
   // Warmup
   getWarmupStatus: () => Promise<{ ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }>;

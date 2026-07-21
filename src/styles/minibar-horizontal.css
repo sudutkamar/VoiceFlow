@@ -1,5 +1,5 @@
 /* ============ MINI MODE ============ */
-/* Bar uses fixed px sizes. CSS zoom (set via JS) scales everything proportionally. */
+/* Bar uses fixed px sizes. CSS transform scale (set via JS) scales everything proportionally. */
 body.mini-mode, html.mini-mode { background: transparent; }
 
 .mini-app {
@@ -10,8 +10,9 @@ body.mini-mode, html.mini-mode { background: transparent; }
   align-items: center;
   justify-content: center;
   overflow: visible;
+  position: relative;
   padding: 0;
-  transition: zoom 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 /* === MAIN BAR === */
@@ -285,17 +286,61 @@ body.mini-mode, html.mini-mode { background: transparent; }
   opacity: 0.6;
 }
 
-.m-warmup-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #666;
-  transition: background 0.3s ease;
+.m-model-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+  width: 40px;
+  height: 40px;
 }
 
-.m-warmup-dot.ready {
-  background: #4ade80;
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+.m-model-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  width: 40px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 9px;
+  font-weight: 700;
+  font-family: inherit;
+  -webkit-app-region: no-drag;
+  position: relative;
+  overflow: hidden;
+}
+
+.m-model-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  transition: left 0.4s ease;
+}
+
+.m-model-btn:hover::before {
+  left: 100%;
+}
+
+.m-model-btn:hover {
+  background: rgba(74, 158, 255, 0.2);
+  border-color: rgba(74, 158, 255, 0.3);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(74, 158, 255, 0.25);
+}
+
+.m-model-label {
+  line-height: 1.2;
+  text-align: center;
 }
 
 .m-lang-arrow {

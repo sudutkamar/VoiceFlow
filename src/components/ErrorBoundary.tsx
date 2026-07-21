@@ -23,7 +23,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[VoiceFlow] ErrorBoundary caught:', error, errorInfo);
+    console.error('[VoiceFlow] ErrorBoundary caught:', error.message);
+    console.error('[VoiceFlow] Stack:', error.stack);
+    console.error('[VoiceFlow] Component stack:', errorInfo.componentStack);
     // Also write to localStorage for debugging
     try {
       const errorDump = {

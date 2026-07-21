@@ -28,6 +28,7 @@ export default function HomePage({ settings, onSuccess, onError }: HomePageProps
   const [confidence, setConfidence] = useState<any>(null);
   const [fuzzyChanges, setFuzzyChanges] = useState<number>(0);
   const [rawText, setRawText] = useState<string>('');
+  const [suggestions, setSuggestions] = useState<Array<{ word: string; suggestion: string; confidence: number; position: number }>>([]);
   const [levels, setLevels] = useState<number[]>(Array(30).fill(0));
   const prevState = useRef<State>('idle');
 
@@ -49,6 +50,13 @@ export default function HomePage({ settings, onSuccess, onError }: HomePageProps
       setHistory(prev => [result, ...prev].slice(0, 10));
       setState('done');
       playSound('done');
+      // Reset old suggestions + fetch smart suggestions
+      setSuggestions([]);
+      if (result && result.length >= 10) {
+        window.electronAPI.getSuggestions(result).then((res) => {
+          if (res.success && res.suggestions.length > 0) setSuggestions(res.suggestions);
+        }).catch(() => {});
+      }
       setTimeout(() => setState('idle'), 2000);
     },
     onPartial: (p) => setPartial(p),
@@ -298,6 +306,38 @@ export default function HomePage({ settings, onSuccess, onError }: HomePageProps
                 Paste
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Smart Suggestions: "Did You Mean?" */}
+        {suggestions.length > 0 && text && state !== 'recording' && (
+          <div className="suggestions-box">
+            <div className="suggestions-header">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>
+              </svg>
+              Suggestions
+            </div>
+            {suggestions.map((s, i) => (
+              <div key={i} className="suggestion-row">
+                <span className="suggestion-original">"{s.word}"</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+                </svg>
+                <button
+                  className="suggestion-btn"
+                  onClick={async () => {
+                    const replace = text.substring(0, s.position) + s.suggestion + text.substring(s.position + s.word.length);
+                    setText(replace);
+                    setSuggestions([]);
+                    playSound('done');
+                  }}
+                >
+                  "{s.suggestion}"
+                </button>
+                <span className="suggestion-conf">{Math.round(s.confidence * 100)}%</span>
+              </div>
+            ))}
           </div>
         )}
 

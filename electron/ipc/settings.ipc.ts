@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, BrowserWindow as BW } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import { VoiceFlowDatabase as Database } from '../modules/database';
@@ -36,6 +36,19 @@ export function setupSettingsIPC(
           if (transcriber) transcriber.warmup(value);
         } catch (err) {
           logger.warn('Model warmup failed after setting change', err);
+        }
+        
+        // Broadcast model-changed event to ALL windows (main + mini)
+        try {
+          const allWindows = BW.getAllWindows();
+          for (const win of allWindows) {
+            if (!win.isDestroyed()) {
+              win.webContents.send('model-changed', value);
+            }
+          }
+          logger.info(`Model changed broadcast: ${value}`);
+        } catch (err) {
+          logger.warn('Failed to broadcast model-changed event', err);
         }
       }
       // Broadcast theme change to all windows

@@ -223,6 +223,25 @@ export function GeneralTab({
         </div>
         <div className="setting-row">
           <div className="setting-info">
+            <span className="setting-name">Startup Mode</span>
+            <span className="setting-hint">What to show when the app starts</span>
+          </div>
+          <select
+            value={settings.startup_mode || 'full'}
+            onChange={(e) => {
+              save('startup_mode', e.target.value);
+              window.electronAPI.setStartupMode(e.target.value);
+              onSuccess(e.target.value === 'full' ? 'Full window mode' : e.target.value === 'mini' ? 'MiniBar mode' : 'Tray mode');
+            }}
+            style={{ maxWidth: 180 }}
+          >
+            <option value="full">🏠 Full Window</option>
+            <option value="mini">📐 MiniBar Only</option>
+            <option value="tray">🔧 Tray Only</option>
+          </select>
+        </div>
+        <div className="setting-row">
+          <div className="setting-info">
             <span className="setting-name">Floating UI</span>
             <span className="setting-hint">Show compact floating bar while dictating. Turn off for silent background paste.</span>
           </div>

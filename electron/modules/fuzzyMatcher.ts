@@ -352,8 +352,105 @@ export class FuzzyMatcher {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  Public API
+  //  Suggestion API — "Did You Mean?" without auto-correction
   // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Find suggestions for a single word ("Did you mean?").
+   * Returns null if no good suggestion found.
+   * This is a NON-destructive version — only suggests, never auto-corrects.
+   */
+  suggest(word: string): { suggestion: string; confidence: number; reason: string } | null {
+    if (!word || word.length < 2) return null;
+    const clean = this.stripPunctuation(word);
+    const lower = clean.toLowerCase();
+    if (!lower) return null;
+
+    // 1. Check exact dictionary match
+    // If dictionary has it, the word is already correct — no suggestion needed
+    if (this.dictionarySet.has(lower)) {
+      const target = this.dictionarySet.get(lower)!;
+      if (target.toLowerCase() !== lower) {
+        return { suggestion: target, confidence: 0.95, reason: 'dictionary' };
+      }
+    }
+    if (this.errorSet.has(lower)) {
+      return { suggestion: this.errorSet.get(lower)!, confidence: 0.85, reason: 'common_error' };
+    }
+
+    // 2. Check reverse: maybe the word is what someone meant to say for a dict entry
+    // e.g. user says "cara" but has dict entry "kara" -> "cara"
+    for (const [phrase, replacement] of this.dictionarySet) {
+      if (replacement.toLowerCase() === lower && phrase !== lower) {
+        return { suggestion: phrase, confidence: 0.65, reason: 'dictionary_reverse' };
+      }
+    }
+    for (const [error, correction] of this.errorSet) {
+      if (correction.toLowerCase() === lower && error !== lower) {
+        return { suggestion: error, confidence: 0.60, reason: 'error_reverse' };
+      }
+    }
+
+    // 3. Fuzzy match against dictionary keys
+    const dictMatch = this.findBestMatchFast(lower, this.dictionaryByLength);
+    if (dictMatch && dictMatch.distance <= this.maxDistance && dictMatch.distance > 0) {
+      const similarity = 1 - (dictMatch.distance / Math.max(lower.length, dictMatch.word.length));
+      if (similarity >= this.minConfidenceThreshold) {
+        const replacement = this.dictionarySet.get(dictMatch.word);
+        if (replacement && replacement.toLowerCase() !== lower) {
+          return { suggestion: replacement, confidence: similarity * 0.85, reason: 'fuzzy' };
+        }
+      }
+    }
+
+    // 4. Fuzzy match against error set
+    const errorMatch = this.findBestMatchFast(lower, this.errorKeysByLength);
+    if (errorMatch && errorMatch.distance <= this.maxDistance && errorMatch.distance > 0) {
+      const similarity = 1 - (errorMatch.distance / Math.max(lower.length, errorMatch.word.length));
+      if (similarity >= this.minConfidenceThreshold) {
+        const correction = this.errorSet.get(errorMatch.word);
+        if (correction && correction.toLowerCase() !== lower) {
+          return { suggestion: correction, confidence: similarity * 0.75, reason: 'fuzzy' };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Find all suggestions for entire text.
+   * Returns array of { word, suggestion, confidence } for words that could be improved.
+   */
+  suggestAll(text: string): Array<{ word: string; suggestion: string; confidence: number; position: number }> {
+    if (!text || text.trim().length === 0) return [];
+    
+    const results: Array<{ word: string; suggestion: string; confidence: number; position: number }> = [];
+    
+    // Split into words, tracking positions
+    const re = /[\w']+(?:\s*['-]\s*[\w']+)*|[.,!?;:]+/g;
+    let match;
+    while ((match = re.exec(text)) !== null) {
+      const word = match[0];
+      const pos = match.index;
+      
+      // Skip punctuation-only tokens
+      if (/^[.,!?;:]+$/.test(word)) continue;
+      
+      const suggestion = this.suggest(word);
+      if (suggestion) {
+        results.push({
+          word,
+          suggestion: suggestion.suggestion,
+          confidence: suggestion.confidence,
+          position: pos,
+        });
+      }
+    }
+    
+    // Sort by confidence descending, limit to top 3
+    return results.sort((a, b) => b.confidence - a.confidence).slice(0, 3);
+  }
 
   getStats(): { dictionarySize: number; commonErrorsSize: number } {
     return {

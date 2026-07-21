@@ -94,12 +94,35 @@ function History({ onSuccess }: HistoryProps) {
     }
   };
 
+  const [playingId, setPlayingId] = useState<string | null>(null);
+
   const handleCopy = async (text: string, id: string) => {
     try {
       await window.electronAPI.copyText(text);
       setCopiedId(id);
       onSuccess('Copied!');
       setTimeout(() => setCopiedId(null), 1500);
+    } catch (error) {
+      logError('History', error);
+    }
+  };
+
+  const handlePlayAudio = async (id: string) => {
+    if (playingId === id) { setPlayingId(null); return; }
+    try {
+      const result = await window.electronAPI.playAudio(id);
+      if (result.success && result.data) {
+        setPlayingId(id);
+        const binaryStr = window.atob(result.data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        const blob = new Blob([bytes], { type: result.mimeType || 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => { setPlayingId(null); URL.revokeObjectURL(url); };
+        audio.onerror = () => { setPlayingId(null); URL.revokeObjectURL(url); onSuccess('Audio unavailable'); };
+        audio.play().catch(() => { setPlayingId(null); URL.revokeObjectURL(url); onSuccess('Playback failed'); });
+      }
     } catch (error) {
       logError('History', error);
     }
@@ -216,6 +239,9 @@ function History({ onSuccess }: HistoryProps) {
                         <div className="card-actions">
                           <button className="btn btn-sm" onClick={() => handleCopy(item.final_text || item.raw_text, item.id)}>
                             <Iconify icon="copy" size={14} /> {copiedId === item.id ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button className={`btn btn-sm ${playingId === item.id ? 'btn-active' : ''}`} onClick={() => handlePlayAudio(item.id)} title="Play recording">
+                            <Iconify icon={playingId === item.id ? 'cancel' : 'speaker'} size={14} />
                           </button>
                           <button className="btn btn-sm btn-icon" onClick={() => handleDelete(item.id)} title="Delete">
                             <Iconify icon="delete" size={14} />

@@ -181,7 +181,17 @@ function Models({ onSuccess, onError }: ModelsProps) {
       setDownloadState(state as DownloadState);
     });
 
-    return () => unsub();
+    // Listen for model-changed events (from another window or setting change)
+    const unsubModelChanged = window.electronAPI.onModelChanged?.(async (modelName) => {
+      // Refresh models list and selected model
+      setSelectedModel(modelName);
+      loadModels(false);
+    });
+
+    return () => {
+      unsub();
+      if (typeof unsubModelChanged === 'function') unsubModelChanged();
+    };
   }, [loadModels, loadSettings, loadModelsPath, notif]);
 
   const handleChooseFolder = async () => {

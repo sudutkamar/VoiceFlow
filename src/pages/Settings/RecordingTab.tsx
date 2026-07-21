@@ -279,6 +279,66 @@ export function RecordingTab({ settings, save, mics, availableModels, loadMics, 
         </div>
       </div>
 
+      {/* Voice Activity Detection — Sensitivity */}
+      <div className="section">
+        <div className="section-header">Voice Activity Detection</div>
+        <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+          <div className="setting-info">
+            <span className="setting-name">Recording Sensitivity</span>
+            <span className="setting-hint">How sensitive the mic is to detect speech. Higher = detects quiet speech but may pick up background noise.</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <select
+              value={settings.vad_sensitivity || 'medium'}
+              onChange={(e) => save('vad_sensitivity', e.target.value)}
+              style={{ flex: 1 }}
+            >
+              <option value="low">🔇 Low — Quiet rooms, fewer false triggers</option>
+              <option value="medium">🎤 Medium — Balanced (default)</option>
+              <option value="high">🔊 High — Noisy rooms, catches soft speech</option>
+            </select>
+          </div>
+          <span className="setting-hint">
+            {settings.vad_sensitivity === 'low' ? 'Best for quiet environments. Less likely to false-trigger on background noise.' :
+             settings.vad_sensitivity === 'high' ? 'Best for noisy environments or soft speakers. May have more false starts.' :
+             'Balanced setting suitable for most environments.'}
+          </span>
+        </div>
+
+        <div className="setting-row">
+          <div className="setting-info">
+            <span className="setting-name">Pause Timeout</span>
+            <span className="setting-hint">How long of a pause before auto-stops recording</span>
+          </div>
+          <select
+            value={settings.vad_silence_ms || '3000'}
+            onChange={(e) => save('vad_silence_ms', e.target.value)}
+          >
+            <option value="1500">1.5s — Very short pauses</option>
+            <option value="2000">2s — Short pauses</option>
+            <option value="3000">3s — Normal (default)</option>
+            <option value="4000">4s — Long pauses</option>
+            <option value="5000">5s — Very long pauses</option>
+            <option value="7000">7s — Max patience</option>
+          </select>
+        </div>
+
+        <div className="setting-row">
+          <div className="setting-info">
+            <span className="setting-name">Voice Activity Detection</span>
+            <span className="setting-hint">Auto-stop recording during silence vs manual stop</span>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={settings.vad_enabled !== 'false'}
+              onChange={(e) => save('vad_enabled', e.target.checked ? 'true' : 'false')}
+            />
+            <span className="toggle-slider" />
+          </label>
+        </div>
+      </div>
+
       {/* Whisper Model */}
       <div className="section">
         <div className="section-header">Whisper Model</div>

@@ -594,6 +594,16 @@ function setupIPC(): void {
     app.setLoginItemSettings({ openAtLogin: enable, path: app.getPath('exe') });
     return { success: true };
   });
+  
+  ipcMain.handle('get-startup-mode', () => {
+    return database?.getSetting('startup_mode') || 'full';
+  });
+  
+  ipcMain.handle('set-startup-mode', (_, mode: string) => {
+    database?.updateSetting('startup_mode', mode);
+    logger?.info(`Startup mode set to: ${mode}`);
+    return { success: true };
+  });
   ipcMain.handle('get-gpu-status', async () => {
     try {
       const status = await cudaDownloader.checkStatus();
@@ -788,8 +798,12 @@ app.whenReady().then(() => {
   const forceFirstRun = process.env.VOICEFLOW_FIRST_RUN === '1';
   const isFirstRun = forceFirstRun || !database.getSetting('has_run_before');
 
-  // Always create main window (shown by default)
-  createMainWindow(true);
+  // Startup mode: 'full' (default), 'mini' (MiniBar only), 'tray' (tray only)
+  const startupMode = database.getSetting('startup_mode') || 'full';
+  logger.info(`[Startup] Mode: ${startupMode}`);
+  
+  const showMainInitially = startupMode === 'full';
+  createMainWindow(showMainInitially);
   createTray();
 
   if (mainWindow) {
@@ -798,11 +812,24 @@ app.whenReady().then(() => {
     
     if (isFirstRun) {
       database.updateSetting('has_run_before', 'true');
-      // First install: also show floating UI after main window is ready
+      // First install: show floating UI after main window is ready
       mainWindow.once('ready-to-show', () => {
         setTimeout(() => {
           showMiniWindow();
         }, 800);
+      });
+    } else if (startupMode === 'mini') {
+      // MiniBar only mode: hide main window, show mini
+      mainWindow.once('ready-to-show', () => {
+        mainWindow?.hide();
+        setTimeout(() => {
+          showMiniWindow();
+        }, 600);
+      });
+    } else if (startupMode === 'tray') {
+      // Tray only mode: hide everything, let user activate via tray
+      mainWindow.once('ready-to-show', () => {
+        mainWindow?.hide();
       });
     }
   }

@@ -182,6 +182,12 @@ export default function VerticalMiniBar({ settings }: Props) {
       if (s.hasGpu && !s.cudaDllsPresent) setGpuStatus('GPU');
       else setGpuStatus(null);
     }).catch((err) => logWarning('VerticalMiniBar', 'Failed to get GPU status', err));
+    
+    // Listen for model-changed events to refresh hasModel check
+    const unsubModelChangedVert = window.electronAPI.onModelChanged?.((modelName) => {
+      window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
+    });
+    
     const unsubs = [
       window.electronAPI.onHotkeyRegistered?.(() => {}),
       window.electronAPI.onThemeChange?.((t: string) => {
@@ -190,6 +196,7 @@ export default function VerticalMiniBar({ settings }: Props) {
       }),
       window.electronAPI.onReloadSettings?.(() => { loadSettings(); }),
     ];
+    if (unsubModelChangedVert) unsubs.push(unsubModelChangedVert);
     return () => { unsubs.forEach((u) => u()); };
   }, []);
 
@@ -243,7 +250,7 @@ export default function VerticalMiniBar({ settings }: Props) {
     <div style={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       <div
         className={barClass}
-        style={{ zoom }}
+        style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
         onMouseEnter={() => { if (isIdle) setState('hover'); }}
         onMouseLeave={() => { if (stateRef.current === 'hover') setState('idle'); }}
       >

@@ -526,6 +526,63 @@
   margin-bottom: 2px;
 }
 
+/* Smart Suggestions: "Did You Mean?" */
+.suggestions-box {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
+}
+
+.suggestions-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.suggestion-original {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.suggestion-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.suggestion-btn:hover {
+  opacity: 0.8;
+  transform: translateY(-1px);
+}
+
+.suggestion-conf {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
 /* ============ DIFF VIEW ============ */
 .diff-view {
   margin-top: 10px;
@@ -685,6 +742,40 @@
   font-size: 11px;
   color: var(--text-dim);
   line-height: 1.4;
+}
+
+.preset-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition);
+  z-index: 2;
+}
+
+.preset-card:hover .preset-delete {
+  opacity: 0.7;
+}
+
+.preset-delete:hover {
+  opacity: 1 !important;
+  background: rgba(255, 80, 80, 0.3);
+}
+
+.preset-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
 }
 
 /* ============ BENCHMARK ============ */

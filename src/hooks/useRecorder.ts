@@ -99,7 +99,7 @@ function useVad(
     // Emergency stop: setelah 45 detik, force silence untuk trigger stop
     // Dinaikkan dari 30s ke 45s untuk accommodate long dictation
     const emergencyTimerId = setTimeout(() => {
-      console.log('[VAD] Emergency stop: 45s timeout reached');
+      // console.log('[VAD] Emergency stop: 45s timeout reached');
       hasDetectedAudio.current = true;
       silenceStart.current = Date.now() - timeoutMs - 100;
     }, 45000);
@@ -237,11 +237,16 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
   // VAD — always active when recording (VAD or timer-based)
   const vadEnabled = settings.vad_enabled !== 'false';
   const vadSilenceMs = parseInt(settings.vad_silence_ms || String(DEFAULT_VAD_SILENCE_MS), 10);
-  // VAD threshold: 0.020 — above noise floor (~0.005-0.015) but below speech (~0.02-0.2)
-  // Hangover: 500ms — grace period for natural pauses between sentences
-  // Smoothing: EMA alpha=0.3 — stable RMS without losing responsiveness
-  const vadThreshold = VAD_SPEECH_THRESHOLD;
-  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs, vadThreshold);
+  
+  // VAD sensitivity profiles — user-selectable via Settings > Recording
+  const vadSensitivity = settings.vad_sensitivity || 'medium';
+  const vadProfiles: Record<string, { threshold: number; hangover: number; smoothing: number }> = {
+    low:    { threshold: 0.035, hangover: 800, smoothing: 0.25 },  // Low sensitivity: higher threshold, longer hangover
+    medium: { threshold: 0.020, hangover: 500, smoothing: 0.30 },  // Medium: balanced (default)
+    high:   { threshold: 0.010, hangover: 300, smoothing: 0.40 },  // High: lower threshold, shorter hangover, more reactive
+  };
+  const vadProfile = vadProfiles[vadSensitivity] || vadProfiles.medium;
+  const silenceDetected = useVad(analyserRef, state === 'recording' && vadEnabled, vadSilenceMs, vadProfile.threshold, vadProfile.hangover, vadProfile.smoothing);
 
   // Auto-stop on silence
   useEffect(() => {
@@ -393,7 +398,7 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
         
         // Validate buffer before sending
         if (!buffer || buffer.byteLength === 0) {
-          console.error('[useRecorder] Empty audio buffer received from recorder');
+          // console.error('[useRecorder] Empty audio buffer received from recorder');
           setError('Recording failed: empty audio');
           setState('idle');
           setTimeout(() => setError(''), 3000);
@@ -410,7 +415,7 @@ export function useRecorder(settings: Record<string, string>, options: UseRecord
           }
         }, PROCESSING_TIMEOUT_MS);
       } catch (err: any) {
-        console.error('[useRecorder] stopRec error:', err);
+        // console.error('[useRecorder] stopRec error:', err);
         setError(err?.message || 'Recording failed');
         setState('idle');
         setTimeout(() => setError(''), 3000);

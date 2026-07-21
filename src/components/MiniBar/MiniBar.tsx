@@ -30,6 +30,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
   const [windowHeight, setWindowHeight] = useState(64);
   const [windowWidth, setWindowWidth] = useState(460);
   const [warmupStatus, setWarmupStatus] = useState<{ ready: boolean; model: string; gpuAvailable: boolean }>({ ready: false, model: '', gpuAvailable: false });
+  const [availableModels, setAvailableModels] = useState<{ name: string; downloaded?: boolean }[]>([]);
   const langRef = useRef<HTMLDivElement>(null);
 
   const recorder = useRecorder(settings, {
@@ -116,17 +117,22 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     ];
     window.electronAPI.getTargetApp().then(setTargetApp).catch((err) => logWarning('MiniBar', 'Failed to get target app', err));
 
-    // Close lang dropdown on outside click
+    // Close lang/model dropdown on outside click
     const handleOutsideClick = (e: MouseEvent) => {
       if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
     };
     document.addEventListener('mousedown', handleOutsideClick);
 
     // Close dropdown when window loses focus
-    const handleBlur = () => setLangOpen(false);
+    const handleBlur = () => { setLangOpen(false); };
     window.addEventListener('blur', handleBlur);
 
     // Check model availability
+    // Load available models for quick switcher
+    window.electronAPI.getAvailableModels().then((mods) => {
+      setAvailableModels(mods.filter((m: any) => m.downloaded));
+    }).catch(() => {});
+    
     window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
     // Check GPU/CUDA status
     window.electronAPI.getGpuStatus().then((s) => {
@@ -139,6 +145,15 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     // Subscribe to warmup-complete event (for real-time updates)
     const unsubWarmup = window.electronAPI.onWarmupComplete?.(setWarmupStatus);
     unsubs.push(unsubWarmup || (() => {}));
+    
+    // Listen for model-changed events to refresh warmup status + model list
+    const unsubModelChangedMini = window.electronAPI.onModelChanged?.((modelName) => {
+      window.electronAPI.getWarmupStatus().then(setWarmupStatus).catch(() => {});
+      window.electronAPI.getAvailableModels().then((mods) => {
+        setAvailableModels(mods.filter((m: any) => m.downloaded));
+      }).catch(() => {});
+    });
+    if (unsubModelChangedMini) unsubs.push(unsubModelChangedMini);
 
     return () => {
       unsubs.forEach((u) => u());
@@ -322,6 +337,56 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     return () => { document.body.classList.remove('mini-vertical'); };
   }, [isVertical]);
 
+  // Format model name for display (capitalized, clean)
+  const formatModelLabel = (name: string | undefined): string => {
+    if (!name) return 'M';
+    let label = name
+      .replace(/^ggml-/, '')
+      .replace(/\.bin$/, '')
+      .replace(/[-_]/g, ' ');
+    // Capitalize first letter of each word
+    label = label.replace(/\b\w/g, (c) => c.toUpperCase());
+    // Shorten known variants for compact display
+    label = label
+      .replace(/Q5[- ]?[0_]/, 'Q5')
+      .replace(/Q8[- ]?0/, 'Q8')
+      .replace(/Q4[- ]?K[- ]?M/, 'Q4KM')
+      .replace(/K[- ]?M/, 'KM')
+      .replace(/M[- ]?L[- ]?M/, '')
+      .trim();
+    // Keep it short for circle button
+    if (label.length > 8) {
+      // Abbreviate: Tiny, Base, Small, Medium, Large
+      const shortMap: Record<string, string> = {
+        'Tiny': 'Tny', 'Base': 'Bas', 'Small': 'Sml', 'Medium': 'Med', 'Large': 'Lrg',
+      };
+      for (const [full, abbr] of Object.entries(shortMap)) {
+        if (label.startsWith(full)) {
+          label = label.replace(full, abbr);
+          break;
+        }
+      }
+    }
+    return label.length > 6 ? label.substring(0, 5) + '.' : label;
+  };
+
+  // Cycle to next available model
+  const cycleModel = async () => {
+    if (availableModels.length === 0) return;
+    const currentIdx = availableModels.findIndex((m) => m.name === settings.model);
+    const nextIdx = (currentIdx + 1) % availableModels.length;
+    const nextModel = availableModels[nextIdx];
+    if (nextModel && nextModel.name !== settings.model) {
+      setSettings(prev => ({ ...prev, model: nextModel.name }));
+      try {
+        const result = await window.electronAPI.updateSetting('model', nextModel.name);
+        if (result?.success === false) setSettings(prev => ({ ...prev, model: settings.model }));
+      } catch {
+        setSettings(prev => ({ ...prev, model: settings.model }));
+      }
+    }
+  };
+
   // If vertical mode, render the dedicated VerticalMiniBar component
   if (isVertical) {
     return <VerticalMiniBar settings={settings} />;
@@ -332,7 +397,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     <div className="mini-app">
       <div
         className={`mini-bar ${state}`}
-        style={{ zoom: miniZoom }}
+        style={{ transform: `scale(${miniZoom})`, transformOrigin: 'center center' }}
         onMouseEnter={() => { setBarHover(true); if (state === 'idle') setState('hover'); }}
         onMouseLeave={() => { setBarHover(false); if (stateRef.current === 'hover') setState('idle'); }}
       >
@@ -347,10 +412,19 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
           </button>
         </div>
 
-        {/* Warmup status indicator */}
-        {warmupStatus.ready && (
-          <div className="m-warmup-status" title={`Model: ${warmupStatus.model}${warmupStatus.gpuAvailable ? ' (GPU)' : ''}`}>
-            <span className="m-warmup-dot ready" />
+        {/* Model Switcher — click to cycle */}
+        {availableModels.length > 0 && (
+          <div className="m-model-wrap">
+            <button
+              type="button"
+              className="m-model-btn"
+              onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); cycleModel(); }}
+              title={`Model: ${settings.model || 'Not selected'}${warmupStatus.gpuAvailable ? ' (GPU)' : ''}`}
+            >
+              <span className="m-model-label">
+                {formatModelLabel(settings.model)}
+              </span>
+            </button>
           </div>
         )}
 
@@ -491,6 +565,8 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
           GPU terdeteksi — klik untuk download CUDA
         </div>
       )}
+
+
 
       {/* Tooltips */}
       {partial && state === 'recording' && <div className="m-tooltip">{partial}</div>}

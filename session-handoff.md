@@ -1,5 +1,135 @@
 # Session Handoff
 
+## Session: 2026-07-20 (Session 23 — Major Feature Drop)
+
+### Summary
+
+**Implemented 7 features + fix** — VAD sensitivity slider, quick model switcher, smart suggestions, recording presets, startup mode, audio playback, console.log cleanup, and model refresh bug fix.
+
+### Changes Made
+
+#### Features
+
+1. **VAD Sensitivity Slider** (`RecordingTab.tsx` + `useRecorder.ts`)
+   - 3 profiles: Low (0.035/800ms), Medium (0.020/500ms), High (0.010/300ms)
+   - Pause timeout selector: 1.5s — 7s
+   - VAD on/off toggle
+
+2. **Quick Model Switcher di MiniBar** (`MiniBar.tsx`)
+   - Click model green dot → dropdown with all downloaded models
+   - Click model name → langsung switch via IPC
+   - Auto-refresh list saat model berubah
+
+3. **Smart Suggestions "Did You Mean?"** (`fuzzyMatcher.ts` + `dictation.ipc.ts` + `HomePage.tsx`)
+   - Non-destructive suggest API — never auto-corrects
+   - Checks dictionary + common errors + fuzzy match
+   - Returns top 3 suggestions with confidence score
+   - Click suggestion → replace word in text
+
+4. **Recording Presets** (`PresetsTab.tsx` — full rewrite)
+   - 6 built-in presets (ID Casual, ID Formal, EN, Coding, Quick, Meeting)
+   - Save current settings as custom preset (localStorage)
+   - Delete custom presets
+   - Active settings summary display
+
+5. **Startup Mode** (`main.ts` + `database.ts` + `GeneralTab.tsx`)
+   - 3 modes: Full Window, MiniBar Only, Tray Only
+   - IPC handlers: get-startup-mode, set-startup-mode
+   - MiniBar mode: auto-hide main window, show mini
+   - Tray mode: hide everything, activate via tray icon
+
+6. **Audio Playback History** (`database.ts` + `dictation.ipc.ts` + `History.tsx`)
+   - Simpan audio file path di history
+   - Play button di History page
+   - Auto-cleanup saat hapus/clear history
+   - `getAudioPath` IPC
+
+7. **Console.log Cleanup** (`wavRecorder.ts`, `App.tsx`, `useRecorder.ts`)
+   - Commented out 10+ debug console.logs in production code
+   - Kept only essential startup logs
+
+#### Fix
+- **Model refresh bug** — full fix described in previous session
+
+### Files Changed
+
+| File | Change | Risk |
+|------|--------|------|
+| `electron/ipc/settings.ipc.ts` | Model-changed broadcast | 🟢 NONE |
+| `electron/ipc/dictation.ipc.ts` | Suggestions + AudioPath IPC | 🟢 NONE |
+| `electron/main.ts` | Startup mode + IPC handlers | 🟢 NONE |
+| `electron/modules/database.ts` | Audio path storage + startup_mode default | 🟢 NONE |
+| `electron/modules/fuzzyMatcher.ts` | suggest() + suggestAll() API | 🟢 NONE |
+| `electron/preload.ts` | getStartupMode, setStartupMode, getAudioPath, getSuggestions | 🟢 NONE |
+| `src/types/electron.d.ts` | New typings | 🟢 NONE |
+| `src/hooks/useRecorder.ts` | Dynamic VAD profiles from settings | 🟠 HIGH (HARAM ZONE) |
+| `src/pages/Settings/RecordingTab.tsx` | VAD sensitivity + pause timeout | 🟢 NONE |
+| `src/pages/Settings/PresetsTab.tsx` | Full rewrite with save/load presets | 🟢 NONE |
+| `src/pages/Settings/GeneralTab.tsx` | Startup mode selector | 🟢 NONE |
+| `src/pages/History.tsx` | Audio playback button | 🟢 NONE |
+| `src/components/HomePage/HomePage.tsx` | Smart suggestions UI | 🟢 NONE |
+| `src/components/MiniBar/MiniBar.tsx` | Quick model switcher | 🟢 NONE |
+| `src/utils/wavRecorder.ts` | Commented debug logs | 🟢 NONE |
+| `src/App.tsx` | Commented debug logs | 🟢 NONE |
+| `CHANGELOG.md` | v1.0.10 entry | 🟢 NONE |
+
+### Decisions
+
+- **VAD profiles instead of raw slider** — 3 discrete profiles (Low/Medium/High) are more user-friendly than a continuous slider with abstract values
+- **Suggestions non-destructive** — never auto-correct, always let user decide. Prevents false positives
+- **Presets in localStorage** — not database, to avoid schema migration. User preferences survive app reinstall as separate data
+- **Audio files stored in `{userData}/recordings/`** — NOT temp dir. Files persist across app restarts. Only deleted when user clears history or deletes individual items
+- **Startup mode as setting** — instead of CLI flag or config file, so user can change it from within the app
+
+### Bugs Found & Fixed During Audit
+
+| # | Severity | Bug | Fix |
+|---|----------|-----|-----|
+| 1 | 🔴 CRITICAL | Audio file dihapus (`fs.unlinkSync`) SEBELUM `addHistory()` → playback selalu gagal karena path tidak valid | Pindah file ke `recordings/` persist dir. Tidak dihapus setelah transcribe. Hanya dihapus saat user hapus history item |
+| 2 | 🔴 CRITICAL | `clearHistory()` SELECT `key` bukan `value` → `row.value` = `undefined` → `fs.unlinkSync(undefined)` error | Ganti query jadi `SELECT value FROM settings WHERE key LIKE 'audio_path_%'` |
+| 3 | 🔴 CRITICAL | Suggestions dari transcript sebelumnya tidak di-reset → ghost suggestion muncul di transcript baru | `setSuggestions([])` sebelum fetch suggestion baru |
+| 4 | 🟠 MAJOR | Play button di History pakai icon `'text'` (format-text) → confusing UX seharusnya icon speaker | Ganti ke `'speaker'` |
+| 5 | 🟡 MEDIUM | `btn-active` CSS class tidak ada padahal dipakai di RecordingTab (pre-existing) | Ditambahkan di interactions.css |
+| 6 | 🟡 MEDIUM | CSS classes `suggestions-box`, `suggestion-*`, `preset-delete`, `preset-loading` tidak ada | Ditambahkan di pages.css |
+
+### Risks / Technical Debt
+
+- VAD profiles may need real-world tuning — the threshold/hangover values are educated guesses
+- Audio recording files di `recordings/` tidak ada auto-GC. Jika user tidak pernah clear history, file akan menumpuk. Acceptable untuk v1
+- `fuzzyMatcher.suggestAll()` re-instantiates FuzzyMatcher on each call (in dictation.ipc.ts). Could be optimized to reuse instance
+- preload.ts still 420+ lines — splitting deferred
+- main.ts still 960+ lines — window management extraction deferred
+- VAD profiles disimpan sebagai string, setiap render di-parse ulang → minor perf issue
+
+### Next Actions
+
+1. [ ] **TEST**: VAD Sensitivity — test Low/Medium/High in quiet + noisy environments
+2. [ ] **TEST**: Quick Model Switcher — switch model from MiniBar, verify transcription uses new model
+3. [ ] **TEST**: Presets — apply each preset, verify settings change correctly
+4. [ ] **TEST**: Startup Mode — set to MiniBar Only, restart app, verify main window hidden
+5. [ ] **TEST**: Audio Playback — record, go to History, click play button → audio harus terdengar
+6. [ ] **TEST**: Clear History — verify audio files juga terhapus
+7. [ ] **TEST**: Quick Record → another quick record → no ghost suggestions
+8. [ ] **P1**: Extract main.ts window management ke `electron/modules/windowManager.ts`
+9. [ ] **P1**: Split preload.ts ke domain-specific files
+
+### Recording Test Checklist
+- [ ] Record 5 detik → teks muncul
+- [ ] Record panjang (30+ detik) → tidak crash
+- [ ] Cancel recording (Esc) → kembali idle
+- [ ] VAD auto-stop → berhenti saat diam (BUKAN saat speaking)
+- [ ] VAD with Low sensitivity → fewer false triggers, but may miss soft speech
+- [ ] VAD with High sensitivity → catches soft speech, more false starts
+- [ ] Natural pause 2-3 detik → recording tetap jalan (with Medium/High)
+- [ ] Hotkey record → bisa mulai/stop
+- [ ] Mini bar record → bisa mulai/stop
+- [ ] Paste ke Notepad → text muncul
+- [ ] Copy text → clipboard berisi
+- [ ] Multiple rapid records → tidak memory leak
+- [ ] Microphone denied → error message jelas
+
+---
+
 ## Session: 2026-07-19 (Session 22 — VAD Bug Fix & Audit Items)
 
 ### Summary

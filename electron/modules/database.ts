@@ -236,6 +236,7 @@ export class VoiceFlowDatabase {
       fuzzy_match: 'false',
       auto_start: 'false',
       minimize_to_tray: 'true',
+      startup_mode: 'full', // 'full' | 'mini' | 'tray'
       show_mini_window: 'true',
       sound_effects: 'true',
       selected_mic: '',
@@ -281,7 +282,40 @@ export class VoiceFlowDatabase {
     this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
   }
 
-  addHistory(id: string, rawText: string, finalText: string, durationMs: number, audioDurationMs: number = 0, modelName: string = '', confidence: number = 0, fuzzyChanges: number = 0): void {
+  // ═══════════════════════════════════════════════════════════════
+  //  Audio File Path Storage (for playback feature)
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Save audio file path for a history item (for playback).
+   * Returns the full path where audio was saved.
+   */
+  setAudioPath(id: string, audioPath: string): void {
+    if (!this.db) return;
+    const existing = this.getSetting(`audio_path_${id}`);
+    if (existing !== audioPath) {
+      this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(`audio_path_${id}`, audioPath);
+    }
+  }
+
+  /**
+   * Get audio file path for a history item.
+   */
+  getAudioPath(id: string): string | null {
+    return this.getSetting(`audio_path_${id}`);
+  }
+
+  /**
+   * Remove audio path (when history item is deleted).
+   */
+  removeAudioPath(id: string): void {
+    if (!this.db) return;
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(`audio_path_${id}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+
+  addHistory(id: string, rawText: string, finalText: string, durationMs: number, audioDurationMs: number = 0, modelName: string = '', confidence: number = 0, fuzzyChanges: number = 0, audioPath?: string): void {
     if (!this.db) throw new Error('Database not initialized');
     const saveHistory = this.getSetting('save_history');
     if (saveHistory !== 'true') return;
@@ -292,6 +326,11 @@ export class VoiceFlowDatabase {
     this.db.prepare(
       'INSERT INTO dictation_history (id, raw_text, final_text, duration_ms, audio_duration_ms, word_count, char_count, model_name, confidence, fuzzy_changes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, rawText, finalText, durationMs, audioDurationMs, wordCount, charCount, modelName, confidence, fuzzyChanges, new Date().toISOString());
+    
+    // Save audio path if provided
+    if (audioPath) {
+      this.setAudioPath(id, audioPath);
+    }
   }
 
   getHistory(limit: number = 50): any[] {
@@ -310,11 +349,34 @@ export class VoiceFlowDatabase {
 
   deleteHistoryItem(id: string): void {
     if (!this.db) throw new Error('Database not initialized');
+    
+    // Delete associated audio file
+    try {
+      const audioPath = this.getAudioPath(id);
+      if (audioPath) {
+        try { fs.unlinkSync(audioPath); } catch {}
+        this.removeAudioPath(id);
+      }
+    } catch {}
+    
     this.db.prepare('DELETE FROM dictation_history WHERE id = ?').run(id);
   }
 
   clearHistory(): void {
     if (!this.db) throw new Error('Database not initialized');
+    
+    // Clean up all audio files
+    try {
+      const rows = this.db.prepare("SELECT value FROM settings WHERE key LIKE 'audio_path_%'").all() as any[];
+      for (const row of rows) {
+        const audioPath = row.value;
+        if (audioPath) {
+          try { fs.unlinkSync(audioPath); } catch {}
+        }
+      }
+      this.db.prepare("DELETE FROM settings WHERE key LIKE 'audio_path_%'").run();
+    } catch {}
+    
     this.db.prepare('DELETE FROM dictation_history').run();
   }
 

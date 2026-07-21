@@ -68,6 +68,8 @@ export interface ElectronAPI {
   getSpeedLimit: () => Promise<{ bytesPerSecond: number }>;
   
   // Adaptive Learning
+  getSuggestions: (text: string) => Promise<{ success: boolean; suggestions: Array<{ word: string; suggestion: string; confidence: number; position: number }> }>;
+  playAudio: (historyId: string) => Promise<{ success: boolean; data?: string; mimeType?: string; error?: string }>;
   learnCorrection: (original: string, corrected: string) => Promise<{ success: boolean; error?: string }>;
   getLearnedCorrections: () => Promise<any[]>;
   deleteLearnedCorrection: (id: string) => Promise<{ success: boolean }>;
@@ -146,6 +148,9 @@ export interface ElectronAPI {
   onLlmBinaryDownloadProgress: (callback: (data: { progress: number; state: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onLlmDownloadProgress: (callback: (data: { progress: number; state: string; modelName: string; downloadedBytes: number; totalBytes: number }) => void) => () => void;
   onMiniWindowResize: (callback: (data: { width: number; height: number }) => void) => () => void;
+  onModelChanged: (callback: (modelName: string) => void) => () => void;
+  getStartupMode: () => Promise<string>;
+  setStartupMode: (mode: string) => Promise<{ success: boolean }>;
   
   // Warmup
   getWarmupStatus: () => Promise<{ ready: boolean; model: string; whisperAvailable: boolean; gpuAvailable: boolean; modelSize: number }>;
@@ -222,6 +227,8 @@ const api: ElectronAPI = {
   getInterruptedDownloadInfo: () => ipcRenderer.invoke('get-interrupted-download-info'),
   isModelDownloaded: (model) => ipcRenderer.invoke('is-model-downloaded', model),
   getModelsPath: () => ipcRenderer.invoke('get-models-path'),
+  getStartupMode: () => ipcRenderer.invoke('get-startup-mode'),
+  setStartupMode: (mode) => ipcRenderer.invoke('set-startup-mode', mode),
   getModelsBaseDir: () => ipcRenderer.invoke('get-models-base-dir'),
   getCustomModelsPath: () => ipcRenderer.invoke('get-custom-models-path'),
   chooseModelsFolder: () => ipcRenderer.invoke('choose-models-folder'),
@@ -229,6 +236,8 @@ const api: ElectronAPI = {
   setSpeedLimit: (bytesPerSecond) => ipcRenderer.invoke('set-speed-limit', bytesPerSecond),
   getSpeedLimit: () => ipcRenderer.invoke('get-speed-limit'),
   
+  getSuggestions: (text) => ipcRenderer.invoke('get-suggestions', text),
+  playAudio: (historyId) => ipcRenderer.invoke('play-audio', historyId),
   learnCorrection: (original, corrected) => ipcRenderer.invoke('learn-correction', original, corrected),
   getLearnedCorrections: () => ipcRenderer.invoke('get-learned-corrections'),
   deleteLearnedCorrection: (id) => ipcRenderer.invoke('delete-learned-correction', id),
@@ -386,6 +395,12 @@ const api: ElectronAPI = {
     const handler = (_: any, data: { width: number; height: number }) => callback(data);
     ipcRenderer.on('mini-window-resize', handler);
     return () => ipcRenderer.removeListener('mini-window-resize', handler);
+  },
+  
+  onModelChanged: (callback) => {
+    const handler = (_: any, modelName: string) => callback(modelName);
+    ipcRenderer.on('model-changed', handler);
+    return () => ipcRenderer.removeListener('model-changed', handler);
   },
   
   // Warmup
