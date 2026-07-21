@@ -6,6 +6,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { useRecorder } from '../../hooks/useRecorder';
+import { useSettingsContext } from '../../hooks/SettingsContext';
 import { playSound } from '../../utils/soundEffects';
 import { getLanguageByCode, getNextLanguage } from '../../utils/languages';
 import { MINI_BAR_BASE_HEIGHT, MINI_BAR_BASE_WIDTH, MINI_BAR_MIN_HEIGHT, MINI_BAR_MAX_HEIGHT, WAVEFORM_POINTS } from '../../utils/constants';
@@ -21,6 +22,7 @@ interface MiniBarProps {
 }
 
 export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
+  const { settings: ctxSettings, saveSetting } = useSettingsContext();
   const [settings, setSettings] = useState<Record<string, string>>(initialSettings);
   const [targetApp, setTargetApp] = useState('');
   const [langOpen, setLangOpen] = useState(false);
@@ -103,7 +105,15 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     else if (state === 'processing' && prev === 'recording') playSound('stop');
   }, [state]);
 
+  // Sync from context when it loads / refreshes
   useEffect(() => {
+    if (Object.keys(ctxSettings).length > 0) {
+      setSettings(prev => ({ ...prev, ...ctxSettings }));
+    }
+  }, [ctxSettings]);
+
+  useEffect(() => {
+    // Still call loadSettings to trigger mic preflight etc.
     loadSettings();
     window.electronAPI.miniWindowReady?.();
     const unsubs = [
@@ -113,7 +123,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
         if (theme === 'light') document.documentElement.classList.add('light-theme');
         else document.documentElement.classList.remove('light-theme');
       }),
-      window.electronAPI.onReloadSettings?.(() => { loadSettings(); }),
+      // onReloadSettings already handled by SettingsContext — no need to duplicate
     ];
     window.electronAPI.getTargetApp().then(setTargetApp).catch((err) => logWarning('MiniBar', 'Failed to get target app', err));
 
@@ -165,15 +175,10 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
 
   const loadSettings = async () => { 
     try { 
-      const s = await window.electronAPI.getSettings(); 
+      // Take settings from context first (already loaded), then merge with fresh IPC
+      const s = Object.keys(ctxSettings).length > 0 ? ctxSettings : await window.electronAPI.getSettings();
       setSettings(s); 
-      window.voiceflowSoundEnabled = s.sound_effects !== 'false'; 
-      // Apply theme to mini window
-      if (s.theme === 'light') {
-        document.documentElement.classList.add('light-theme');
-      } else {
-        document.documentElement.classList.remove('light-theme');
-      }
+      window.voiceflowSoundEnabled = s.sound_effects !== 'false';
 
       // After settings loaded: proactively request mic permission
       // so it's ready when user clicks record.
@@ -318,8 +323,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     const next = getNextLanguage(currentLang.code);
     setSettings(prev => ({ ...prev, language: next.code }));
     try {
-      const result = await window.electronAPI.updateSetting('language', next.code);
-      if (result?.success === false) setSettings(prev => ({ ...prev, language: currentLang.code }));
+      await saveSetting('language', next.code);
     } catch {
       setSettings(prev => ({ ...prev, language: currentLang.code }));
     }
@@ -379,8 +383,7 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
     if (nextModel && nextModel.name !== settings.model) {
       setSettings(prev => ({ ...prev, model: nextModel.name }));
       try {
-        const result = await window.electronAPI.updateSetting('model', nextModel.name);
-        if (result?.success === false) setSettings(prev => ({ ...prev, model: settings.model }));
+        await saveSetting('model', nextModel.name);
       } catch {
         setSettings(prev => ({ ...prev, model: settings.model }));
       }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
+import { useSettingsContext } from '../hooks/SettingsContext';
 import { playSound } from '../utils/soundEffects';
 import { LANGUAGES, getLanguageByCode, getNextLanguage } from '../utils/languages';
 import { findBestMic } from '../utils/micDetector';
@@ -12,7 +13,12 @@ function fmt(ms: number) {
 
 interface Props { settings: Record<string, string>; }
 
-export default function VerticalMiniBar({ settings }: Props) {
+export default function VerticalMiniBar({ settings: propSettings }: Props) {
+  const { settings: ctxSettings, saveSetting } = useSettingsContext();
+  // Merge props settings with context settings (context lebih fresh)
+  const settings = Object.keys(ctxSettings).length > 0
+    ? { ...propSettings, ...ctxSettings }
+    : propSettings;
   const [hasModel, setHasModel] = useState<boolean | null>(null);
   const [gpuStatus, setGpuStatus] = useState<string | null>(null);
   const [localLang, setLocalLang] = useState(settings.language || 'auto');
@@ -148,34 +154,20 @@ export default function VerticalMiniBar({ settings }: Props) {
     return () => { cancelAnimationFrame(animRef.current); };
   }, [state]);
 
-  // Initialization
-  const loadSettings = useCallback(async () => {
-    try {
-      const s = await window.electronAPI.getSettings();
-      window.voiceflowSoundEnabled = s.sound_effects !== 'false';
-      if (s.language) setLocalLang(s.language);
-      if (s.theme === 'light') document.documentElement.classList.add('light-theme');
-      else document.documentElement.classList.remove('light-theme');
+  // Settings ready from context — sync language & mic preflight
+  useEffect(() => {
+    if (Object.keys(ctxSettings).length > 0) {
+      if (ctxSettings.language) setLocalLang(ctxSettings.language);
+      // Mic preflight
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-        stream.getTracks().forEach(t => t.stop());
-        // Auto-detect best working mic (filters virtual devices, tests audio level)
-        findBestMic(s.selected_mic).then(best => {
-          if (best.deviceId && best.deviceId !== s.selected_mic) {
-            window.electronAPI.updateSetting('selected_mic', best.deviceId)
-              .catch((err) => logWarning('VerticalMiniBar', 'Failed to save mic selection', err));
-          }
-        }).catch((err) => logWarning('VerticalMiniBar', 'Failed to verify mic', err));
-      } catch (err) {
-        logWarning('VerticalMiniBar', 'Mic preflight failed', err);
-      }
-    } catch (err) {
-      logError('VerticalMiniBar', err);
+        navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+          .then(stream => { stream.getTracks().forEach(t => t.stop()); })
+          .catch(() => {});
+      } catch {}
     }
-  }, []);
+  }, [ctxSettings]);
 
   useEffect(() => {
-    loadSettings();
     window.electronAPI.miniWindowReady?.();
     window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
     window.electronAPI.getGpuStatus?.().then((s) => {
@@ -183,7 +175,6 @@ export default function VerticalMiniBar({ settings }: Props) {
       else setGpuStatus(null);
     }).catch((err) => logWarning('VerticalMiniBar', 'Failed to get GPU status', err));
     
-    // Listen for model-changed events to refresh hasModel check
     const unsubModelChangedVert = window.electronAPI.onModelChanged?.((modelName) => {
       window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
     });
@@ -194,7 +185,6 @@ export default function VerticalMiniBar({ settings }: Props) {
         if (t === 'light') document.documentElement.classList.add('light-theme');
         else document.documentElement.classList.remove('light-theme');
       }),
-      window.electronAPI.onReloadSettings?.(() => { loadSettings(); }),
     ];
     if (unsubModelChangedVert) unsubs.push(unsubModelChangedVert);
     return () => { unsubs.forEach((u) => u()); };

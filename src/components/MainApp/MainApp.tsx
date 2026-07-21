@@ -2,6 +2,7 @@
  * MainApp — Full window with sidebar navigation and content area.
  */
 import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { useSettingsContext } from '../../hooks/SettingsContext';
 import { useNotification } from '../Notification';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
@@ -18,13 +19,14 @@ type Page = 'home' | 'settings' | 'models' | 'history' | 'benchmark' | 'llm-mode
 
 export function MainApp() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
-  const [settings, setSettings] = useState<Record<string, string>>({});
+  const { settings, refreshSettings } = useSettingsContext();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const notif = useNotification();
 
   useEffect(() => {
-    loadSettings();
-  }, []);
+    // Sync theme via context (already handled there)
+    window.voiceflowSoundEnabled = settings.sound_effects !== 'false';
+  }, [settings]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -40,22 +42,6 @@ export function MainApp() {
       unsubNavigate?.();
     };
   }, []);
-
-  const loadSettings = async () => {
-    try {
-      const s = await window.electronAPI.getSettings();
-      setSettings(s);
-      window.voiceflowSoundEnabled = s.sound_effects !== 'false';
-      // Apply saved theme
-      if (s.theme === 'light') {
-        document.documentElement.classList.add('light-theme');
-      } else {
-        document.documentElement.classList.remove('light-theme');
-      }
-    } catch (err) {
-      console.warn('[MainApp] Failed to load settings:', err);
-    }
-  };
 
   const showSuccess = (msg: string) => {
     notif.success(msg);

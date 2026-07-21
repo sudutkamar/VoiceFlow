@@ -5,6 +5,7 @@
 import React, { useEffect } from 'react';
 import MiniBar from './MiniBar/MiniBar';
 import { MainApp } from './MainApp/MainApp';
+import { OnboardingPopover } from './OnboardingPopover';
 
 export function AppContent() {
   const isMini = window.location.hash === '#mini';
@@ -19,5 +20,10 @@ export function AppContent() {
     }
   }, [isMini]);
 
-  return isMini ? <MiniBar /> : <MainApp />;
+  return (
+    <>
+      {isMini ? <MiniBar /> : <MainApp />}
+      <OnboardingPopover isMini={isMini} />
+    </>
+  );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSettingsContext } from '../hooks/SettingsContext';
 import { useNotification } from '../components/Notification';
 import { Iconify, getModelIcon, getModelSizeColor } from '../utils/icons';
 import { logError, logWarning } from '../utils/errorHandler';
@@ -82,14 +83,23 @@ function Models({ onSuccess, onError }: ModelsProps) {
     }
   };
 
+  const { settings: ctxSettings } = useSettingsContext();
+
+  // Sync selectedModel from context settings
+  useEffect(() => {
+    if (ctxSettings.model) {
+      setSelectedModel(ctxSettings.model);
+    }
+  }, [ctxSettings.model]);
+
   const loadSettings = useCallback(async () => {
     try {
-      const settings = await window.electronAPI.getSettings();
+      const settings = ctxSettings.model ? ctxSettings : await window.electronAPI.getSettings();
       setSelectedModel(settings.model || 'ggml-base.bin');
     } catch (err) {
       logWarning('Models', 'Failed to load settings', err);
     }
-  }, []);
+  }, [ctxSettings]);
 
   const loadModelsPath = useCallback(async () => {
     try {

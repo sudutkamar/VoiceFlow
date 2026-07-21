@@ -5,6 +5,7 @@
 import React from 'react';
 import './styles/app.css';
 import './i18n';
+import { SettingsProvider } from './hooks/SettingsContext';
 import { NotificationProvider } from './components/Notification';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppContent } from './components/AppContent';
@@ -22,9 +23,11 @@ declare global {
 export default function App() {
   return (
     <ErrorBoundary>
-      <NotificationProvider>
-        <AppContent />
-      </NotificationProvider>
+      <SettingsProvider>
+        <NotificationProvider>
+          <AppContent />
+        </NotificationProvider>
+      </SettingsProvider>
     </ErrorBoundary>
   );
 }

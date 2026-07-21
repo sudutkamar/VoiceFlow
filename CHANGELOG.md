@@ -15,6 +15,10 @@
 - **Light theme floating UI** — mini bar (horizontal + vertical) now has full light theme overrides. Model button, language selector, mic button, tooltips, result text, and dropdowns all get proper light theme colors. Previously invisible in light mode
 - **Commented remaining debug console.logs** — `wavRecorder.ts` startup logs now commented, only error paths remain active
 
+### Changed
+- **SettingsContext** — new React Context for shared settings state. Replaces duplicated `loadSettings()` + `getSettings()` calls across MiniBar, VerticalMiniBar, MainApp, and Models.tsx. Loads settings once, caches in context, auto-refreshes on `onReloadSettings` event. Components call `useSettingsContext()` instead
+- **OnboardingPopover** — new component showing sequential tooltips for hidden features: language switcher, model switcher, VAD sensitivity, presets, smart suggestions, audio playback. Dismissed per-feature (localStorage). Appears in both MiniBar and MainApp views
+
 ### Changelog
 - Added CHANGELOG.md entry for v1.0.11
 - Updated session-handoff.md

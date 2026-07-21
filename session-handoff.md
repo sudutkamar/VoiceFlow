@@ -93,22 +93,36 @@
 - **FuzzyMatcher singleton** — cached across calls but dictionary reloaded each time. Good balance: saves CPU from constructing the class but keeps dictionary fresh
 - **Style on wrapper span** — Iconify's `<Icon>` component doesn't accept style prop. Wrapping in `<span>` is clean, preserves Iconify semantics
 
+#### 8. SettingsContext (`src/hooks/SettingsContext.tsx` NEW)
+- Shared React Context that loads settings once and caches them
+- Components call `useSettingsContext()` instead of duplicating `getSettings()` + `onReloadSettings`
+- Replaced in: MiniBar, VerticalMiniBar, MainApp, Models.tsx
+- Auto-syncs theme class and sound effects flag
+- `saveSetting(key, value)` — update setting + local state atomically
+
+#### 9. OnboardingPopover (`src/components/OnboardingPopover.tsx` NEW)
+- Sequential tooltip popover for hidden features: language switcher, model switcher, VAD settings, presets, smart suggestions, audio playback
+- Each feature dismissed once via localStorage
+- Position computed dynamically based on target element
+- Works in both MiniBar and MainApp views
+
 ### Risks / Technical Debt
 
 - WindowManager extraction changes init order subtly: `windowManager` is now created BEFORE `hotkeyManager`. If hotkeyManager constructor needs windowManager reference, that path must pass through setMiniWindow (already handled)
 - `onMiniWindowBlur` event now exposed but no renderer component consumes it yet. Harmless, future-proof
 - Preload domain split means new IPC channels must be added in the correct domain file. Might be easy to forget
+- SettingsContext replaces most but not all `loadSettings` calls. Some edge components (like History, Benchmark) still call `getSettings()` directly — future cleanup target
 
 ### Next Actions
 
-1. [ ] **TEST**: App startup — verify both main window and mini window create correctly
-2. [ ] **TEST**: Recording flow — start/stop/VAD/paste must still work
-3. [ ] **TEST**: MiniBar — show/hide/resize must work
-4. [ ] **TEST**: Preload — all IPC channels still reachable from renderer
-5. [ ] **TEST**: Audio GC — verify old audio files are cleaned up
-6. [ ] **TEST**: TypeScript — `npx tsc --noEmit` must pass in both configs
-7. [ ] **P1**: Extract remaining IPC handler registrations from main.ts into domain files (settings.ipc.ts pattern is good, but dictation.ipc handlers are inlined in setupIPC)
-8. [ ] **P1**: Add auto-import linter rule so new IPC channels don't get added to wrong preload file
+1. [ ] **TEST**: SettingsContext — verify all components get fresh settings
+2. [ ] **TEST**: Onboarding popover appears on first launch
+3. [ ] **TEST**: Dimissing onboarding popover persists across restart
+4. [ ] **TEST**: MiniBar — settings sync from context
+5. [ ] **TEST**: VerticalMiniBar — settings sync from context
+6. [ ] **TEST**: Recording flow still works end-to-end
+7. [ ] **TEST**: Language switch + model switch still work
+8. [ ] **P2**: Replace remaining direct `getSettings` calls in History, Benchmark, LlmModels with SettingsContext
 
 ### Recording Test Checklist
 - [ ] Record 5 detik → teks muncul
