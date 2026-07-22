@@ -295,68 +295,6 @@ body.mini-mode, html.mini-mode { background: transparent; }
   opacity: 0.6;
 }
 
-.m-model-wrap {
-  position: relative;
-  flex: 0 0 auto;
-  -webkit-app-region: no-drag;
-  width: 40px;
-  height: 40px;
-}
-
-.m-model-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  width: 40px;
-  background: var(--btn-bg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--btn-border);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  color: var(--btn-color);
-  font-size: 9px;
-  font-weight: 700;
-  font-family: inherit;
-  -webkit-app-region: no-drag;
-  position: relative;
-  overflow: hidden;
-}
-
-.m-model-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, var(--btn-shine-color), transparent);
-  transition: left 0.4s ease;
-}
-
-.m-model-btn:hover::before {
-  left: 100%;
-}
-
-.m-model-btn:hover {
-  background: var(--btn-hover-bg);
-  border-color: var(--btn-hover-border);
-  color: var(--btn-hover-color);
-  box-shadow: var(--btn-hover-shadow);
-  transform: translateY(-2px);
-}
-
-.m-model-btn:active {
-  transform: translateY(0) scale(0.95);
-}
-
-.m-model-label {
-  line-height: 1.2;
-  text-align: center;
-}
-
 .m-lang-arrow {
   width: 9px;
   height: 9px;
@@ -1251,23 +1189,6 @@ body.mini-mode, html.mini-mode { background: transparent; }
   box-shadow:
     0 8px 28px rgba(0, 0, 0, 0.08),
     0 2px 6px rgba(0, 0, 0, 0.04);
-}
-
-:root.light-theme .m-model-btn {
-  background: var(--model-btn-bg);
-  border: 1px solid var(--model-btn-border);
-  color: var(--model-btn-color);
-}
-
-:root.light-theme .m-model-btn::before {
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-}
-
-:root.light-theme .m-model-btn:hover {
-  background: var(--model-btn-hover-bg);
-  border-color: var(--model-btn-hover-border);
-  color: var(--model-btn-hover-color);
-  box-shadow: var(--model-btn-hover-shadow);
 }
 
 :root.light-theme .m-voice-btn,

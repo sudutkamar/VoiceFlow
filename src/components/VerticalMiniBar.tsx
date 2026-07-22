@@ -175,10 +175,6 @@ export default function VerticalMiniBar({ settings: propSettings }: Props) {
       else setGpuStatus(null);
     }).catch((err) => logWarning('VerticalMiniBar', 'Failed to get GPU status', err));
     
-    const unsubModelChangedVert = window.electronAPI.onModelChanged?.((modelName) => {
-      window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
-    });
-    
     const unsubs = [
       window.electronAPI.onHotkeyRegistered?.(() => {}),
       window.electronAPI.onThemeChange?.((t: string) => {
@@ -186,7 +182,6 @@ export default function VerticalMiniBar({ settings: propSettings }: Props) {
         else document.documentElement.classList.remove('light-theme');
       }),
     ];
-    if (unsubModelChangedVert) unsubs.push(unsubModelChangedVert);
     return () => { unsubs.forEach((u) => u()); };
   }, []);
 
