@@ -1,146 +1,45 @@
 # Session Handoff
 
-## Session: 2026-07-21 (Session 24 — Codebase Architecture Cleanup)
+## Session: 2026-07-22 (Session 23/25 — EXDEV Cross-Device Rename Fix)
 
 ### Summary
 
-**Executed 6 priority items** — window manager extraction, preload split, FuzzyMatcher cache, audio GC, TS error fixes, console.log cleanup.
-
-### Changes Made
-
-#### 1. Window Manager Extraction (`electron/modules/windowManager.ts` NEW + `electron/main.ts` REWRITE)
-- Extracted ALL window management: `createMainWindow`, `createMiniWindow`, `showMiniWindow`, `hideMiniWindow`, `hideAllForPaste`, `showAfterPaste`, `showMainWindow`, `getAppIcon`, `destroyWindows`, and state vars
-- `main.ts` reduced from 980 lines → ~430 lines. IPC handlers and app lifecycle stay in main.ts
-- `WindowManager` class with constructor(database, logger, hotkeyManager) for clean DI
-
-#### 2. Preload Split (`electron/preload/` NEW — 10 files)
-- Split 423-line `electron/preload.ts` into domain files:
-  - `audio.ts` — recording, transcription IPC
-  - `clipboard.ts` — copy/paste
-  - `miniWindow.ts` — mini window control
-  - `settings.ts` — settings, history, dictionary, snippets
-  - `models.ts` — model download/management
-  - `app.ts` — GPU, cache, version, hotkey, updates
-  - `llm.ts` — LLM post-processing
-  - `learning.ts` — adaptive learning, suggestions
-  - `events.ts` — ALL ipcRenderer.on event listeners
-  - `types.ts` — shared ElectronAPISection type
-- Main `preload.ts` now just imports + merges all domain APIs
-- **NEW**: `onMiniWindowBlur` event listener exposed (was hidden in main.ts but never exposed to renderer)
-
-#### 3. FuzzyMatcher Caching (`electron/ipc/dictation.ipc.ts`)
-- `get-suggestions` IPC no longer `require('../modules/fuzzyMatcher')` on every call
-- Top-level import + module-level `fuzzyMatcherInstance` singleton
-- Still calls `loadDictionary()` each time to get fresh entries
-
-#### 4. Audio File GC (`electron/modules/database.ts`)
-- `cleanupOldAudioFiles()` method in VoiceFlowDatabase class
-- Deletes audio files older than 30 days (based on `mtime`)
-- Also cleans up orphaned settings keys (audio_path_*) where file is missing
-- Called automatically at end of `initialize()`
-
-#### 5. TypeScript Error Fix (`src/utils/icons.tsx`)
-- Added `style` (React.CSSProperties) and `color` (string) optional props to Iconify component
-- Renders wrapper `<span style={style}>` with `<Icon color={color}>` inside
-- Fixes TS2322 errors in Models.tsx (3) and GeneralTab.tsx (3)
-- Zero TS errors across both tsconfigs after change
-
-#### 6. Console.log Cleanup (`src/utils/wavRecorder.ts`)
-- Commented out 3 remaining active debug logs: mic request, track count, track settings
-- Error paths (getUserMedia failed, AudioContext resume failure) kept active
-
-#### 7. Light Theme Floating UI Fix (`src/styles/minibar-horizontal.css` + `src/styles/minibar-vertical.css`)
-- Added comprehensive light theme overrides for ALL mini bar elements:
-  - Background — light glass (white gradient) instead of dark glass
-  - Model button — dark text on light bg, blue accent on hover
-  - Language selector — same pattern
-  - Mic button + orb buttons — light bg with dark text
-  - Tooltips (warning/error/info) — pastel backgrounds with matching borders
-  - Result text — white card with shadow
-  - Dropdowns — light bg with visible border
-  - Recording timer — red text visible
-  - Ready buttons — blue accent visible
-- Both horizontal (`.mini-bar`) and vertical (`.vmb-bar`) variants covered
+**Fixed P0 bug: model download gagal saat userData (C:) dan modelsPath (F:) beda drive.** Temp directory pindah ke dalam modelsPath agar renameSync bisa atomic. Tambah stream-based copy fallback.
 
 ### Files Changed
 
-| File | Change | Risk |
-|------|--------|------|
-| `electron/modules/windowManager.ts` | **NEW** — 320 lines, all window management | 🟡 MEDIUM (replaces inline code in main.ts) |
-| `electron/main.ts` | **REWRITE** — 430 lines, uses WindowManager | 🟡 MEDIUM (regression possible if WindowManager init timing wrong) |
-| `electron/preload.ts` | **REWRITE** — imports from prefork/domain files | 🟢 NONE (same API surface) |
-| `electron/preload/audio.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/clipboard.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/miniWindow.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/settings.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/models.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/app.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/llm.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/learning.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/events.ts` | **NEW** | 🟢 NONE |
-| `electron/preload/types.ts` | **NEW** | 🟢 NONE |
-| `electron/ipc/dictation.ipc.ts` | **EDIT** — cached FuzzyMatcher instance | 🟢 NONE |
-| `electron/modules/database.ts` | **EDIT** — added cleanupOldAudioFiles() | 🟢 NONE |
-| `src/utils/icons.tsx` | **EDIT** — added style + color props | 🟢 NONE |
-| `src/utils/wavRecorder.ts` | **EDIT** — commented debug logs | 🟢 NONE |
-| `CHANGELOG.md` | **UPDATED** — v1.0.11 | 🟢 NONE |
+| File | Perubahan | Risiko |
+|------|-----------|--------|
+| `electron/modules/modelDownloader.ts` | tempDir pindah dari C: ke modelsPath/.voiceflow-temp; EXDEV handler + stream fallback; writable validation | 🟢 NONE (logic sama, hanya pindah path) |
+| `CHANGELOG.md` | Added v1.0.11 entry | 🟢 NONE |
+| `session-handoff.md` | Updated | 🟢 NONE |
 
 ### Decisions
 
-- **WindowManager as class** (not module functions) — allows clean DI of database/logger/hotkeyManager, easier to test
-- **Preload split by domain** — each file exports a factory function returning `ElectronAPISection` (Record<string, Function>), merged into one object. No need to type the merge, works with existing `window.electronAPI` types
-- **Audio GC at startup only** — not a background timer. Simpler, sufficient for now. Heavy users who record daily may still accumulate files within 30-day window
-- **FuzzyMatcher singleton** — cached across calls but dictionary reloaded each time. Good balance: saves CPU from constructing the class but keeps dictionary fresh
-- **Style on wrapper span** — Iconify's `<Icon>` component doesn't accept style prop. Wrapping in `<span>` is clean, preserves Iconify semantics
-
-#### 8. SettingsContext (`src/hooks/SettingsContext.tsx` NEW)
-- Shared React Context that loads settings once and caches them
-- Components call `useSettingsContext()` instead of duplicating `getSettings()` + `onReloadSettings`
-- Replaced in: MiniBar, VerticalMiniBar, MainApp, Models.tsx
-- Auto-syncs theme class and sound effects flag
-- `saveSetting(key, value)` — update setting + local state atomically
-
-#### 9. OnboardingPopover (`src/components/OnboardingPopover.tsx` NEW)
-- Sequential tooltip popover for hidden features: language switcher, model switcher, VAD settings, presets, smart suggestions, audio playback
-- Each feature dismissed once via localStorage
-- Position computed dynamically based on target element
-- Works in both MiniBar and MainApp views
+- **Temp dir di dalam modelsPath** — alih-alih userData. Biar rename atomic. Risiko: modelsPath harus writable (sudah divalidasi)
+- **Stream copy fallback** — bukan hanya `copyFileSync`. Stream copy lebih tahan terhadap antivirus lock karena chunked I/O
+- **Writable validation** — test write file di constructor, error log early kalau path gak bisa ditulis
 
 ### Risks / Technical Debt
 
-- WindowManager extraction changes init order subtly: `windowManager` is now created BEFORE `hotkeyManager`. If hotkeyManager constructor needs windowManager reference, that path must pass through setMiniWindow (already handled)
-- `onMiniWindowBlur` event now exposed but no renderer component consumes it yet. Harmless, future-proof
-- Preload domain split means new IPC channels must be added in the correct domain file. Might be easy to forget
-- SettingsContext replaces most but not all `loadSettings` calls. Some edge components (like History, Benchmark) still call `getSettings()` directly — future cleanup target
+- Download state yang tersimpan di DB (paused download) pakai old temp path (`userData/temp-downloads`) — resume akan gagal karena path tidak ada. Tapi ini one-time issue
 
-### Next Actions
+### Next Actions (session ini)
 
-1. [ ] **TEST**: SettingsContext — verify all components get fresh settings
-2. [ ] **TEST**: Onboarding popover appears on first launch
-3. [ ] **TEST**: Dimissing onboarding popover persists across restart
-4. [ ] **TEST**: MiniBar — settings sync from context
-5. [ ] **TEST**: VerticalMiniBar — settings sync from context
-6. [ ] **TEST**: Recording flow still works end-to-end
-7. [ ] **TEST**: Language switch + model switch still work
-8. [ ] **P2**: Replace remaining direct `getSettings` calls in History, Benchmark, LlmModels with SettingsContext
+1. [ ] **TEST**: Download model ke drive berbeda — verifikasi rename sukses
+2. [ ] **TEST**: Resume download setelah app restart — verifikasi temp path baru
 
-### Recording Test Checklist
-- [ ] Record 5 detik → teks muncul
-- [ ] Record panjang (30+ detik) → tidak crash
-- [ ] Cancel recording (Esc) → kembali idle
-- [ ] VAD auto-stop → berhenti saat diam
-- [ ] Hotkey record → bisa mulai/stop
-- [ ] Mini bar record → bisa mulai/stop
-- [ ] Multiple rapid records → tidak memory leak
-- [ ] Paste ke Notepad → text muncul
+---
+
+## Session: 2026-07-21 (Session 24 — Codebase Architecture Cleanup)
+
+**Lihat session-handoff.md di remote untuk detail lengkap.** Ringkasan: WindowManager extraction, preload split (10 files), FuzzyMatcher cache, audio GC, TS error fix, light theme fix, SettingsContext, OnboardingPopover.
 
 ---
 
 ## Session: 2026-07-20 (Session 23 — Major Feature Drop)
 
-### Summary
-
-**Implemented 7 features + fix** — VAD sensitivity slider, quick model switcher, smart suggestions, recording presets, startup mode, audio playback, console.log cleanup, and model refresh bug fix.
+**Lihat session-handoff.md di remote untuk detail lengkap.** 7 features: VAD sensitivity slider, model switcher, smart suggestions, presets, startup mode, audio playback, console.log cleanup.
 
 ### Changes Made
 

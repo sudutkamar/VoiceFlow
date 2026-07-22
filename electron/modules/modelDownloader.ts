@@ -125,10 +125,12 @@ export class ModelDownloader {
       }
     }
 
-    // Use userData/temp-downloads instead of OS tmpdir to avoid Windows Defender / cleanup interference
-    const userDataPath = app.getPath('userData');
-    this.logger.info(`userData path: ${userDataPath}`);
-    this.tempDir = path.join(userDataPath, 'temp-downloads');
+    // ═══════════════════════════════════════════════════════════════
+    //  CRITICAL FIX: Temp dir HARUS di drive yang SAMA dengan modelsPath
+    //  Biar renameSync bisa atomic dan gak kena EXDEV (cross-device error).
+    //  Sebelumnya temp di userData (C:) dan modelsPath di F: → EXDEV.
+    // ═══════════════════════════════════════════════════════════════
+    this.tempDir = path.join(this.modelsPath, '.voiceflow-temp');
     this.logger.info(`Temp download dir: ${this.tempDir}`);
     try {
       if (!fs.existsSync(this.tempDir)) {
@@ -145,6 +147,16 @@ export class ModelDownloader {
       }
     } catch (err) {
       this.logger.warn('Cannot create models directory', err);
+    }
+
+    // Validate models path is writable — deteksi awal sebelum download gagal di tengah
+    try {
+      const testFile = path.join(this.modelsPath, '.voiceflow-write-test');
+      fs.writeFileSync(testFile, '');
+      fs.unlinkSync(testFile);
+      this.logger.info(`Models path writable: ${this.modelsPath}`);
+    } catch (err) {
+      this.logger.error(`Models path NOT writable: ${this.modelsPath}`, err);
     }
 
     // Read pending temp path from DB BEFORE cleanup so we don't delete active paused downloads
@@ -813,6 +825,39 @@ export class ModelDownloader {
   }
 
   /**
+   * Stream-based copy fallback when copyFileSync fails (rare EPERM/antivirus lock).
+   * Uses createReadStream + createWriteStream which gives Windows more time to
+   * release file locks, and allows retry with backoff.
+   */
+  private async copyWithStream(src: string, dest: string): Promise<void> {
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const readStream = fs.createReadStream(src, { highWaterMark: 1024 * 1024 }); // 1MB chunks
+        const writeStream = fs.createWriteStream(dest, { mode: 0o666 });
+
+        await new Promise<void>((resolve, reject) => {
+          readStream.on('error', reject);
+          writeStream.on('error', reject);
+          writeStream.on('finish', resolve);
+          readStream.pipe(writeStream);
+        });
+
+        this.logger.info(`Stream copy succeeded: ${path.basename(src)} → ${path.basename(dest)}`);
+        return;
+      } catch (err: any) {
+        lastErr = err;
+        this.logger.warn(`Stream copy attempt ${attempt + 1} failed, retrying...`, err.message);
+        // Cleanup partial dest
+        try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch {}
+        const delay = 500 * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw lastErr || new Error('Stream copy failed after 5 attempts');
+  }
+
+  /**
    * Core download function - handles one HTTP request.
    * Supports resume via Range header, redirect following, and speed limiting.
    */
@@ -1156,8 +1201,14 @@ export class ModelDownloader {
           if (renameErr.code === 'EXDEV') {
             // Cross-device: fall back to copy + unlink
             this.logger.warn('Cross-device rename, falling back to copy+unlink', renameErr);
-            fs.copyFileSync(tempPath, modelPath);
-            try { fs.unlinkSync(tempPath); } catch {}
+            try {
+              fs.copyFileSync(tempPath, modelPath);
+              try { fs.unlinkSync(tempPath); } catch {}
+            } catch (copyErr: any) {
+              this.logger.error('copyFileSync fallback gagal, coba stream copy', copyErr);
+              await this.copyWithStream(tempPath, modelPath);
+              try { fs.unlinkSync(tempPath); } catch {}
+            }
           } else {
             throw renameErr;
           }
@@ -1295,8 +1346,14 @@ export class ModelDownloader {
         } catch (renameErr: any) {
           if (renameErr.code === 'EXDEV') {
             this.logger.warn('Cross-device rename, falling back to copy+unlink', renameErr);
-            fs.copyFileSync(tempPath, modelPath);
-            try { fs.unlinkSync(tempPath); } catch {}
+            try {
+              fs.copyFileSync(tempPath, modelPath);
+              try { fs.unlinkSync(tempPath); } catch {}
+            } catch (copyErr: any) {
+              this.logger.error('copyFileSync fallback gagal, coba stream copy', copyErr);
+              await this.copyWithStream(tempPath, modelPath);
+              try { fs.unlinkSync(tempPath); } catch {}
+            }
           } else {
             throw renameErr;
           }

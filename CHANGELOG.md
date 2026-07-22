@@ -14,49 +14,16 @@
 - **TypeScript errors** — `src/utils/icons.tsx` Iconify component now accepts `style` prop (wrapper span) and `color` prop (Iconify color). Fixes TS errors in Models.tsx and GeneralTab.tsx
 - **Light theme floating UI** — mini bar (horizontal + vertical) now has full light theme overrides. Model button, language selector, mic button, tooltips, result text, and dropdowns all get proper light theme colors. Previously invisible in light mode
 - **Commented remaining debug console.logs** — `wavRecorder.ts` startup logs now commented, only error paths remain active
+- **EXDEV cross-device rename error saat download model ke drive berbeda (C: → F:)** — temp directory pindah dari `userData/temp-downloads` ke `modelsPath/.voiceflow-temp` (same-drive). Fallback stream copy jika copyFileSync gagal. Writable validation di constructor
 
 ### Changed
 - **SettingsContext** — new React Context for shared settings state. Replaces duplicated `loadSettings()` + `getSettings()` calls across MiniBar, VerticalMiniBar, MainApp, and Models.tsx. Loads settings once, caches in context, auto-refreshes on `onReloadSettings` event. Components call `useSettingsContext()` instead
 - **OnboardingPopover** — new component showing sequential tooltips for hidden features: language switcher, model switcher, VAD sensitivity, presets, smart suggestions, audio playback. Dismissed per-feature (localStorage). Appears in both MiniBar and MainApp views
+- `electron/modules/modelDownloader.ts` — tempDir pindah ke same-drive; EXDEV handler tambah stream fallback; writable validation
 
 ### Changelog
 - Added CHANGELOG.md entry for v1.0.11
 - Updated session-handoff.md
-
----
-
-## [1.0.10] - 2026-07-20
-
-### Added
-- **VAD Sensitivity Slider (Settings > Recording)** — 3 profiles (Low/Medium/High) + pause timeout selector. User bisa tuning VAD sesuai lingkungan
-- **Quick Model Switcher di MiniBar** — click model indicator → dropdown → pilih model langsung. Switch model tanpa buka main window
-- **Did You Mean? (Smart Suggestions)** — setelah transcribe, sistem scan kata-kata yang mungkin typo/match dictionary → tampilkan suggestion click-to-fix di HomePage
-- **Recording Presets** — 6 built-in presets (Indonesia Casual, Indonesia Formal, English, Coding, Quick Command, Meeting Notes) + save custom presets. Satu klik setting language + mode + VAD + prompt
-- **Startup Mode** — pilih: Full Window (default), MiniBar Only, atau Tray Only. Di General Settings
-- **Audio Playback History** — recording audio disimpan persisten di `{userData}/recordings/`. Bisa diputar ulang dari History page
-- **Audio File Cleanup** — audio file auto-terhapus saat history item dihapus atau clear history
-
-### Fixed
-- **Audio playback gagal karena file WAV dihapus sebelum disimpan ke history** — file WAV sekarang disimpan di folder `recordings/` (persisten), bukan temp dir. Tidak dihapus setelah transcribe. Path disimpan di database
-- **`clearHistory` SELECT key bukan value** — query salah column, menyebabkan `fs.unlinkSync(undefined)` error. Audio files sekarang benar-benar terhapus
-- **Smart suggestions tidak di-reset antar transcript** — suggestion dari transcript sebelumnya muncul sebagai ghost di transcript baru. Sekarang di-reset ke `[]` sebelum fetch suggestion baru
-- **Play button di History pakai icon 'text'** — confusing UX, ganti ke icon 'speaker'
-- **CSS `btn-active`, `suggestions-box`, `suggestion-*`, `preset-delete`, `preset-loading` missing** — ditambahkan styles
-
-### Fixed
-- **Model download tidak auto-refresh UI** — setelah download/switch model, UI tidak update sampai user refresh (CTRL+R):
-  - Added `model-changed` IPC event broadcast ke semua window saat model setting berubah
-  - Added `onModelChanged` event listener API di preload.ts
-  - Models page sekarang auto-refresh saat model berubah dari halaman lain
-  - MiniBar (horizontal & vertical) auto-refresh model status saat model berubah
-
-### Changed
-- `electron/ipc/settings.ipc.ts` — broadcast `model-changed` event ke semua window saat `model` setting diubah
-- `electron/preload.ts` — added `onModelChanged` to ElectronAPI interface + implementation
-- `src/types/electron.d.ts` — added `onModelChanged` type definition
-- `src/pages/Models.tsx` — added `onModelChanged` listener to refresh models list
-- `src/components/MiniBar/MiniBar.tsx` — added `onModelChanged` listener to refresh warmup status
-- `src/components/VerticalMiniBar.tsx` — added `onModelChanged` listener to refresh model availability
 
 ---
 
