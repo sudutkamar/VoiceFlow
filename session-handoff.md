@@ -1,5 +1,50 @@
 # Session Handoff
 
+## Session: 2026-07-23 (Session 26 — Whisper Error Code 3 Fix)
+
+### Summary
+
+**Whisper error code 3 — GPU crash atau model corrupt.** Root cause tidak bisa dipastikan tanpa stderr asli (sebelumnya tidak di-log). Fix mencakup 3 layer defense:
+1. **Pre-emptive validation** — cek model file size sebelum spawn
+2. **GPU fallback** — error GGML_ASSERT/CUDA → force CPU mode
+3. **Error message** — stderr sekarang di-include ke error, bukan cuma "code 3"
+
+### Files Changed
+
+| File | Perubahan | Risiko |
+|------|-----------|--------|
+| `electron/modules/transcriber.ts` | Validasi model file (size > 0), GPU error → CPU fallback, error message include stderr, retry logic detect GPU error | 🟢 NONE |
+| `CHANGELOG.md` | Added v1.0.13 entry | 🟢 NONE |
+| `session-handoff.md` | Updated | 🟢 NONE |
+
+### Decisions
+
+- **Set `hasGpu=false`** di retry loop — bukan hanya di `runWhisper()`. Biar retry berikutnya pasti pake CPU, tidak perlu nunggu `runWhisper()` selesai sekali lagi
+- **Validasi model file pre-spawn** — cek size file sebelum fork process. Kalau empty atau < expected size, reject early tanpa spawn
+- **`isModelAvailable()` diperketat** — sekarang cek `fs.statSync().size > 0`, bukan cuma `fs.existsSync()`. Model corrupt tidak akan dipilih
+- **Error message user-friendly** — stderr snippet di-include: "Whisper error (code 3): GGML_ASSERT: ..." → user bisa report ke developer
+
+### Risks / Technical Debt
+
+- Tidak ada — semua perubahan adalah additional guard, tidak mengubah pipeline utama
+- Kalau model benar-benar corrupt, user perlu download ulang. Pesan error sekarang jelas: "Model X corrupt. Hapus dan download ulang."
+
+### Next Actions
+
+1. [ ] **TEST**: Record → verify transcription works
+2. [ ] **TEST**: Copy corrupt model file → verify error message muncul "corrupt"
+3. [ ] **TEST**: Hapus GPU DLL → verify fallback CPU works tanpa error
+
+### Recording Test Checklist
+- [ ] Record 5 detik → teks muncul
+- [ ] Record panjang (30+ detik) → tidak crash
+- [ ] Cancel recording (Esc) → kembali idle
+- [ ] VAD auto-stop → berhenti saat diam
+- [ ] Mini bar record → bisa mulai/stop
+- [ ] Paste ke Notepad → text muncul
+
+---
+
 ## Session: 2026-07-23 (Session 25 — Restore Green Dot Warmup Indicator)
 
 ### Summary

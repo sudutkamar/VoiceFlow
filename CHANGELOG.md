@@ -1,5 +1,18 @@
 # Changelog VoiceFlow
 
+## [1.0.13] - 2026-07-23
+
+### Fixed
+- **Whisper error code 3 — GPU crash model corrupt.** Error code 3 dari whisper.cpp berarti model file corrupt atau GPU/CUDA crash. Fix:
+  - Validasi model file (size > 0) sebelum spawn whisper-cli.exe
+  - `isModelAvailable()` sekarang cek size file, bukan cuma existence
+  - Error GPU (GGML_ASSERT/CUDA) → set `hasGpu=false` + retry pake CPU
+  - Fallback CPU dipaksa di retry loop (bukan cuma model downgrade)
+  - Error message sekarang include stderr snippet, bukan cuma "code 3"
+  - Retry loop detect GPU error dan langsung turunin ke CPU + model lebih kecil
+
+---
+
 ## [1.0.12] - 2026-07-23
 
 ### Fixed

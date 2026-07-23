@@ -655,12 +655,21 @@ export class Transcriber {
         lastError = result.error || 'Unknown error';
         this.logger.warn(`Attempt ${attempt + 1} failed: ${lastError}`);
 
-        // Retry: downgrade model + backoff
+        // Retry: downgrade model + fallback CPU + backoff
         if (attempt < maxRetries) {
           const backoffMs = Math.min(1500, 400 * Math.pow(2, attempt));
           await new Promise(r => setTimeout(r, backoffMs));
 
-          if (lastError.includes('Timeout') || lastError.includes('Failed') || lastError.includes('error')) {
+          const isGpuError = lastError.includes('GGML_ASSERT') || lastError.includes('CUDA') || lastError.includes('error (code 3)') || lastError.includes('cuda');
+          
+          // GPU error → force CPU mode for retry
+          if (isGpuError) {
+            this.hasGpu = false;
+            options.device = 'cpu';
+            this.logger.warn('GPU error detected, retrying with CPU');
+          }
+
+          if (lastError.includes('Timeout') || lastError.includes('Failed') || lastError.includes('error') || isGpuError) {
             const nextModel = modelDowngradeChain[currentModel] || currentModel;
             if (nextModel !== currentModel) {
               const nextModelPath = path.join(this.modelsPath, nextModel);
@@ -855,6 +864,23 @@ export class Transcriber {
     if (!modelName || !modelPath.endsWith('.bin')) {
       return Promise.resolve({ success: false, error: 'Model tidak valid. Silakan pilih atau download model terlebih dahulu.' });
     }
+    
+    // CRITICAL: validate model file is not empty/corrupt before spawning
+    try {
+      const modelStat = fs.statSync(modelPath);
+      if (modelStat.size === 0) {
+        this.logger.error('Model file is empty!', { model: modelName, modelPath });
+        return Promise.resolve({ success: false, error: `Model ${modelName} kosong. Hapus dan download ulang.` });
+      }
+      const minSizeForModel = modelName.includes('tiny') ? 1000000 : modelName.includes('base') ? 5000000 : modelName.includes('small') ? 10000000 : 10000000;
+      if (modelStat.size < minSizeForModel) {
+        this.logger.error('Model file too small, likely corrupt', { model: modelName, size: modelStat.size });
+        return Promise.resolve({ success: false, error: `Model ${modelName} corrupt (${(modelStat.size/1024/1024).toFixed(1)}MB). Hapus dan download ulang.` });
+      }
+    } catch (err) {
+      this.logger.error('Cannot stat model file', { model: modelName, modelPath, error: err });
+      return Promise.resolve({ success: false, error: 'Model file tidak bisa diakses.' });
+    }
     return new Promise((resolve) => {
       // 🎯 SPEED-OPTIMIZED ARGS
       const args = [
@@ -948,8 +974,18 @@ export class Transcriber {
         this.currentProcess = null;
 
         if (code !== 0) {
-          this.logger.error('Whisper failed', { code, stderr: stderr.slice(0, 500) });
-          resolve({ success: false, error: `Whisper error (code ${code})` });
+          const stderrSlice = stderr.slice(0, 1000);
+          this.logger.error('Whisper failed', { code, stderr: stderrSlice, model: path.basename(modelPath) });
+          
+          // GPU error: GGML_ASSERT or CUDA error → retry with CPU flag
+          const isGpuError = stderrSlice.includes('GGML_ASSERT') || stderrSlice.includes('CUDA') || stderrSlice.includes('cuda');
+          if (isGpuError && options.device !== 'cpu') {
+            this.logger.warn('GPU whisper failed, will retry with CPU on next attempt');
+            // Mark GPU as failed so retry uses CPU
+            this.hasGpu = false;
+          }
+          
+          resolve({ success: false, error: `Whisper error (code ${code}): ${stderrSlice.slice(0, 200).trim()}` });
           return;
         }
 
@@ -1079,7 +1115,16 @@ export class Transcriber {
   }
 
   isWhisperAvailable(): boolean { return cachedPathExists(this.whisperPath); }
-  isModelAvailable(model: string): boolean { return cachedPathExists(path.join(this.modelsPath, model)); }
+  isModelAvailable(model: string): boolean {
+    const modelPath = path.join(this.modelsPath, model);
+    if (!cachedPathExists(modelPath)) return false;
+    // Validate model file not empty/corrupt
+    try {
+      const stat = fs.statSync(modelPath);
+      if (stat.size === 0) return false;
+    } catch { return false; }
+    return true;
+  }
 
   // ═══════════════════════════════════════════════════════════════
   //  Model Warmup — preload everything for instant first use
