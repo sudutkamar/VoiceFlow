@@ -1,5 +1,13 @@
 # Changelog VoiceFlow
 
+## [1.0.12] - 2026-07-23
+
+### Fixed
+- **Restored warmup status indicator (green dot) in MiniBar** — green dot aja (tanpa label model). Dihapus sebelumnya bersama Quick Model Switcher (commit 681349d). Kembali sebagai pure status indicator (non-interaktif)
+- **Added warmup dot to VerticalMiniBar** — green dot di top bar vertikal, konsisten dengan horizontal mode
+
+---
+
 ## [1.0.11] - 2026-07-21
 
 ### Infrastructure

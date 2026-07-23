@@ -1,5 +1,52 @@
 # Session Handoff
 
+## Session: 2026-07-23 (Session 25 — Restore Green Dot Warmup Indicator)
+
+### Summary
+
+**Restored warmup status indicator (green dot) di MiniBar.** Quick Model Switcher dihapus di commit 681349d karena dianggap redundant. User minta titik hijaunya kembali sebagai status indicator (non-interaktif).
+
+### Files Changed
+
+| File | Perubahan | Risiko |
+|------|-----------|--------|
+| `src/components/MiniBar/MiniBar.tsx` | Restore warmup status — green dot + model name label setelah language selector | 🟢 NONE |
+| `src/components/VerticalMiniBar.tsx` | Tambah warmup dot + state + listener di top bar | 🟢 NONE |
+| `src/styles/minibar-horizontal.css` | `.m-warmup-status` rewrite (dot + label), light theme override | 🟢 NONE |
+| `src/styles/minibar-vertical.css` | `.vmb-warmup` + `.vmb-warmup-dot` + light theme | 🟢 NONE |
+| `CHANGELOG.md` | Added v1.0.12 entry | 🟢 NONE |
+| `session-handoff.md` | Updated | 🟢 NONE |
+
+### Decisions
+
+- **Pure status indicator (non-interaktif)** — berbeda dari Quick Model Switcher sebelumnya yang click-to-cycle. Sekarang hanya display dot + nama model. Tidak ada interaksi, lebih sederhana dan tidak overlapping dengan language button
+- **Model name ditampilkan** — parsed dari filename:
+  - `ggml-large-v3-turbo-q5_0.bin` → `large v3 turbo`
+  - Cukup 2 kata pertama biar tidak overflow di bar sempit
+- **Warmup pulse animation** — dot punya pulse animasi biar keliatan hidup, bukan dot statis
+- **VerticalMiniBar juga dapat** — konsisten dengan horizontal mode
+
+### Risks / Technical Debt
+
+- Tidak ada — perubahan minimal, hanya restore visual indicator yang sudah pernah ada
+
+### Next Actions
+
+1. [ ] **TEST**: Warmup dot muncul setelah app startup (model ready)
+2. [ ] **TEST**: Dot hilang saat recording (state logic: `!isRec`)
+3. [ ] **TEST**: Dot muncul kembali setelah recording selesai
+4. [ ] **TEST**: Light theme — dot warna hijau gelap (16a34a) bukan neon
+
+### Recording Test Checklist
+- [ ] Record 5 detik → teks muncul
+- [ ] Record panjang (30+ detik) → tidak crash
+- [ ] Cancel recording (Esc) → kembali idle
+- [ ] VAD auto-stop → berhenti saat diam
+- [ ] Mini bar record → bisa mulai/stop
+- [ ] Paste ke Notepad → text muncul
+
+---
+
 ## Session: 2026-07-22 (Session 23/25 — EXDEV Cross-Device Rename Fix)
 
 ### Summary

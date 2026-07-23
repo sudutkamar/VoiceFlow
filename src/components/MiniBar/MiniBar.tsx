@@ -351,6 +351,13 @@ export default function MiniBar({ initialSettings = {} }: MiniBarProps) {
           </button>
         </div>
 
+        {/* Warmup status — green dot when model ready */}
+        {warmupStatus.ready && (
+          <div className="m-warmup-status" title={`Model: ${warmupStatus.model}${warmupStatus.gpuAvailable ? ' (GPU)' : ''}`}>
+            <span className="m-warmup-dot" />
+          </div>
+        )}
+
         {/* Mic / Record */}
         <button
           className={`m-voice-btn ${state}`}

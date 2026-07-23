@@ -238,6 +238,36 @@
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+/* ── Warmup Dot ── */
+.vmb-warmup {
+  width: 20px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+
+.vmb-warmup-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.8), 0 0 16px rgba(74, 222, 128, 0.4);
+  animation: vmbWarmupPulse 2s ease-in-out infinite;
+}
+
+@keyframes vmbWarmupPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.85); }
+}
+
+/* Light theme override */
+:root.light-theme .vmb-warmup-dot {
+  background: #16a34a;
+  box-shadow: 0 0 8px rgba(22, 163, 74, 0.6), 0 0 16px rgba(22, 163, 74, 0.3);
+}
+
 /* ── GPU Indicator ── */
 .vmb-gpu {
   width: 20px;

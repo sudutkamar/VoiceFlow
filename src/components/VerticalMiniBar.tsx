@@ -21,6 +21,7 @@ export default function VerticalMiniBar({ settings: propSettings }: Props) {
     : propSettings;
   const [hasModel, setHasModel] = useState<boolean | null>(null);
   const [gpuStatus, setGpuStatus] = useState<string | null>(null);
+  const [warmupStatus, setWarmupStatus] = useState<{ ready: boolean; model: string; gpuAvailable: boolean }>({ ready: false, model: '', gpuAvailable: false });
   const [localLang, setLocalLang] = useState(settings.language || 'auto');
   const [windowSize, setWindowSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [isLight, setIsLight] = useState(document.documentElement.classList.contains('light-theme'));
@@ -170,12 +171,15 @@ export default function VerticalMiniBar({ settings: propSettings }: Props) {
   useEffect(() => {
     window.electronAPI.miniWindowReady?.();
     window.electronAPI.hasAnyModel().then(setHasModel).catch(() => setHasModel(null));
+    window.electronAPI.getWarmupStatus().then(setWarmupStatus).catch(() => {});
+    const unsubWarmupVert = window.electronAPI.onWarmupComplete?.(setWarmupStatus);
     window.electronAPI.getGpuStatus?.().then((s) => {
       if (s.hasGpu && !s.cudaDllsPresent) setGpuStatus('GPU');
       else setGpuStatus(null);
     }).catch((err) => logWarning('VerticalMiniBar', 'Failed to get GPU status', err));
     
-    const unsubs = [
+    const unsubs: (() => void)[] = [
+      unsubWarmupVert || (() => {}),
       window.electronAPI.onHotkeyRegistered?.(() => {}),
       window.electronAPI.onThemeChange?.((t: string) => {
         if (t === 'light') document.documentElement.classList.add('light-theme');
@@ -252,6 +256,13 @@ export default function VerticalMiniBar({ settings: propSettings }: Props) {
           {/* Canvas visualization (recording only) */}
           {isRec && (
             <canvas ref={canvasRef} className="vmb-canvas" />
+          )}
+
+          {/* Warmup — green dot when model ready */}
+          {warmupStatus.ready && !isRec && (
+            <div className="vmb-warmup" title={`Model: ${warmupStatus.model}${warmupStatus.gpuAvailable ? ' (GPU)' : ''}`}>
+              <span className="vmb-warmup-dot" />
+            </div>
           )}
 
           {/* GPU indicator */}

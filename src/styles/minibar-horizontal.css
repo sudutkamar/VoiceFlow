@@ -283,7 +283,7 @@ body.mini-mode, html.mini-mode { background: transparent; }
   line-height: 1;
 }
 
-/* Warmup status indicator */
+/* Warmup status indicator — compact green dot */
 .m-warmup-status {
   display: flex;
   align-items: center;
@@ -292,7 +292,23 @@ body.mini-mode, html.mini-mode { background: transparent; }
   height: 40px;
   flex: 0 0 auto;
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.8;
+  -webkit-app-region: no-drag;
+}
+
+.m-warmup-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.8), 0 0 16px rgba(74, 222, 128, 0.4);
+  flex-shrink: 0;
+  animation: warmupPulse 2s ease-in-out infinite;
+}
+
+@keyframes warmupPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.85); }
 }
 
 .m-lang-arrow {
@@ -1272,5 +1288,10 @@ body.mini-mode, html.mini-mode { background: transparent; }
 
 :root.light-theme .m-recording-core .m-time {
   color: #dc2626;
+}
+
+:root.light-theme .m-warmup-dot {
+  background: #16a34a;
+  box-shadow: 0 0 8px rgba(22, 163, 74, 0.6), 0 0 16px rgba(22, 163, 74, 0.3);
 }
 
